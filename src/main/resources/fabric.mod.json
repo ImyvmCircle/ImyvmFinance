@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "imyvm_finance",
+  "version": "${version}",
+  "name": "Imyvm Finance",
+  "description": "Server-side financial market mechanics for Imyvm.",
+  "environment": "server",
+  "entrypoints": {
+    "main": [
+      "com.imyvm.finance.ImyvmFinance"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": "=26.2",
+    "java": ">=25",
+    "fabric-api": "*",
+    "imyvm_economy": ">=26.2-1.2.7"
+  }
+}
