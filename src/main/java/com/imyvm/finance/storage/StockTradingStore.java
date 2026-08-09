@@ -6,6 +6,8 @@ import com.imyvm.finance.trading.StockTradeState;
 import com.imyvm.finance.trading.TradeEstimate;
 import com.imyvm.finance.transaction.StockTransaction;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -203,6 +205,185 @@ public final class StockTradingStore implements AutoCloseable {
         }
     }
 
+    public synchronized void markSellPendingManual(UUID transactionId, UUID positionId) throws SQLException {
+        boolean oldAutoCommit = connection.getAutoCommit();
+        connection.setAutoCommit(false);
+        try {
+            updateOrderState(transactionId, StockOrderState.PENDING_MANUAL);
+            updatePositionStateById(positionId, StockOrderState.PENDING_MANUAL);
+            updateTradeState(transactionId, StockTradeState.PENDING_MANUAL);
+            connection.commit();
+        } catch (SQLException exception) {
+            connection.rollback();
+            throw exception;
+        } finally {
+            connection.setAutoCommit(oldAutoCommit);
+        }
+    }
+
+    public synchronized java.util.Optional<StoredPosition> findPosition(UUID positionId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            SELECT position_id, player_id, symbol, remaining_units, frozen_units,
+                   position_value, buy_snapshot_id, bought_at, earliest_sell_at, state
+            FROM stock_positions
+            WHERE position_id = ?
+            """)) {
+            statement.setString(1, positionId.toString());
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next())
+                    return java.util.Optional.empty();
+                Instrument instrument = Instrument.fromSymbol(result.getString("symbol"));
+                if (instrument == null)
+                    throw new SQLException("position contains a non-whitelisted symbol");
+                return java.util.Optional.of(new StoredPosition(
+                    UUID.fromString(result.getString("position_id")),
+                    UUID.fromString(result.getString("player_id")),
+                    instrument,
+                    result.getLong("remaining_units"),
+                    result.getLong("frozen_units"),
+                    result.getLong("position_value"),
+                    result.getString("buy_snapshot_id"),
+                    result.getLong("bought_at"),
+                    result.getLong("earliest_sell_at"),
+                    StockOrderState.valueOf(result.getString("state"))));
+            }
+        }
+    }
+
+    public synchronized void createPendingSell(UUID orderId, UUID tradeId, UUID positionId,
+                                                StockTransaction transaction, TradeEstimate estimate,
+                                                long createdAtEpochMillis) throws SQLException {
+        boolean oldAutoCommit = connection.getAutoCommit();
+        connection.setAutoCommit(false);
+        try {
+            StoredPosition position = findPosition(positionId)
+                .orElseThrow(() -> new IllegalArgumentException("unknown stock position"));
+            if (position.instrument() != estimate.instrument()
+                || position.state() != StockOrderState.ACTIVE
+                || position.remainingUnits() - position.frozenUnits() < estimate.units())
+                throw new IllegalArgumentException("stock position units are unavailable");
+
+            try (PreparedStatement statement = connection.prepareStatement("""
+                UPDATE stock_positions SET frozen_units = frozen_units + ?
+                WHERE position_id = ? AND state = ?
+                  AND remaining_units - frozen_units >= ?
+                """)) {
+                statement.setLong(1, estimate.units());
+                statement.setString(2, positionId.toString());
+                statement.setString(3, StockOrderState.ACTIVE.name());
+                statement.setLong(4, estimate.units());
+                if (statement.executeUpdate() != 1)
+                    throw new SQLException("stock position changed concurrently");
+            }
+
+            try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO stock_orders
+                    (order_id, player_id, transaction_id, symbol, units, amount, snapshot_id, state, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """)) {
+                statement.setString(1, orderId.toString());
+                statement.setString(2, transaction.playerId().toString());
+                statement.setString(3, transaction.transactionId().toString());
+                statement.setString(4, estimate.instrument().symbol());
+                statement.setLong(5, estimate.units());
+                statement.setLong(6, estimate.settlementAmount());
+                statement.setString(7, estimate.snapshotId());
+                statement.setString(8, StockOrderState.PENDING_FINANCE.name());
+                statement.setLong(9, createdAtEpochMillis);
+                statement.executeUpdate();
+            }
+
+            try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO stock_trades
+                    (trade_id, order_id, transaction_id, player_id, symbol, side, units,
+                     execution_price_scaled, gross_amount, fee_amount, settlement_amount,
+                     snapshot_id, state, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """)) {
+                statement.setString(1, tradeId.toString());
+                statement.setString(2, orderId.toString());
+                statement.setString(3, transaction.transactionId().toString());
+                statement.setString(4, transaction.playerId().toString());
+                statement.setString(5, estimate.instrument().symbol());
+                statement.setString(6, estimate.side().name());
+                statement.setLong(7, estimate.units());
+                statement.setLong(8, estimate.executionPriceScaled());
+                statement.setLong(9, estimate.grossAmount());
+                statement.setLong(10, estimate.feeAmount());
+                statement.setLong(11, estimate.settlementAmount());
+                statement.setString(12, estimate.snapshotId());
+                statement.setString(13, StockTradeState.PENDING_FINANCE.name());
+                statement.setLong(14, createdAtEpochMillis);
+                statement.executeUpdate();
+            }
+            connection.commit();
+        } catch (SQLException | RuntimeException exception) {
+            connection.rollback();
+            throw exception;
+        } finally {
+            connection.setAutoCommit(oldAutoCommit);
+        }
+    }
+
+    public synchronized void activateSell(UUID transactionId, UUID positionId, long units) throws SQLException {
+        boolean oldAutoCommit = connection.getAutoCommit();
+        connection.setAutoCommit(false);
+        try {
+            StoredPosition position = findPosition(positionId)
+                .orElseThrow(() -> new SQLException("unknown stock position"));
+            if (position.frozenUnits() < units)
+                throw new SQLException("stock position is not frozen for this sale");
+            long remainingUnits = position.remainingUnits() - units;
+            long frozenUnits = position.frozenUnits() - units;
+            long positionValue = remainingUnits == 0
+                ? 0
+                : BigDecimal.valueOf(position.positionValue())
+                    .multiply(BigDecimal.valueOf(remainingUnits))
+                    .divide(BigDecimal.valueOf(position.remainingUnits()), 0, RoundingMode.FLOOR)
+                    .longValueExact();
+            try (PreparedStatement statement = connection.prepareStatement("""
+                UPDATE stock_positions
+                SET remaining_units = ?, frozen_units = ?, position_value = ?, state = ?
+                WHERE position_id = ? AND frozen_units >= ?
+                """)) {
+                statement.setLong(1, remainingUnits);
+                statement.setLong(2, frozenUnits);
+                statement.setLong(3, positionValue);
+                statement.setString(4, remainingUnits == 0 ? StockOrderState.CLOSED.name() : StockOrderState.ACTIVE.name());
+                statement.setString(5, positionId.toString());
+                statement.setLong(6, units);
+                if (statement.executeUpdate() != 1)
+                    throw new SQLException("stock position changed concurrently");
+            }
+            updateOrderState(transactionId, StockOrderState.ACTIVE);
+            updateTradeState(transactionId, StockTradeState.CONFIRMED);
+            connection.commit();
+        } catch (SQLException | RuntimeException exception) {
+            connection.rollback();
+            throw exception;
+        } finally {
+            connection.setAutoCommit(oldAutoCommit);
+        }
+    }
+
+    public synchronized long dailySellAmount(UUID playerId, long startEpochMillis, long endEpochMillis) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            SELECT COALESCE(SUM(settlement_amount), 0)
+            FROM stock_trades
+            WHERE player_id = ? AND side = 'SELL'
+              AND created_at >= ? AND created_at < ?
+              AND state <> ?
+            """)) {
+            statement.setString(1, playerId.toString());
+            statement.setLong(2, startEpochMillis);
+            statement.setLong(3, endEpochMillis);
+            statement.setString(4, StockTradeState.CANCELLED.name());
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() ? result.getLong(1) : 0L;
+            }
+        }
+    }
+
     public synchronized long dailyBuyAmount(UUID playerId,
                                              long startEpochMillis,
                                              long endEpochMillis) throws SQLException {
@@ -280,6 +461,20 @@ public final class StockTradingStore implements AutoCloseable {
             """)) {
             statement.setString(1, state.name());
             statement.setString(2, transactionId.toString());
+            statement.setString(3, StockOrderState.PENDING_FINANCE.name());
+            statement.setString(4, StockOrderState.ACTIVE.name());
+            statement.executeUpdate();
+        }
+    }
+
+    private void updatePositionStateById(UUID positionId, StockOrderState state) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            UPDATE stock_positions SET state = ?
+            WHERE position_id = ?
+              AND state IN (?, ?)
+            """)) {
+            statement.setString(1, state.name());
+            statement.setString(2, positionId.toString());
             statement.setString(3, StockOrderState.PENDING_FINANCE.name());
             statement.setString(4, StockOrderState.ACTIVE.name());
             statement.executeUpdate();

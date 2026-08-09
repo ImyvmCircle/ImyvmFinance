@@ -3,6 +3,7 @@ package com.imyvm.finance.market;
 import com.imyvm.finance.Translator;
 import com.imyvm.finance.ImyvmFinance;
 import com.imyvm.finance.storage.StoredQuote;
+import com.imyvm.finance.storage.StoredPosition;
 import com.imyvm.finance.economy.EconomySettlementResult;
 import com.imyvm.finance.transaction.StockOperation;
 import com.imyvm.finance.transaction.StockTransaction;
@@ -12,6 +13,7 @@ import com.imyvm.finance.trading.TradeEstimate;
 import com.imyvm.finance.trading.TradeSide;
 import com.imyvm.finance.trading.TradeValidationException;
 import com.imyvm.finance.trading.TradeValidator;
+import com.imyvm.finance.trading.StockPositionView;
 import com.imyvm.finance.trading.TradingRules;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
@@ -46,6 +48,12 @@ public final class MarketCommands {
                 .then(Commands.argument("units", LongArgumentType.longArg(1))
                     .executes(MarketCommands::buy)));
 
+        var sell = Commands.literal("sell")
+            .requires(CommandSourceStack::isPlayer)
+            .then(Commands.argument("positionId", StringArgumentType.word())
+                .then(Commands.argument("units", LongArgumentType.longArg(1))
+                    .executes(MarketCommands::sell)));
+
         var estimate = Commands.literal("estimate")
             .then(Commands.argument("symbol", StringArgumentType.word())
                 .then(Commands.argument("units", LongArgumentType.longArg(1))
@@ -57,6 +65,7 @@ public final class MarketCommands {
             .then(Commands.literal("quote")
                 .then(Commands.argument("symbol", StringArgumentType.word())
                     .executes(MarketCommands::quote)))
+            .then(sell)
             .then(estimate));
     }
 
@@ -155,6 +164,135 @@ public final class MarketCommands {
             context.getSource().sendFailure(Translator.tr("commands.market.quote.storage_unavailable"));
             return 0;
         }
+    }
+
+    private static int sell(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        ServerPlayer player = context.getSource().getPlayer();
+        UUID positionId;
+        try {
+            positionId = UUID.fromString(StringArgumentType.getString(context, "positionId"));
+        } catch (IllegalArgumentException exception) {
+            context.getSource().sendFailure(Translator.tr("commands.market.sell.invalid_position"));
+            return 0;
+        }
+        long units = LongArgumentType.getLong(context, "units");
+        if (ImyvmFinance.QUOTE_STORE == null
+            || ImyvmFinance.TRANSACTION_STORE == null
+            || ImyvmFinance.TRADING_STORE == null
+            || ImyvmFinance.ECONOMY_SETTLEMENT == null) {
+            context.getSource().sendFailure(Translator.tr("commands.market.sell.storage_unavailable"));
+            return 0;
+        }
+
+        long now = System.currentTimeMillis();
+        try {
+            Optional<StoredPosition> storedPosition = ImyvmFinance.TRADING_STORE.findPosition(positionId);
+            if (storedPosition.isEmpty() || !storedPosition.get().playerId().equals(player.getUUID())) {
+                context.getSource().sendFailure(Translator.tr("commands.market.sell.invalid_position"));
+                return 0;
+            }
+            StoredPosition position = storedPosition.get();
+            Optional<StoredQuote> storedQuote = ImyvmFinance.QUOTE_STORE.findLatest(position.instrument());
+            if (storedQuote.isEmpty()) {
+                context.getSource().sendFailure(Translator.tr("commands.market.quote.unavailable", position.instrument().symbol()));
+                return 0;
+            }
+            TradeEstimate estimate = TradeCalculator.estimate(
+                TradeSide.SELL, storedQuote.get(), units, now, TradingRules.DEFAULT);
+            TradeValidator.validateSell(
+                estimate,
+                new StockPositionView(
+                    position.positionId(),
+                    position.playerId(),
+                    position.instrument(),
+                    position.remainingUnits(),
+                    position.frozenUnits(),
+                    position.buySnapshotId(),
+                    position.earliestSellAtEpochMillis()),
+                now,
+                dailySellAmount(player.getUUID(), now),
+                TradingRules.DEFAULT);
+
+            UUID orderId = UUID.randomUUID();
+            UUID transactionId = UUID.randomUUID();
+            StockTransaction transaction = new StockTransaction(
+                transactionId,
+                player.getUUID(),
+                StockOperation.SELL,
+                orderId.toString(),
+                position.instrument(),
+                estimate.settlementAmount(),
+                StockTransactionState.PREPARED,
+                null,
+                now,
+                now);
+            ImyvmFinance.TRANSACTION_STORE.createPrepared(transaction);
+            try {
+                ImyvmFinance.TRADING_STORE.createPendingSell(
+                    orderId, UUID.randomUUID(), positionId, transaction, estimate, now);
+            } catch (Exception exception) {
+                ImyvmFinance.TRANSACTION_STORE.transition(
+                    transactionId, StockTransactionState.CANCELLED, "finance_prepare_failed", now);
+                context.getSource().sendFailure(Translator.tr("commands.market.sell.storage_unavailable"));
+                return 0;
+            }
+
+            EconomySettlementResult settlement = ImyvmFinance.ECONOMY_SETTLEMENT.settle(player, transaction);
+            if (settlement.state() != StockTransactionState.ECONOMY_CONFIRMED) {
+                ImyvmFinance.TRADING_STORE.markSellPendingManual(transactionId, positionId);
+                context.getSource().sendFailure(Translator.tr("commands.market.sell.pending_manual"));
+                return 0;
+            }
+
+            try {
+                ImyvmFinance.TRANSACTION_STORE.transition(
+                    transactionId, StockTransactionState.FINANCE_CONFIRMED, "finance_confirmed", System.currentTimeMillis());
+                ImyvmFinance.TRADING_STORE.activateSell(transactionId, positionId, estimate.units());
+            } catch (Exception exception) {
+                try {
+                    ImyvmFinance.TRANSACTION_STORE.transition(
+                        transactionId, StockTransactionState.PENDING_MANUAL, "finance_activation_uncertain", System.currentTimeMillis());
+                } catch (Exception ignored) {
+                }
+                try {
+                    ImyvmFinance.TRADING_STORE.markSellPendingManual(transactionId, positionId);
+                } catch (Exception ignored) {
+                }
+                context.getSource().sendFailure(Translator.tr("commands.market.sell.pending_manual"));
+                return 0;
+            }
+
+            context.getSource().sendSuccess(
+                () -> Translator.tr(
+                    "commands.market.sell.success",
+                    estimate.instrument().symbol(),
+                    estimate.units(),
+                    estimate.settlementAmount(),
+                    formatPrice(estimate.executionPriceScaled()),
+                    estimate.feeAmount(),
+                    estimate.snapshotId()),
+                false);
+            return Command.SINGLE_SUCCESS;
+        } catch (TradeValidationException exception) {
+            context.getSource().sendFailure(
+                Translator.tr(exception.messageKey(), exception.messageArguments()));
+            return 0;
+        } catch (ArithmeticException exception) {
+            context.getSource().sendFailure(Translator.tr("commands.market.trade.amount_too_large"));
+            return 0;
+        } catch (Exception exception) {
+            context.getSource().sendFailure(Translator.tr("commands.market.sell.storage_unavailable"));
+            return 0;
+        }
+    }
+
+    private static long dailySellAmount(UUID playerId, long nowEpochMillis) throws Exception {
+        ZoneId zone = ZoneId.systemDefault();
+        LocalDate date = LocalDate.now(zone);
+        return ImyvmFinance.TRADING_STORE.dailySellAmount(
+            playerId,
+            date.atStartOfDay(zone).toInstant().toEpochMilli(),
+            date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli());
     }
 
     private static int buy(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {

@@ -20,5 +20,9 @@
   "imyvm_finance.commands.market.buy.storage_unavailable": "Stock trading storage is unavailable.",
   "imyvm_finance.commands.market.buy.insufficient_balance": "Insufficient balance for the stock cost of {0}.",
   "imyvm_finance.commands.market.buy.pending_manual": "This stock buy is pending manual handling and is unavailable for trading.",
-  "imyvm_finance.commands.market.buy.success": "Bought {1} units of {0} for {2}, execution price {3}, fee {4}, snapshot {5}."
+  "imyvm_finance.commands.market.buy.success": "Bought {1} units of {0} for {2}, execution price {3}, fee {4}, snapshot {5}.",
+  "imyvm_finance.commands.market.sell.invalid_position": "This stock position is invalid or does not belong to you.",
+  "imyvm_finance.commands.market.sell.storage_unavailable": "Stock trading storage is unavailable.",
+  "imyvm_finance.commands.market.sell.pending_manual": "This stock sell is pending manual handling; its units remain locked.",
+  "imyvm_finance.commands.market.sell.success": "Sold {1} units of {0} for {2}, execution price {3}, fee {4}, snapshot {5}."
 }
