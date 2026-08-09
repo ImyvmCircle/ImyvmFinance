@@ -33,5 +33,12 @@
   "imyvm_finance.commands.market.history.item": "{0} {1} | {2} units | settlement {3} | state {4} | {5}",
   "imyvm_finance.commands.market.pending.storage_unavailable": "Manual handling queue is unavailable.",
   "imyvm_finance.commands.market.pending.header": "Pending manual orders ({0}):",
-  "imyvm_finance.commands.market.pending.item": "player {0} | {1} | {2} units | amount {3} | transaction {4} | {5}"
+  "imyvm_finance.commands.market.pending.item": "player {0} | {1} | {2} units | amount {3} | transaction {4} | {5}",
+  "imyvm_finance.commands.market.pending.invalid_transaction": "Invalid transaction ID.",
+  "imyvm_finance.commands.market.pending.not_found": "The stock transaction or order was not found.",
+  "imyvm_finance.commands.market.pending.not_pending": "This transaction cannot be resolved with this action.",
+  "imyvm_finance.commands.market.pending.missing_position": "The sell transaction has no position link and cannot be resolved.",
+  "imyvm_finance.commands.market.pending.resolution_failed": "Manual handling failed; the stock state remains pending. Check the log.",
+  "imyvm_finance.commands.market.pending.confirmed": "Transaction {0} confirmed; only Finance stock state was completed.",
+  "imyvm_finance.commands.market.pending.released": "Transaction {0} released; only Finance stock state was released."
 }

@@ -177,6 +177,98 @@ public final class MarketCommands {
         }
     }
 
+    private static int confirmPending(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        return resolvePending(context, true);
+    }
+
+    private static int releasePending(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        return resolvePending(context, false);
+    }
+
+    private static int resolvePending(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        boolean confirm) {
+        UUID transactionId;
+        try {
+            transactionId = UUID.fromString(StringArgumentType.getString(context, "transactionId"));
+        } catch (IllegalArgumentException exception) {
+            context.getSource().sendFailure(Translator.tr("commands.market.pending.invalid_transaction"));
+            return 0;
+        }
+        if (ImyvmFinance.TRANSACTION_STORE == null || ImyvmFinance.TRADING_STORE == null) {
+            context.getSource().sendFailure(Translator.tr("commands.market.pending.storage_unavailable"));
+            return 0;
+        }
+
+        try {
+            Optional<StockTransaction> storedTransaction =
+                ImyvmFinance.TRANSACTION_STORE.find(transactionId);
+            Optional<StoredOrder> storedOrder =
+                ImyvmFinance.TRADING_STORE.findOrder(transactionId);
+            if (storedTransaction.isEmpty() || storedOrder.isEmpty()) {
+                context.getSource().sendFailure(Translator.tr("commands.market.pending.not_found"));
+                return 0;
+            }
+
+            StockTransaction transaction = storedTransaction.get();
+            StoredOrder order = storedOrder.get();
+            if (confirm) {
+                if (transaction.state() == StockTransactionState.PENDING_MANUAL) {
+                    ImyvmFinance.TRANSACTION_STORE.transition(
+                        transactionId,
+                        StockTransactionState.FINANCE_CONFIRMED,
+                        "manual_confirmed",
+                        System.currentTimeMillis());
+                } else if (transaction.state() != StockTransactionState.FINANCE_CONFIRMED) {
+                    context.getSource().sendFailure(Translator.tr("commands.market.pending.not_pending"));
+                    return 0;
+                }
+                if (order.state() == com.imyvm.finance.trading.StockOrderState.PENDING_MANUAL) {
+                    if (transaction.operation() == StockOperation.BUY) {
+                        ImyvmFinance.TRADING_STORE.activateBuy(transactionId);
+                    } else if (order.positionId() != null) {
+                        ImyvmFinance.TRADING_STORE.activateSell(
+                            transactionId, order.positionId(), order.units());
+                    } else {
+                        context.getSource().sendFailure(Translator.tr("commands.market.pending.missing_position"));
+                        return 0;
+                    }
+                }
+                context.getSource().sendSuccess(
+                    () -> Translator.tr("commands.market.pending.confirmed", transactionId), false);
+                return Command.SINGLE_SUCCESS;
+            }
+
+            if (transaction.state() == StockTransactionState.PENDING_MANUAL) {
+                ImyvmFinance.TRANSACTION_STORE.transition(
+                    transactionId,
+                    StockTransactionState.CANCELLED,
+                    "manual_released",
+                    System.currentTimeMillis());
+            } else if (transaction.state() != StockTransactionState.CANCELLED) {
+                context.getSource().sendFailure(Translator.tr("commands.market.pending.not_pending"));
+                return 0;
+            }
+            if (order.state() == com.imyvm.finance.trading.StockOrderState.PENDING_MANUAL) {
+                if (transaction.operation() == StockOperation.BUY) {
+                    ImyvmFinance.TRADING_STORE.cancel(transactionId);
+                } else if (order.positionId() != null) {
+                    ImyvmFinance.TRADING_STORE.releaseSell(
+                        transactionId, order.positionId(), order.units());
+                } else {
+                    context.getSource().sendFailure(Translator.tr("commands.market.pending.missing_position"));
+                    return 0;
+                }
+            }
+            context.getSource().sendSuccess(
+                () -> Translator.tr("commands.market.pending.released", transactionId), false);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) {
+            context.getSource().sendFailure(Translator.tr("commands.market.pending.resolution_failed"));
+            return 0;
+        }
+    }
+
     private static int list(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         MutableComponent message = Component.empty()
             .append(Translator.tr("commands.market.list.header"));

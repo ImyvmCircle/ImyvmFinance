@@ -33,5 +33,12 @@
   "imyvm_finance.commands.market.history.item": "{0} {1} | {2} 单位 | 结算 {3} | 状态 {4} | {5}",
   "imyvm_finance.commands.market.pending.storage_unavailable": "人工处理队列不可用。",
   "imyvm_finance.commands.market.pending.header": "待人工处理订单 {0} 条：",
-  "imyvm_finance.commands.market.pending.item": "玩家 {0} | {1} | {2} 单位 | 金额 {3} | 事务 {4} | {5}"
+  "imyvm_finance.commands.market.pending.item": "玩家 {0} | {1} | {2} 单位 | 金额 {3} | 事务 {4} | {5}",
+  "imyvm_finance.commands.market.pending.invalid_transaction": "事务 ID 无效。",
+  "imyvm_finance.commands.market.pending.not_found": "找不到对应的股票事务或订单。",
+  "imyvm_finance.commands.market.pending.not_pending": "该事务当前不可执行此人工操作。",
+  "imyvm_finance.commands.market.pending.missing_position": "卖出事务缺少持仓关联，不能自动释放或确认。",
+  "imyvm_finance.commands.market.pending.resolution_failed": "人工处理失败，股票状态保持待处理，请检查日志。",
+  "imyvm_finance.commands.market.pending.confirmed": "已确认事务 {0}，仅完成 Finance 股票状态。",
+  "imyvm_finance.commands.market.pending.released": "已释放事务 {0}，仅释放 Finance 股票状态。"
 }

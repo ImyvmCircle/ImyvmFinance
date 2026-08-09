@@ -9,6 +9,7 @@ public record StoredOrder(
     UUID orderId,
     UUID playerId,
     UUID transactionId,
+    UUID positionId,
     Instrument instrument,
     long units,
     long amount,
