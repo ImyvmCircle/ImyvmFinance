@@ -50,6 +50,17 @@ processResources {
 	}
 }
 
+tasks.register("financeSelfTest", JavaExec) {
+	dependsOn testClasses
+	classpath = sourceSets.test.runtimeClasspath
+	mainClass = "com.imyvm.finance.FinanceSelfTest"
+}
+
+test {
+	dependsOn financeSelfTest
+	failOnNoDiscoveredTests = false
+}
+
 tasks.withType(JavaCompile).configureEach {
 	options.release = 25
 }
