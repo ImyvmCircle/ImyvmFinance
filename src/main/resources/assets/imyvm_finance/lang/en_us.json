@@ -1,0 +1,4 @@
+{
+  "imyvm_finance.commands.market.list.header": "Available instruments:",
+  "imyvm_finance.commands.market.list.item": "{0} ({1})"
+}

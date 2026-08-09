@@ -1,0 +1,4 @@
+{
+  "imyvm_finance.commands.market.list.header": "可交易标的：",
+  "imyvm_finance.commands.market.list.item": "{0}（{1}）"
+}
