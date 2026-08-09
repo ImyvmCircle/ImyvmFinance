@@ -139,11 +139,12 @@ public final class StockTransactionStore implements AutoCloseable {
         return switch (current) {
             case PREPARED ->
                 next == StockTransactionState.ECONOMY_CONFIRMED
-                    || next == StockTransactionState.PENDING_MANUAL;
+                    || next == StockTransactionState.PENDING_MANUAL
+                    || next == StockTransactionState.CANCELLED;
             case ECONOMY_CONFIRMED ->
                 next == StockTransactionState.FINANCE_CONFIRMED
                     || next == StockTransactionState.PENDING_MANUAL;
-            case FINANCE_CONFIRMED, PENDING_MANUAL -> false;
+            case FINANCE_CONFIRMED, PENDING_MANUAL, CANCELLED -> false;
         };
     }
 

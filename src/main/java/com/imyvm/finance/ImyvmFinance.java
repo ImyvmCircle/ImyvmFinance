@@ -3,6 +3,7 @@ package com.imyvm.finance;
 import com.imyvm.finance.market.MarketCommands;
 import com.imyvm.finance.storage.QuoteSnapshotStore;
 import com.imyvm.finance.storage.StockTransactionStore;
+import com.imyvm.finance.economy.StockEconomySettlement;
 import com.imyvm.finance.quote.QuoteRefreshService;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -18,6 +19,7 @@ public final class ImyvmFinance implements ModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
     public static QuoteSnapshotStore QUOTE_STORE;
     public static StockTransactionStore TRANSACTION_STORE;
+    public static StockEconomySettlement ECONOMY_SETTLEMENT;
     public static QuoteRefreshService QUOTE_REFRESHER;
 
     @Override
@@ -28,6 +30,7 @@ public final class ImyvmFinance implements ModInitializer {
                 .resolve("finance.db");
             QUOTE_STORE = QuoteSnapshotStore.open(databasePath);
             TRANSACTION_STORE = StockTransactionStore.open(databasePath);
+            ECONOMY_SETTLEMENT = new StockEconomySettlement(TRANSACTION_STORE);
         } catch (Exception exception) {
             LOGGER.error("Finance storage is unavailable", exception);
         }
@@ -51,6 +54,7 @@ public final class ImyvmFinance implements ModInitializer {
             QUOTE_REFRESHER.close();
             QUOTE_REFRESHER = null;
         }
+        ECONOMY_SETTLEMENT = null;
         if (TRANSACTION_STORE != null) {
             try {
                 TRANSACTION_STORE.close();

@@ -4,5 +4,6 @@ public enum StockTransactionState {
     PREPARED,
     ECONOMY_CONFIRMED,
     FINANCE_CONFIRMED,
-    PENDING_MANUAL
+    PENDING_MANUAL,
+    CANCELLED
 }
