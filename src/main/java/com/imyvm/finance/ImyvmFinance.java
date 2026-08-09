@@ -2,6 +2,7 @@ package com.imyvm.finance;
 
 import com.imyvm.finance.market.MarketCommands;
 import com.imyvm.finance.storage.QuoteSnapshotStore;
+import com.imyvm.finance.quote.QuoteRefreshService;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.api.ModInitializer;
@@ -15,6 +16,7 @@ public final class ImyvmFinance implements ModInitializer {
     public static final String MOD_ID = "imyvm_finance";
     private static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
     public static QuoteSnapshotStore QUOTE_STORE;
+    public static QuoteRefreshService QUOTE_REFRESHER;
 
     @Override
     public void onInitialize() {
@@ -28,11 +30,24 @@ public final class ImyvmFinance implements ModInitializer {
         }
 
         CommandRegistrationCallback.EVENT.register(MarketCommands::register);
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> startQuoteRefresh());
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> closeQuoteStore());
         LOGGER.info("Initializing Imyvm Finance");
     }
 
+    private static void startQuoteRefresh() {
+        if (QUOTE_STORE == null || QUOTE_REFRESHER != null)
+            return;
+
+        QUOTE_REFRESHER = new QuoteRefreshService(QUOTE_STORE);
+        QUOTE_REFRESHER.start();
+    }
+
     private static void closeQuoteStore() {
+        if (QUOTE_REFRESHER != null) {
+            QUOTE_REFRESHER.close();
+            QUOTE_REFRESHER = null;
+        }
         if (QUOTE_STORE == null)
             return;
 
