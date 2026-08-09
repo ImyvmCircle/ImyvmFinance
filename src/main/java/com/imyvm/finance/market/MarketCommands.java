@@ -340,7 +340,7 @@ public final class MarketCommands {
                 return 0;
             }
             TradeEstimate estimate = TradeCalculator.estimate(
-                TradeSide.BUY, storedQuote.get(), units, System.currentTimeMillis(), TradingRules.DEFAULT);
+                TradeSide.BUY, storedQuote.get(), units, System.currentTimeMillis(), ImyvmFinance.TRADING_RULES);
             context.getSource().sendSuccess(
                 () -> Translator.tr(
                     "commands.market.estimate.result",
@@ -398,7 +398,7 @@ public final class MarketCommands {
                 return 0;
             }
             TradeEstimate estimate = TradeCalculator.estimate(
-                TradeSide.SELL, storedQuote.get(), units, now, TradingRules.DEFAULT);
+                TradeSide.SELL, storedQuote.get(), units, now, ImyvmFinance.TRADING_RULES);
             TradeValidator.validateSell(
                 estimate,
                 new StockPositionView(
@@ -411,7 +411,7 @@ public final class MarketCommands {
                     position.earliestSellAtEpochMillis()),
                 now,
                 dailySellAmount(player.getUUID(), now),
-                TradingRules.DEFAULT);
+                ImyvmFinance.TRADING_RULES);
 
             UUID orderId = UUID.randomUUID();
             UUID transactionId = UUID.randomUUID();
@@ -519,7 +519,7 @@ public final class MarketCommands {
                 return 0;
             }
             TradeEstimate estimate = TradeCalculator.estimate(
-                TradeSide.BUY, storedQuote.get(), units, now, TradingRules.DEFAULT);
+                TradeSide.BUY, storedQuote.get(), units, now, ImyvmFinance.TRADING_RULES);
             ZoneId zone = ZoneId.systemDefault();
             LocalDate date = LocalDate.now(zone);
             long dayStart = date.atStartOfDay(zone).toInstant().toEpochMilli();
@@ -528,7 +528,7 @@ public final class MarketCommands {
                 estimate,
                 ImyvmFinance.TRADING_STORE.dailyBuyAmount(player.getUUID(), dayStart, dayEnd),
                 ImyvmFinance.TRADING_STORE.positionValue(player.getUUID()),
-                TradingRules.DEFAULT);
+                ImyvmFinance.TRADING_RULES);
 
             UUID orderId = UUID.randomUUID();
             UUID transactionId = UUID.randomUUID();
@@ -552,7 +552,7 @@ public final class MarketCommands {
                     transaction,
                     estimate,
                     now,
-                    now + TradingRules.DEFAULT.sellCooldownMillis());
+                    now + ImyvmFinance.TRADING_RULES.sellCooldownMillis());
             } catch (Exception exception) {
                 ImyvmFinance.TRANSACTION_STORE.transition(
                     transactionId, StockTransactionState.CANCELLED, "finance_prepare_failed", now);

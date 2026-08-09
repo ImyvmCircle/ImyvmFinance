@@ -19,6 +19,8 @@ public final class ImyvmFinance implements ModInitializer {
     public static final String MOD_ID = "imyvm_finance";
     private static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
     public static QuoteSnapshotStore QUOTE_STORE;
+    public static FinanceConfig CONFIG = FinanceConfig.defaults();
+    public static com.imyvm.finance.trading.TradingRules TRADING_RULES = CONFIG.tradingRules();
     public static StockTransactionStore TRANSACTION_STORE;
     public static StockTradingStore TRADING_STORE;
     public static StockEconomySettlement ECONOMY_SETTLEMENT;
@@ -27,6 +29,10 @@ public final class ImyvmFinance implements ModInitializer {
     @Override
     public void onInitialize() {
         try {
+            Path configPath = FabricLoader.getInstance().getConfigDir()
+                .resolve(MOD_ID + ".properties");
+            CONFIG = FinanceConfig.load(configPath);
+            TRADING_RULES = CONFIG.tradingRules();
             Path databasePath = FabricLoader.getInstance().getGameDir()
                 .resolve(MOD_ID)
                 .resolve("finance.db");
@@ -35,7 +41,9 @@ public final class ImyvmFinance implements ModInitializer {
             TRADING_STORE = StockTradingStore.open(databasePath);
             ECONOMY_SETTLEMENT = new StockEconomySettlement(TRANSACTION_STORE);
         } catch (Exception exception) {
-            LOGGER.error("Finance storage is unavailable", exception);
+            LOGGER.error("Finance configuration or storage is unavailable", exception);
+            CONFIG = FinanceConfig.defaults();
+            TRADING_RULES = CONFIG.tradingRules();
         }
 
         CommandRegistrationCallback.EVENT.register(MarketCommands::register);
@@ -48,7 +56,7 @@ public final class ImyvmFinance implements ModInitializer {
         if (QUOTE_STORE == null || QUOTE_REFRESHER != null)
             return;
 
-        QUOTE_REFRESHER = new QuoteRefreshService(QUOTE_STORE);
+        QUOTE_REFRESHER = new QuoteRefreshService(QUOTE_STORE, CONFIG);
         QUOTE_REFRESHER.start();
     }
 

@@ -1,0 +1,13 @@
+# Copy to the server config directory as imyvm_finance.properties.
+sidecar.endpoint=http://127.0.0.1:8765/quotes
+sidecar.connect-timeout-ms=1000
+sidecar.read-timeout-ms=2000
+sidecar.refresh-minutes=5
+trading.max-quote-age-hours=36
+trading.sell-cooldown-minutes=30
+trading.fee-bps=20
+trading.base-slippage-bps=10
+trading.daily-buy-limit=100000
+trading.daily-sell-limit=100000
+trading.position-value-limit=300000
+trading.min-units=1

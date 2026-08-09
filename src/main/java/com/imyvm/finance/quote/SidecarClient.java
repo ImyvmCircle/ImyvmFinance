@@ -25,21 +25,27 @@ public final class SidecarClient {
 
     private final HttpClient httpClient;
     private final URI endpoint;
+    private final Duration requestTimeout;
 
     public SidecarClient() {
-        this(DEFAULT_ENDPOINT);
+        this(DEFAULT_ENDPOINT, Duration.ofSeconds(1), Duration.ofSeconds(2));
     }
 
     public SidecarClient(URI endpoint) {
+        this(endpoint, Duration.ofSeconds(1), Duration.ofSeconds(2));
+    }
+
+    public SidecarClient(URI endpoint, Duration connectTimeout, Duration requestTimeout) {
         this.endpoint = endpoint;
+        this.requestTimeout = requestTimeout;
         this.httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(1))
+            .connectTimeout(connectTimeout)
             .build();
     }
 
     public CompletableFuture<QuoteSnapshot> fetch() {
         HttpRequest request = HttpRequest.newBuilder(endpoint)
-            .timeout(Duration.ofSeconds(2))
+            .timeout(requestTimeout)
             .header("Accept", "application/json")
             .GET()
             .build();

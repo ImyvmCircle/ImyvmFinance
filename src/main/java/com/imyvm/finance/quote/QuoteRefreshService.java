@@ -1,6 +1,7 @@
 package com.imyvm.finance.quote;
 
 import com.imyvm.finance.storage.QuoteSnapshotStore;
+import com.imyvm.finance.FinanceConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -11,17 +12,24 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class QuoteRefreshService implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger("imyvm_finance/quotes");
-    private static final long REFRESH_MINUTES = 5;
-
-    private final QuoteSnapshotStore store;
+        private final QuoteSnapshotStore store;
     private final SidecarClient client;
     private final ScheduledExecutorService executor;
     private final AtomicBoolean refreshing = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final long refreshMinutes;
 
     public QuoteRefreshService(QuoteSnapshotStore store) {
+        this(store, FinanceConfig.defaults());
+    }
+
+    public QuoteRefreshService(QuoteSnapshotStore store, FinanceConfig config) {
         this.store = store;
-        this.client = new SidecarClient();
+        this.client = new SidecarClient(
+            config.sidecarEndpoint(),
+            config.sidecarConnectTimeout(),
+            config.sidecarReadTimeout());
+        this.refreshMinutes = config.quoteRefreshMinutes();
         this.executor = Executors.newSingleThreadScheduledExecutor(task -> {
             Thread thread = new Thread(task, "imyvm-finance-quotes");
             thread.setDaemon(true);
@@ -30,7 +38,7 @@ public final class QuoteRefreshService implements AutoCloseable {
     }
 
     public void start() {
-        executor.scheduleWithFixedDelay(this::refresh, 0, REFRESH_MINUTES, TimeUnit.MINUTES);
+        executor.scheduleWithFixedDelay(this::refresh, 0, refreshMinutes, TimeUnit.MINUTES);
     }
 
     private void refresh() {
