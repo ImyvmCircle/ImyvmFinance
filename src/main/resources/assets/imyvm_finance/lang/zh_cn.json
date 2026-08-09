@@ -16,5 +16,9 @@
   "imyvm_finance.commands.market.trade.sell_cooldown": "该股票仓位在 {0} 前不能卖出。",
   "imyvm_finance.commands.market.trade.same_snapshot": "该仓位尚未跨过新的成功行情快照。",
   "imyvm_finance.commands.market.trade.daily_sell_limit": "股票每日卖出额度将超限。",
-  "imyvm_finance.commands.market.trade.amount_too_large": "请求的股票数量过大。"
+  "imyvm_finance.commands.market.trade.amount_too_large": "请求的股票数量过大。",
+  "imyvm_finance.commands.market.buy.storage_unavailable": "股票交易存储不可用。",
+  "imyvm_finance.commands.market.buy.insufficient_balance": "余额不足，股票成本为 {0}。",
+  "imyvm_finance.commands.market.buy.pending_manual": "该股票买入待人工处理，暂不可交易。",
+  "imyvm_finance.commands.market.buy.success": "已买入 {0} 的 {1} 单位，成本 {2}，成交价 {3}，手续费 {4}，快照 {5}。"
 }

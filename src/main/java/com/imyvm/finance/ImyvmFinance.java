@@ -3,6 +3,7 @@ package com.imyvm.finance;
 import com.imyvm.finance.market.MarketCommands;
 import com.imyvm.finance.storage.QuoteSnapshotStore;
 import com.imyvm.finance.storage.StockTransactionStore;
+import com.imyvm.finance.storage.StockTradingStore;
 import com.imyvm.finance.economy.StockEconomySettlement;
 import com.imyvm.finance.quote.QuoteRefreshService;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -19,6 +20,7 @@ public final class ImyvmFinance implements ModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
     public static QuoteSnapshotStore QUOTE_STORE;
     public static StockTransactionStore TRANSACTION_STORE;
+    public static StockTradingStore TRADING_STORE;
     public static StockEconomySettlement ECONOMY_SETTLEMENT;
     public static QuoteRefreshService QUOTE_REFRESHER;
 
@@ -30,6 +32,7 @@ public final class ImyvmFinance implements ModInitializer {
                 .resolve("finance.db");
             QUOTE_STORE = QuoteSnapshotStore.open(databasePath);
             TRANSACTION_STORE = StockTransactionStore.open(databasePath);
+            TRADING_STORE = StockTradingStore.open(databasePath);
             ECONOMY_SETTLEMENT = new StockEconomySettlement(TRANSACTION_STORE);
         } catch (Exception exception) {
             LOGGER.error("Finance storage is unavailable", exception);
@@ -55,6 +58,15 @@ public final class ImyvmFinance implements ModInitializer {
             QUOTE_REFRESHER = null;
         }
         ECONOMY_SETTLEMENT = null;
+        if (TRADING_STORE != null) {
+            try {
+                TRADING_STORE.close();
+            } catch (Exception exception) {
+                LOGGER.error("Failed to close finance trading storage", exception);
+            } finally {
+                TRADING_STORE = null;
+            }
+        }
         if (TRANSACTION_STORE != null) {
             try {
                 TRANSACTION_STORE.close();

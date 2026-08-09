@@ -16,5 +16,9 @@
   "imyvm_finance.commands.market.trade.sell_cooldown": "This stock position cannot be sold before {0}.",
   "imyvm_finance.commands.market.trade.same_snapshot": "The position has not crossed a successful quote snapshot.",
   "imyvm_finance.commands.market.trade.daily_sell_limit": "The stock daily sell limit would be exceeded.",
-  "imyvm_finance.commands.market.trade.amount_too_large": "The requested stock amount is too large."
+  "imyvm_finance.commands.market.trade.amount_too_large": "The requested stock amount is too large.",
+  "imyvm_finance.commands.market.buy.storage_unavailable": "Stock trading storage is unavailable.",
+  "imyvm_finance.commands.market.buy.insufficient_balance": "Insufficient balance for the stock cost of {0}.",
+  "imyvm_finance.commands.market.buy.pending_manual": "This stock buy is pending manual handling and is unavailable for trading.",
+  "imyvm_finance.commands.market.buy.success": "Bought {1} units of {0} for {2}, execution price {3}, fee {4}, snapshot {5}."
 }
