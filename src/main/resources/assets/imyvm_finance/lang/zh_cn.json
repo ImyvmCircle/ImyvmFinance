@@ -24,5 +24,14 @@
   "imyvm_finance.commands.market.sell.invalid_position": "该股票仓位无效或不属于你。",
   "imyvm_finance.commands.market.sell.storage_unavailable": "股票交易存储不可用。",
   "imyvm_finance.commands.market.sell.pending_manual": "该股票卖出待人工处理，份额仍保持锁定。",
-  "imyvm_finance.commands.market.sell.success": "已卖出 {0} 的 {1} 单位，到账 {2}，成交价 {3}，手续费 {4}，快照 {5}。"
+  "imyvm_finance.commands.market.sell.success": "已卖出 {0} 的 {1} 单位，到账 {2}，成交价 {3}，手续费 {4}，快照 {5}。",
+  "imyvm_finance.commands.market.positions.storage_unavailable": "股票持仓存储不可用。",
+  "imyvm_finance.commands.market.positions.header": "当前持仓 {0} 条：",
+  "imyvm_finance.commands.market.positions.item": "{0} | 可用 {1} 单位 | 冻结 {2} 单位 | 状态 {3} | 持仓ID {4}",
+  "imyvm_finance.commands.market.history.storage_unavailable": "股票成交历史不可用。",
+  "imyvm_finance.commands.market.history.header": "最近成交 {0} 条：",
+  "imyvm_finance.commands.market.history.item": "{0} {1} | {2} 单位 | 结算 {3} | 状态 {4} | {5}",
+  "imyvm_finance.commands.market.pending.storage_unavailable": "人工处理队列不可用。",
+  "imyvm_finance.commands.market.pending.header": "待人工处理订单 {0} 条：",
+  "imyvm_finance.commands.market.pending.item": "玩家 {0} | {1} | {2} 单位 | 金额 {3} | 事务 {4} | {5}"
 }

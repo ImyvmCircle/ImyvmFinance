@@ -3,6 +3,8 @@ package com.imyvm.finance.market;
 import com.imyvm.finance.Translator;
 import com.imyvm.finance.ImyvmFinance;
 import com.imyvm.finance.storage.StoredQuote;
+import com.imyvm.finance.storage.StoredOrder;
+import com.imyvm.finance.storage.StoredTrade;
 import com.imyvm.finance.storage.StoredPosition;
 import com.imyvm.finance.economy.EconomySettlementResult;
 import com.imyvm.finance.transaction.StockOperation;
@@ -24,11 +26,13 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.server.permissions.Permissions;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Optional;
+import java.time.Instant;
 import java.util.UUID;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -59,14 +63,118 @@ public final class MarketCommands {
                 .then(Commands.argument("units", LongArgumentType.longArg(1))
                     .executes(MarketCommands::estimate)));
 
+        var positions = Commands.literal("positions")
+            .requires(CommandSourceStack::isPlayer)
+            .executes(MarketCommands::positions);
+
+        var history = Commands.literal("history")
+            .requires(CommandSourceStack::isPlayer)
+            .executes(MarketCommands::history);
+
+        var pending = Commands.literal("pending")
+            .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
+            .executes(MarketCommands::pending);
+
         dispatcher.register(Commands.literal("market")
             .then(Commands.literal("list")
                 .executes(MarketCommands::list))
             .then(Commands.literal("quote")
                 .then(Commands.argument("symbol", StringArgumentType.word())
                     .executes(MarketCommands::quote)))
+            .then(buy)
             .then(sell)
-            .then(estimate));
+            .then(estimate)
+            .then(positions)
+            .then(history)
+            .then(pending));
+    }
+
+    private static int positions(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (ImyvmFinance.TRADING_STORE == null) {
+            context.getSource().sendFailure(Translator.tr("commands.market.positions.storage_unavailable"));
+            return 0;
+        }
+        ServerPlayer player = context.getSource().getPlayer();
+        try {
+            java.util.List<StoredPosition> positions =
+                ImyvmFinance.TRADING_STORE.findPositions(player.getUUID());
+            context.getSource().sendSuccess(
+                () -> Translator.tr("commands.market.positions.header", positions.size()), false);
+            for (StoredPosition position : positions) {
+                context.getSource().sendSuccess(
+                    () -> Translator.tr(
+                        "commands.market.positions.item",
+                        position.instrument().symbol(),
+                        position.remainingUnits() - position.frozenUnits(),
+                        position.frozenUnits(),
+                        position.state().name(),
+                        position.positionId()),
+                    false);
+            }
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) {
+            context.getSource().sendFailure(Translator.tr("commands.market.positions.storage_unavailable"));
+            return 0;
+        }
+    }
+
+    private static int history(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (ImyvmFinance.TRADING_STORE == null) {
+            context.getSource().sendFailure(Translator.tr("commands.market.history.storage_unavailable"));
+            return 0;
+        }
+        ServerPlayer player = context.getSource().getPlayer();
+        try {
+            java.util.List<StoredTrade> trades =
+                ImyvmFinance.TRADING_STORE.findRecentTrades(player.getUUID(), 10);
+            context.getSource().sendSuccess(
+                () -> Translator.tr("commands.market.history.header", trades.size()), false);
+            for (StoredTrade trade : trades) {
+                context.getSource().sendSuccess(
+                    () -> Translator.tr(
+                        "commands.market.history.item",
+                        trade.side().name(),
+                        trade.instrument().symbol(),
+                        trade.units(),
+                        trade.settlementAmount(),
+                        trade.state().name(),
+                        Instant.ofEpochMilli(trade.createdAtEpochMillis())),
+                    false);
+            }
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) {
+            context.getSource().sendFailure(Translator.tr("commands.market.history.storage_unavailable"));
+            return 0;
+        }
+    }
+
+    private static int pending(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (ImyvmFinance.TRADING_STORE == null) {
+            context.getSource().sendFailure(Translator.tr("commands.market.pending.storage_unavailable"));
+            return 0;
+        }
+        try {
+            java.util.List<StoredOrder> orders =
+                ImyvmFinance.TRADING_STORE.findPendingManualOrders();
+            context.getSource().sendSuccess(
+                () -> Translator.tr("commands.market.pending.header", orders.size()), false);
+            for (StoredOrder order : orders) {
+                context.getSource().sendSuccess(
+                    () -> Translator.tr(
+                        "commands.market.pending.item",
+                        order.playerId(),
+                        order.instrument().symbol(),
+                        order.units(),
+                        order.amount(),
+                        order.transactionId(),
+                        Instant.ofEpochMilli(order.createdAtEpochMillis())),
+                    false);
+            }
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) {
+            context.getSource().sendFailure(Translator.tr("commands.market.pending.storage_unavailable"));
+            return 0;
+        }
     }
 
     private static int list(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {

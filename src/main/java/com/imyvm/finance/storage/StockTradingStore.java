@@ -3,6 +3,7 @@ package com.imyvm.finance.storage;
 import com.imyvm.finance.market.Instrument;
 import com.imyvm.finance.trading.StockOrderState;
 import com.imyvm.finance.trading.StockTradeState;
+import com.imyvm.finance.trading.TradeSide;
 import com.imyvm.finance.trading.TradeEstimate;
 import com.imyvm.finance.transaction.StockTransaction;
 
@@ -15,6 +16,8 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 import java.sql.Statement;
 import java.util.UUID;
 
@@ -247,6 +250,114 @@ public final class StockTradingStore implements AutoCloseable {
                     result.getLong("earliest_sell_at"),
                     StockOrderState.valueOf(result.getString("state"))));
             }
+        }
+    }
+
+    public synchronized List<StoredPosition> findPositions(UUID playerId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            SELECT position_id, player_id, symbol, remaining_units, frozen_units,
+                   position_value, buy_snapshot_id, bought_at, earliest_sell_at, state
+            FROM stock_positions
+            WHERE player_id = ? AND state IN (?, ?, ?)
+            ORDER BY bought_at ASC
+            """)) {
+            statement.setString(1, playerId.toString());
+            statement.setString(2, StockOrderState.ACTIVE.name());
+            statement.setString(3, StockOrderState.PENDING_FINANCE.name());
+            statement.setString(4, StockOrderState.PENDING_MANUAL.name());
+            List<StoredPosition> positions = new ArrayList<>();
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    Instrument instrument = Instrument.fromSymbol(result.getString("symbol"));
+                    if (instrument == null)
+                        throw new SQLException("position contains a non-whitelisted symbol");
+                    positions.add(new StoredPosition(
+                        UUID.fromString(result.getString("position_id")),
+                        UUID.fromString(result.getString("player_id")),
+                        instrument,
+                        result.getLong("remaining_units"),
+                        result.getLong("frozen_units"),
+                        result.getLong("position_value"),
+                        result.getString("buy_snapshot_id"),
+                        result.getLong("bought_at"),
+                        result.getLong("earliest_sell_at"),
+                        StockOrderState.valueOf(result.getString("state"))));
+                }
+            }
+            return positions;
+        }
+    }
+
+    public synchronized List<StoredTrade> findRecentTrades(UUID playerId, int limit) throws SQLException {
+        if (limit < 1)
+            throw new IllegalArgumentException("trade history limit must be positive");
+        limit = Math.min(limit, 20);
+        try (PreparedStatement statement = connection.prepareStatement("""
+            SELECT trade_id, order_id, player_id, symbol, side, units,
+                   execution_price_scaled, gross_amount, fee_amount,
+                   settlement_amount, snapshot_id, state, created_at
+            FROM stock_trades
+            WHERE player_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """)) {
+            statement.setString(1, playerId.toString());
+            statement.setInt(2, limit);
+            List<StoredTrade> trades = new ArrayList<>();
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    Instrument instrument = Instrument.fromSymbol(result.getString("symbol"));
+                    if (instrument == null)
+                        throw new SQLException("trade contains a non-whitelisted symbol");
+                    trades.add(new StoredTrade(
+                        UUID.fromString(result.getString("trade_id")),
+                        UUID.fromString(result.getString("order_id")),
+                        UUID.fromString(result.getString("player_id")),
+                        instrument,
+                        TradeSide.valueOf(result.getString("side")),
+                        result.getLong("units"),
+                        result.getLong("execution_price_scaled"),
+                        result.getLong("gross_amount"),
+                        result.getLong("fee_amount"),
+                        result.getLong("settlement_amount"),
+                        result.getString("snapshot_id"),
+                        StockTradeState.valueOf(result.getString("state")),
+                        result.getLong("created_at")));
+                }
+            }
+            return trades;
+        }
+    }
+
+    public synchronized List<StoredOrder> findPendingManualOrders() throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            SELECT order_id, player_id, transaction_id, symbol, units, amount,
+                   snapshot_id, state, created_at
+            FROM stock_orders
+            WHERE state = ?
+            ORDER BY created_at ASC
+            LIMIT 100
+            """)) {
+            statement.setString(1, StockOrderState.PENDING_MANUAL.name());
+            List<StoredOrder> orders = new ArrayList<>();
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next()) {
+                    Instrument instrument = Instrument.fromSymbol(result.getString("symbol"));
+                    if (instrument == null)
+                        throw new SQLException("order contains a non-whitelisted symbol");
+                    orders.add(new StoredOrder(
+                        UUID.fromString(result.getString("order_id")),
+                        UUID.fromString(result.getString("player_id")),
+                        UUID.fromString(result.getString("transaction_id")),
+                        instrument,
+                        result.getLong("units"),
+                        result.getLong("amount"),
+                        result.getString("snapshot_id"),
+                        StockOrderState.valueOf(result.getString("state")),
+                        result.getLong("created_at")));
+                }
+            }
+            return orders;
         }
     }
 
