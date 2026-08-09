@@ -1,4 +1,8 @@
 {
   "imyvm_finance.commands.market.list.header": "可交易标的：",
-  "imyvm_finance.commands.market.list.item": "{0}（{1}）"
+  "imyvm_finance.commands.market.list.item": "{0}（{1}）",
+  "imyvm_finance.commands.market.quote.unknown_symbol": "未知标的。",
+  "imyvm_finance.commands.market.quote.storage_unavailable": "金融行情存储不可用。",
+  "imyvm_finance.commands.market.quote.unavailable": "{0} 暂无已确认行情。",
+  "imyvm_finance.commands.market.quote.result": "{0}：{1}，涨跌 {2}，来源 {3}"
 }

@@ -1,4 +1,8 @@
 {
   "imyvm_finance.commands.market.list.header": "Available instruments:",
-  "imyvm_finance.commands.market.list.item": "{0} ({1})"
+  "imyvm_finance.commands.market.list.item": "{0} ({1})",
+  "imyvm_finance.commands.market.quote.unknown_symbol": "Unknown instrument.",
+  "imyvm_finance.commands.market.quote.storage_unavailable": "Finance quote storage is unavailable.",
+  "imyvm_finance.commands.market.quote.unavailable": "No confirmed quote is available for {0}.",
+  "imyvm_finance.commands.market.quote.result": "{0}: {1}, change {2}, source {3}"
 }

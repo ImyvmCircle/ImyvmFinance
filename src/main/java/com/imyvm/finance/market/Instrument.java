@@ -29,4 +29,12 @@ public enum Instrument {
     public String market() {
         return market;
     }
+
+    public static Instrument fromSymbol(String symbol) {
+        for (Instrument instrument : values()) {
+            if (instrument.symbol.equalsIgnoreCase(symbol))
+                return instrument;
+        }
+        return null;
+    }
 }

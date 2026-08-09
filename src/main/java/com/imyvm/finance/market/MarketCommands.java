@@ -1,13 +1,20 @@
 package com.imyvm.finance.market;
 
 import com.imyvm.finance.Translator;
+import com.imyvm.finance.ImyvmFinance;
+import com.imyvm.finance.storage.StoredQuote;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.Optional;
 
 import java.util.function.Supplier;
 
@@ -20,7 +27,10 @@ public final class MarketCommands {
                                 Commands.CommandSelection environment) {
         dispatcher.register(Commands.literal("market")
             .then(Commands.literal("list")
-                .executes(MarketCommands::list)));
+                .executes(MarketCommands::list))
+            .then(Commands.literal("quote")
+                .then(Commands.argument("symbol", StringArgumentType.word())
+                    .executes(MarketCommands::quote))));
     }
 
     private static int list(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
@@ -36,5 +46,52 @@ public final class MarketCommands {
 
         context.getSource().sendSuccess((Supplier<Component>) () -> message, false);
         return Command.SINGLE_SUCCESS;
+    }
+
+    private static int quote(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        Instrument instrument = Instrument.fromSymbol(StringArgumentType.getString(context, "symbol"));
+        if (instrument == null) {
+            context.getSource().sendFailure(Translator.tr("commands.market.quote.unknown_symbol"));
+            return 0;
+        }
+
+        if (ImyvmFinance.QUOTE_STORE == null) {
+            context.getSource().sendFailure(Translator.tr("commands.market.quote.storage_unavailable"));
+            return 0;
+        }
+
+        Optional<StoredQuote> storedQuote;
+        try {
+            storedQuote = ImyvmFinance.QUOTE_STORE.findLatest(instrument);
+        } catch (Exception exception) {
+            context.getSource().sendFailure(Translator.tr("commands.market.quote.storage_unavailable"));
+            return 0;
+        }
+
+        if (storedQuote.isEmpty()) {
+            context.getSource().sendFailure(Translator.tr("commands.market.quote.unavailable", instrument.symbol()));
+            return 0;
+        }
+
+        StoredQuote quote = storedQuote.get();
+        context.getSource().sendSuccess(
+            () -> Translator.tr(
+                "commands.market.quote.result",
+                quote.quote().instrument().symbol(),
+                formatPrice(quote.quote().priceScaled()),
+                formatPercent(quote.quote().changeBps()),
+                quote.source()),
+            false);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static String formatPrice(long priceScaled) {
+        return BigDecimal.valueOf(priceScaled, 4).stripTrailingZeros().toPlainString();
+    }
+
+    private static String formatPercent(long changeBps) {
+        return BigDecimal.valueOf(changeBps, 2)
+            .setScale(2, RoundingMode.UNNECESSARY)
+            .toPlainString() + "%";
     }
 }
