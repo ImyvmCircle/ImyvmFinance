@@ -57,6 +57,7 @@ _calendar_lock = threading.Lock()
 _calendars: dict[str, Any] = {}
 
 _cache_lock = threading.Lock()
+_quote_request_slots = threading.BoundedSemaphore(1)
 _cache: tuple[float, dict[str, Any]] | None = None
 
 
@@ -197,14 +198,13 @@ def fetch_snapshot() -> dict[str, Any]:
 
 def cached_snapshot(cache_seconds: float) -> dict[str, Any]:
     global _cache
-    now = time.monotonic()
     with _cache_lock:
+        now = time.monotonic()
         if _cache is not None and now - _cache[0] < cache_seconds:
             return _cache[1]
-    snapshot = fetch_snapshot()
-    with _cache_lock:
+        snapshot = fetch_snapshot()
         _cache = (time.monotonic(), snapshot)
-    return snapshot
+        return snapshot
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -217,10 +217,15 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/quotes":
             self._send(404, {"error": "not found"})
             return
+        if not _quote_request_slots.acquire(blocking=False):
+            self._send(503, {"error": "quote refresh is in progress"})
+            return
         try:
             self._send(200, cached_snapshot(self.cache_seconds))
         except Exception as exc:
             self._send(503, {"error": str(exc)})
+        finally:
+            _quote_request_slots.release()
     
     def _send(self, status: int, body: dict[str, Any]) -> None:
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
