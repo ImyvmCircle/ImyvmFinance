@@ -130,6 +130,28 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         }
     }
 
+    public synchronized Optional<StoredQuote> find(Instrument instrument, String snapshotId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            SELECT s.snapshot_id, s.source, s.fetched_at, s.market_time,
+                   q.name, q.price_scaled, q.change_bps, q.market_status
+            FROM market_quotes q
+            JOIN market_snapshots s ON s.snapshot_id = q.snapshot_id
+            WHERE q.symbol = ? AND s.snapshot_id = ?
+            """)) {
+            statement.setString(1, instrument.symbol());
+            statement.setString(2, snapshotId);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next())
+                    return Optional.empty();
+                return Optional.of(new StoredQuote(
+                    result.getString("snapshot_id"), result.getString("source"),
+                    result.getLong("fetched_at"), result.getLong("market_time"),
+                    new MarketQuote(instrument, result.getString("name"), result.getLong("price_scaled"),
+                        result.getLong("change_bps"), MarketStatus.parse(result.getString("market_status")))));
+            }
+        }
+    }
+
     public synchronized void pruneBefore(long cutoffEpochMillis) throws SQLException {
         boolean oldAutoCommit = connection.getAutoCommit();
         connection.setAutoCommit(false);

@@ -6,6 +6,7 @@
   "imyvm_finance.commands.market.quote.unavailable": "No confirmed quote is available for {0}.",
   "imyvm_finance.commands.market.quote.result": "{0}: {1}, change {2}, source {3}",
   "imyvm_finance.commands.market.estimate.result": "Estimate {0}: {1} units at {2}, fee {3}, total {4}, slippage {5} bps, snapshot {6}",
+  "imyvm_finance.commands.market.estimate.confirm": "[Confirm purchase at this quote]",
   "imyvm_finance.commands.market.trade.invalid_units": "The minimum trade size is {0} units.",
   "imyvm_finance.commands.market.trade.market_not_open": "{0} is not open for trading.",
   "imyvm_finance.commands.market.trade.quote_stale": "The quote for {0} is too old for trading.",

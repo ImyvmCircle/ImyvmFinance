@@ -27,6 +27,7 @@ import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.permissions.Permissions;
 import net.minecraft.server.level.ServerPlayer;
@@ -66,6 +67,13 @@ public final class MarketCommands {
                 .then(Commands.argument("units", LongArgumentType.longArg(1))
                     .executes(MarketCommands::estimate)));
 
+        var confirm = Commands.literal("confirm")
+            .requires(CommandSourceStack::isPlayer)
+            .then(Commands.argument("symbol", StringArgumentType.word())
+                .then(Commands.argument("units", LongArgumentType.longArg(1))
+                    .then(Commands.argument("snapshotId", StringArgumentType.word())
+                        .executes(MarketCommands::confirmBuy))));
+
         var positions = Commands.literal("positions")
             .requires(CommandSourceStack::isPlayer)
             .executes(context -> positions(context, 1L))
@@ -97,6 +105,7 @@ public final class MarketCommands {
             .then(buy)
             .then(sell)
             .then(estimate)
+            .then(confirm)
             .then(positions)
             .then(history)
             .then(pending));
@@ -389,6 +398,11 @@ public final class MarketCommands {
                     estimate.slippageBps(),
                     estimate.snapshotId()),
                 false);
+            String command = "/market confirm " + estimate.instrument().symbol() + " " + estimate.units()
+                + " " + estimate.snapshotId();
+            MutableComponent confirmation = Translator.tr("commands.market.estimate.confirm").copy()
+                .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(command)));
+            context.getSource().sendSuccess(() -> confirmation, false);
             return Command.SINGLE_SUCCESS;
         } catch (TradeValidationException exception) {
             context.getSource().sendFailure(
@@ -535,7 +549,15 @@ public final class MarketCommands {
             date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli());
     }
 
+    private static int confirmBuy(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        return buy(context, StringArgumentType.getString(context, "snapshotId"));
+    }
+
     private static int buy(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        return buy(context, null);
+    }
+
+    private static int buy(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, String snapshotId) {
         ServerPlayer player = context.getSource().getPlayer();
         Instrument instrument = Instrument.fromSymbol(StringArgumentType.getString(context, "symbol"));
         long units = LongArgumentType.getLong(context, "units");
@@ -553,7 +575,9 @@ public final class MarketCommands {
 
         long now = System.currentTimeMillis();
         try {
-            Optional<StoredQuote> storedQuote = ImyvmFinance.QUOTE_STORE.findLatest(instrument);
+            Optional<StoredQuote> storedQuote = snapshotId == null
+                ? ImyvmFinance.QUOTE_STORE.findLatest(instrument)
+                : ImyvmFinance.QUOTE_STORE.find(instrument, snapshotId);
             if (storedQuote.isEmpty()) {
                 context.getSource().sendFailure(Translator.tr("commands.market.quote.unavailable", instrument.symbol()));
                 return 0;
