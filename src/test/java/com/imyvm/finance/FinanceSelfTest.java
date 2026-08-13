@@ -45,12 +45,14 @@ public final class FinanceSelfTest {
             checkEquals("http://127.0.0.1:8765/quotes",
                 defaults.sidecarEndpoint().toString(), "default endpoint");
             checkEquals(5L, defaults.quoteRefreshMinutes(), "default refresh");
+            checkEquals(20L, defaults.briefingIntervalMinutes(), "default briefing interval");
 
             Properties properties = new Properties();
             properties.setProperty("sidecar.endpoint", "http://127.0.0.1:9000/quotes");
             properties.setProperty("sidecar.connect-timeout-ms", "1500");
             properties.setProperty("sidecar.read-timeout-ms", "3500");
             properties.setProperty("sidecar.refresh-minutes", "7");
+            properties.setProperty("briefing.interval-minutes", "30");
             properties.setProperty("trading.fee-bps", "25");
             properties.setProperty("trading.min-units", "2");
             try (var writer = Files.newBufferedWriter(config)) {
@@ -63,6 +65,7 @@ public final class FinanceSelfTest {
             checkEquals(1500L, overridden.sidecarConnectTimeout().toMillis(), "connect timeout");
             checkEquals(3500L, overridden.sidecarReadTimeout().toMillis(), "read timeout");
             checkEquals(7L, overridden.quoteRefreshMinutes(), "custom refresh");
+            checkEquals(30L, overridden.briefingIntervalMinutes(), "custom briefing interval");
             checkEquals(25, overridden.tradingRules().feeBps(), "custom fee");
             checkEquals(2L, overridden.tradingRules().minUnits(), "custom minimum units");
         } finally {

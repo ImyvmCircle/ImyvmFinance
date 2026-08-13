@@ -4,6 +4,13 @@ import com.imyvm.finance.market.MarketCommands;
 import com.imyvm.finance.storage.QuoteSnapshotStore;
 import com.imyvm.finance.storage.StockTransactionStore;
 import com.imyvm.finance.storage.StockTradingStore;
+import com.imyvm.finance.storage.StoredQuote;
+import com.imyvm.finance.market.Instrument;
+import com.imyvm.finance.market.MarketStatus;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
 import com.imyvm.finance.economy.StockEconomySettlement;
 import com.imyvm.finance.quote.QuoteRefreshService;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -30,6 +37,7 @@ public final class ImyvmFinance implements ModInitializer {
     public static QuoteRefreshService QUOTE_REFRESHER;
     private static final long RETENTION_MILLIS = Duration.ofDays(30).toMillis();
     private static long nextRetentionCleanupAt;
+    private static long nextBriefingAt;
 
     @Override
     public void onInitialize() {
@@ -55,9 +63,13 @@ public final class ImyvmFinance implements ModInitializer {
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             recoverInterruptedTransactions();
             pruneExpiredData();
+            nextBriefingAt = System.currentTimeMillis() + Duration.ofMinutes(CONFIG.briefingIntervalMinutes()).toMillis();
             startQuoteRefresh();
         });
-        ServerTickEvents.END_SERVER_TICK.register(server -> pruneExpiredData());
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            pruneExpiredData();
+            sendMarketBriefing(server);
+        });
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
             notifyPendingSettlement(handler.getPlayer()));
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> closeQuoteStore());
@@ -107,6 +119,60 @@ public final class ImyvmFinance implements ModInitializer {
         } catch (Exception exception) {
             LOGGER.error("Failed to read pending finance settlements for {}", player.getUUID(), exception);
         }
+    }
+
+    private static void sendMarketBriefing(net.minecraft.server.MinecraftServer server) {
+        long now = System.currentTimeMillis();
+        if (now < nextBriefingAt || QUOTE_STORE == null || TRADING_STORE == null)
+            return;
+        nextBriefingAt = now + Duration.ofMinutes(CONFIG.briefingIntervalMinutes()).toMillis();
+        MutableComponent briefing = Component.empty().append(Translator.tr("commands.market.briefing.header"));
+        for (String market : new String[]{"CN", "HK", "US", "JP", "KR"}) {
+            MutableComponent line = Component.empty().append("\n").append(Translator.tr("commands.market.briefing.market", market));
+            for (Instrument instrument : Instrument.values()) {
+                if (!instrument.market().equals(market))
+                    continue;
+                try {
+                    java.util.Optional<StoredQuote> stored = QUOTE_STORE.findLatest(instrument);
+                    if (stored.isEmpty())
+                        continue;
+                    StoredQuote quote = stored.get();
+                    boolean tradable = quote.quote().status() == MarketStatus.OPEN
+                        && TRADING_STORE.isGlobalTradingEnabled() && TRADING_STORE.isTradingEnabled(instrument);
+                    Component name = Translator.tr("commands.market.briefing.instrument", instrument.symbol()).copy();
+                    if (tradable)
+                        name = name.copy().withStyle(style -> style
+                            .withClickEvent(new ClickEvent.RunCommand(
+                                "/market estimate " + instrument.symbol() + " " + TRADING_RULES.minUnits()))
+                            .withHoverEvent(new HoverEvent.ShowText(Translator.tr("commands.market.briefing.buy_hint")))
+                            .withUnderlined(true));
+                    line.append(Translator.tr("commands.market.briefing.item", name,
+                        formatPrice(quote.quote().priceScaled()), formatPercent(quote.quote().changeBps()),
+                        briefingStatus(quote, tradable)));
+                } catch (Exception exception) {
+                    LOGGER.warn("Failed to prepare market briefing for {}", instrument.symbol(), exception);
+                }
+            }
+            briefing.append(line);
+        }
+        for (var player : server.getPlayerList().getPlayers())
+            player.sendSystemMessage(briefing);
+    }
+
+    private static Component briefingStatus(StoredQuote quote, boolean tradable) {
+        if (tradable)
+            return Translator.tr("commands.market.briefing.status.open");
+        if (quote.quote().status() == MarketStatus.OPEN)
+            return Translator.tr("commands.market.briefing.status.paused");
+        return Translator.tr("commands.market.briefing.status." + quote.quote().status().name().toLowerCase());
+    }
+
+    private static String formatPrice(long priceScaled) {
+        return java.math.BigDecimal.valueOf(priceScaled, 4).stripTrailingZeros().toPlainString();
+    }
+
+    private static String formatPercent(long changeBps) {
+        return java.math.BigDecimal.valueOf(changeBps, 2).setScale(2).toPlainString() + "%";
     }
 
     private static void startQuoteRefresh() {
