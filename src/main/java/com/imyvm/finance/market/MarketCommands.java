@@ -21,6 +21,8 @@ import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -32,6 +34,7 @@ import net.minecraft.server.level.ServerPlayer;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.time.Instant;
 import java.util.UUID;
 import java.time.LocalDate;
@@ -71,9 +74,17 @@ public final class MarketCommands {
             .requires(CommandSourceStack::isPlayer)
             .executes(MarketCommands::history);
 
+        var pendingTransactionId = Commands.argument("transactionId", StringArgumentType.word())
+            .suggests(MarketCommands::suggestPendingTransactionIds);
         var pending = Commands.literal("pending")
             .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
-            .executes(MarketCommands::pending);
+            .executes(MarketCommands::pending)
+            .then(Commands.literal("confirm")
+                .then(pendingTransactionId.executes(MarketCommands::confirmPending)))
+            .then(Commands.literal("release")
+                .then(Commands.argument("transactionId", StringArgumentType.word())
+                    .suggests(MarketCommands::suggestPendingTransactionIds)
+                    .executes(MarketCommands::releasePending)));
 
         dispatcher.register(Commands.literal("market")
             .then(Commands.literal("list")
@@ -175,6 +186,21 @@ public final class MarketCommands {
             context.getSource().sendFailure(Translator.tr("commands.market.pending.storage_unavailable"));
             return 0;
         }
+    }
+
+    private static CompletableFuture<Suggestions> suggestPendingTransactionIds(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        SuggestionsBuilder builder
+    ) {
+        if (ImyvmFinance.TRADING_STORE == null)
+            return builder.buildFuture();
+        try {
+            for (StoredOrder order : ImyvmFinance.TRADING_STORE.findPendingManualOrders())
+                builder.suggest(order.transactionId().toString());
+        } catch (Exception exception) {
+            return builder.buildFuture();
+        }
+        return builder.buildFuture();
     }
 
     private static int confirmPending(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
