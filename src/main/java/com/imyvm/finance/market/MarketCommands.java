@@ -68,7 +68,9 @@ public final class MarketCommands {
 
         var positions = Commands.literal("positions")
             .requires(CommandSourceStack::isPlayer)
-            .executes(MarketCommands::positions);
+            .executes(context -> positions(context, 1L))
+            .then(Commands.argument("page", LongArgumentType.longArg(1))
+                .executes(context -> positions(context, LongArgumentType.getLong(context, "page"))));
 
         var history = Commands.literal("history")
             .requires(CommandSourceStack::isPlayer)
@@ -100,17 +102,26 @@ public final class MarketCommands {
             .then(pending));
     }
 
-    private static int positions(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+    private static int positions(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        long page
+    ) {
         if (ImyvmFinance.TRADING_STORE == null) {
             context.getSource().sendFailure(Translator.tr("commands.market.positions.storage_unavailable"));
             return 0;
         }
         ServerPlayer player = context.getSource().getPlayer();
         try {
+            long total = ImyvmFinance.TRADING_STORE.positionCount(player.getUUID());
+            long pageCount = Math.max(1L, (total + 9L) / 10L);
+            if (page > pageCount) {
+                context.getSource().sendFailure(Translator.tr("commands.market.positions.page_unavailable", pageCount));
+                return 0;
+            }
             java.util.List<StoredPosition> positions =
-                ImyvmFinance.TRADING_STORE.findPositions(player.getUUID());
+                ImyvmFinance.TRADING_STORE.findPositions(player.getUUID(), 10L, (page - 1L) * 10L);
             context.getSource().sendSuccess(
-                () -> Translator.tr("commands.market.positions.header", positions.size()), false);
+                () -> Translator.tr("commands.market.positions.header", total, page, pageCount), false);
             for (StoredPosition position : positions) {
                 context.getSource().sendSuccess(
                     () -> Translator.tr(

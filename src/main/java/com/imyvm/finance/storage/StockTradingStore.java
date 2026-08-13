@@ -284,18 +284,40 @@ public final class StockTradingStore implements AutoCloseable {
         }
     }
 
+    public synchronized long positionCount(UUID playerId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT COUNT(*) FROM stock_positions WHERE player_id = ? AND state IN (?, ?, ?)")) {
+            statement.setString(1, playerId.toString());
+            statement.setString(2, StockOrderState.ACTIVE.name());
+            statement.setString(3, StockOrderState.PENDING_FINANCE.name());
+            statement.setString(4, StockOrderState.PENDING_MANUAL.name());
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() ? result.getLong(1) : 0L;
+            }
+        }
+    }
+
     public synchronized List<StoredPosition> findPositions(UUID playerId) throws SQLException {
+        return findPositions(playerId, 100L, 0L);
+    }
+
+    public synchronized List<StoredPosition> findPositions(UUID playerId, long limit, long offset) throws SQLException {
+        if (limit < 1 || limit > 100 || offset < 0)
+            throw new IllegalArgumentException("position page is invalid");
+
         try (PreparedStatement statement = connection.prepareStatement("""
             SELECT position_id, player_id, symbol, remaining_units, frozen_units,
                    position_value, buy_snapshot_id, bought_at, earliest_sell_at, state
             FROM stock_positions
             WHERE player_id = ? AND state IN (?, ?, ?)
             ORDER BY bought_at ASC
+            LIMIT ? OFFSET ?
             """)) {
             statement.setString(1, playerId.toString());
             statement.setString(2, StockOrderState.ACTIVE.name());
             statement.setString(3, StockOrderState.PENDING_FINANCE.name());
             statement.setString(4, StockOrderState.PENDING_MANUAL.name());
+            statement.setLong(5, limit);
+            statement.setLong(6, offset);
             List<StoredPosition> positions = new ArrayList<>();
             try (ResultSet result = statement.executeQuery()) {
                 while (result.next()) {
