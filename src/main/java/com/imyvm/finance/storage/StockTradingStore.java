@@ -735,7 +735,6 @@ public final class StockTradingStore implements AutoCloseable {
             SELECT COALESCE(SUM(position_value), 0)
             FROM stock_positions
             WHERE player_id = ? AND state IN (?, ?, ?)
-              AND remaining_units > frozen_units
             """)) {
             statement.setString(1, playerId.toString());
             statement.setString(2, StockOrderState.ACTIVE.name());

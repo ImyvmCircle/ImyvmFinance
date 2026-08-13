@@ -196,6 +196,18 @@ public final class FinanceSelfTest {
             checkEquals(StockOrderState.CANCELLED,
                 trading.findOrder(manualTransactionId).orElseThrow().state(),
                 "released order state");
+
+            UUID heldOrderId = UUID.randomUUID();
+            UUID heldTransactionId = UUID.randomUUID();
+            StockTransaction heldSell = transaction(
+                heldTransactionId, player, StockOperation.SELL, heldOrderId, 5_928L, 8L);
+            TradeEstimate heldEstimate =
+                estimate(TradeSide.SELL, 60L, "held-snapshot", 9_900L, 5_940L, 12L, 5_928L);
+            transactions.createPrepared(heldSell);
+            trading.createPendingSell(
+                heldOrderId, UUID.randomUUID(), positionId, heldSell, heldEstimate, 8L);
+            checkEquals(6_000L, trading.positionValue(player),
+                "frozen position still counts toward exposure");
         } finally {
             if (trading != null)
                 trading.close();
