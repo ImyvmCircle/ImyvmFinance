@@ -91,6 +91,11 @@ public final class StockTradingStore implements AutoCloseable {
                 )
                 """);
             statement.execute("""
+                CREATE TABLE IF NOT EXISTS trading_halts (
+                    scope TEXT PRIMARY KEY
+                )
+                """);
+            statement.execute("""
                 CREATE INDEX IF NOT EXISTS stock_orders_player_state_idx
                 ON stock_orders(player_id, state)
                 """);
@@ -127,6 +132,39 @@ public final class StockTradingStore implements AutoCloseable {
             statement.execute("PRAGMA journal_mode = WAL");
         }
         return new StockTradingStore(connection);
+    }
+
+    public synchronized boolean isGlobalTradingEnabled() throws SQLException {
+        return !isTradingHalted("GLOBAL");
+    }
+
+    public synchronized boolean isTradingEnabled(Instrument instrument) throws SQLException {
+        return !isTradingHalted(instrument.symbol());
+    }
+
+    public synchronized void setGlobalTradingEnabled(boolean enabled) throws SQLException {
+        setTradingEnabled("GLOBAL", enabled);
+    }
+
+    public synchronized void setTradingEnabled(Instrument instrument, boolean enabled) throws SQLException {
+        setTradingEnabled(instrument.symbol(), enabled);
+    }
+
+    private boolean isTradingHalted(String scope) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT 1 FROM trading_halts WHERE scope = ?")) {
+            statement.setString(1, scope);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
+    }
+
+    private void setTradingEnabled(String scope, boolean enabled) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+            enabled ? "DELETE FROM trading_halts WHERE scope = ?" : "INSERT OR IGNORE INTO trading_halts(scope) VALUES (?)")) {
+            statement.setString(1, scope);
+            statement.executeUpdate();
+        }
     }
 
     public synchronized void createPendingBuy(UUID orderId,

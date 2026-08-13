@@ -127,6 +127,17 @@ public final class FinanceSelfTest {
             trading = StockTradingStore.open(database);
             transactions = StockTransactionStore.open(database);
 
+            check(trading.isGlobalTradingEnabled(), "global trading defaults enabled");
+            check(trading.isTradingEnabled(Instrument.CN_000001), "instrument trading defaults enabled");
+            trading.setGlobalTradingEnabled(false);
+            trading.setTradingEnabled(Instrument.CN_000001, false);
+            check(!trading.isGlobalTradingEnabled(), "global trading is persisted as halted");
+            check(!trading.isTradingEnabled(Instrument.CN_000001), "instrument trading is persisted as halted");
+            trading.setGlobalTradingEnabled(true);
+            trading.setTradingEnabled(Instrument.CN_000001, true);
+            check(trading.isGlobalTradingEnabled(), "global trading resumes");
+            check(trading.isTradingEnabled(Instrument.CN_000001), "instrument trading resumes");
+
             UUID player = UUID.randomUUID();
             UUID positionId = createActiveBuy(trading, transactions, player, 100L);
             checkEquals(1, trading.findPositions(player).size(), "player position count");

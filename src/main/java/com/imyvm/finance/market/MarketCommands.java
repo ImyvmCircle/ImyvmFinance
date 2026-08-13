@@ -74,6 +74,20 @@ public final class MarketCommands {
                     .then(Commands.argument("snapshotId", StringArgumentType.word())
                         .executes(MarketCommands::confirmBuy))));
 
+        var tradingSymbol = Commands.argument("symbol", StringArgumentType.word())
+            .suggests(MarketCommands::suggestInstruments);
+        var trading = Commands.literal("trading")
+            .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
+            .then(Commands.literal("status")
+                .executes(MarketCommands::tradingStatus)
+                .then(tradingSymbol.executes(MarketCommands::tradingInstrumentStatus)))
+            .then(Commands.literal("enable")
+                .executes(context -> setTrading(context, true, null))
+                .then(tradingSymbol.executes(context -> setInstrumentTrading(context, true))))
+            .then(Commands.literal("disable")
+                .executes(context -> setTrading(context, false, null))
+                .then(tradingSymbol.executes(context -> setInstrumentTrading(context, false))));
+
         var positions = Commands.literal("positions")
             .requires(CommandSourceStack::isPlayer)
             .executes(context -> positions(context, 1L))
@@ -106,6 +120,7 @@ public final class MarketCommands {
             .then(sell)
             .then(estimate)
             .then(confirm)
+            .then(trading)
             .then(positions)
             .then(history)
             .then(pending));
@@ -208,6 +223,19 @@ public final class MarketCommands {
         }
     }
 
+    private static CompletableFuture<Suggestions> suggestInstruments(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        SuggestionsBuilder builder
+    ) {
+        for (Instrument instrument : Instrument.values())
+            builder.suggest(instrument.symbol());
+        return builder.buildFuture();
+    }
+
+    private static Instrument instrument(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        return Instrument.fromSymbol(StringArgumentType.getString(context, "symbol"));
+    }
+
     private static CompletableFuture<Suggestions> suggestPendingTransactionIds(
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
         SuggestionsBuilder builder
@@ -221,6 +249,96 @@ public final class MarketCommands {
             return builder.buildFuture();
         }
         return builder.buildFuture();
+    }
+
+    private static int tradingStatus(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (ImyvmFinance.TRADING_STORE == null) {
+            context.getSource().sendFailure(Translator.tr("commands.market.trading.storage_unavailable"));
+            return 0;
+        }
+        try {
+            boolean enabled = ImyvmFinance.TRADING_STORE.isGlobalTradingEnabled();
+            context.getSource().sendSuccess(
+                () -> Translator.tr(enabled
+                    ? "commands.market.trading.global.enabled"
+                    : "commands.market.trading.global.disabled"), false);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) {
+            context.getSource().sendFailure(Translator.tr("commands.market.trading.storage_unavailable"));
+            return 0;
+        }
+    }
+
+    private static int tradingInstrumentStatus(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        Instrument instrument = instrument(context);
+        if (instrument == null) {
+            context.getSource().sendFailure(Translator.tr("commands.market.quote.unknown_symbol"));
+            return 0;
+        }
+        if (ImyvmFinance.TRADING_STORE == null) {
+            context.getSource().sendFailure(Translator.tr("commands.market.trading.storage_unavailable"));
+            return 0;
+        }
+        try {
+            boolean enabled = ImyvmFinance.TRADING_STORE.isTradingEnabled(instrument);
+            context.getSource().sendSuccess(
+                () -> Translator.tr(enabled
+                    ? "commands.market.trading.instrument.enabled"
+                    : "commands.market.trading.instrument.disabled", instrument.symbol()), false);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) {
+            context.getSource().sendFailure(Translator.tr("commands.market.trading.storage_unavailable"));
+            return 0;
+        }
+    }
+
+    private static int setInstrumentTrading(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, boolean enabled
+    ) {
+        Instrument instrument = instrument(context);
+        if (instrument == null) {
+            context.getSource().sendFailure(Translator.tr("commands.market.quote.unknown_symbol"));
+            return 0;
+        }
+        return setTrading(context, enabled, instrument);
+    }
+
+    private static int setTrading(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, boolean enabled, Instrument instrument
+    ) {
+        if (ImyvmFinance.TRADING_STORE == null) {
+            context.getSource().sendFailure(Translator.tr("commands.market.trading.storage_unavailable"));
+            return 0;
+        }
+        try {
+            if (instrument == null) {
+                ImyvmFinance.TRADING_STORE.setGlobalTradingEnabled(enabled);
+                context.getSource().sendSuccess(() -> Translator.tr(enabled
+                    ? "commands.market.trading.global.enabled_by"
+                    : "commands.market.trading.global.disabled_by", context.getSource().getTextName()), true);
+            } else {
+                ImyvmFinance.TRADING_STORE.setTradingEnabled(instrument, enabled);
+                context.getSource().sendSuccess(() -> Translator.tr(enabled
+                    ? "commands.market.trading.instrument.enabled_by"
+                    : "commands.market.trading.instrument.disabled_by", instrument.symbol(), context.getSource().getTextName()), true);
+            }
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) {
+            context.getSource().sendFailure(Translator.tr("commands.market.trading.storage_unavailable"));
+            return 0;
+        }
+    }
+
+    private static boolean tradingEnabled(CommandSourceStack source, Instrument instrument) throws Exception {
+        if (!ImyvmFinance.TRADING_STORE.isGlobalTradingEnabled()) {
+            source.sendFailure(Translator.tr("commands.market.trade.disabled_global"));
+            return false;
+        }
+        if (!ImyvmFinance.TRADING_STORE.isTradingEnabled(instrument)) {
+            source.sendFailure(Translator.tr("commands.market.trade.disabled_instrument", instrument.symbol()));
+            return false;
+        }
+        return true;
     }
 
     private static int confirmPending(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
@@ -443,6 +561,8 @@ public final class MarketCommands {
                 return 0;
             }
             StoredPosition position = storedPosition.get();
+            if (!tradingEnabled(context.getSource(), position.instrument()))
+                return 0;
             Optional<StoredQuote> storedQuote = ImyvmFinance.QUOTE_STORE.findLatest(position.instrument());
             if (storedQuote.isEmpty()) {
                 context.getSource().sendFailure(Translator.tr("commands.market.quote.unavailable", position.instrument().symbol()));
@@ -575,6 +695,8 @@ public final class MarketCommands {
 
         long now = System.currentTimeMillis();
         try {
+            if (!tradingEnabled(context.getSource(), instrument))
+                return 0;
             Optional<StoredQuote> storedQuote = snapshotId == null
                 ? ImyvmFinance.QUOTE_STORE.findLatest(instrument)
                 : ImyvmFinance.QUOTE_STORE.find(instrument, snapshotId);
