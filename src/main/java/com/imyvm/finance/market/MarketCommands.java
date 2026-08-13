@@ -408,7 +408,9 @@ public final class MarketCommands {
                     position.remainingUnits(),
                     position.frozenUnits(),
                     position.buySnapshotId(),
+                    position.boughtAtEpochMillis(),
                     position.earliestSellAtEpochMillis()),
+                storedQuote.get().fetchedAtEpochMillis(),
                 now,
                 dailySellAmount(player.getUUID(), now),
                 ImyvmFinance.TRADING_RULES);

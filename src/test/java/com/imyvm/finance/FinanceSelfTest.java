@@ -9,6 +9,10 @@ import com.imyvm.finance.storage.StoredOrder;
 import com.imyvm.finance.trading.StockOrderState;
 import com.imyvm.finance.trading.TradeEstimate;
 import com.imyvm.finance.trading.TradeSide;
+import com.imyvm.finance.trading.TradeValidator;
+import com.imyvm.finance.trading.TradeValidationException;
+import com.imyvm.finance.trading.StockPositionView;
+import com.imyvm.finance.trading.TradingRules;
 import com.imyvm.finance.transaction.StockOperation;
 import com.imyvm.finance.transaction.StockTransaction;
 import com.imyvm.finance.transaction.StockTransactionState;
@@ -28,6 +32,7 @@ public final class FinanceSelfTest {
         configChecks();
         sidecarChecks();
         storageChecks();
+        tradingValidationChecks();
         System.out.println("FINANCE_SELF_TEST_OK");
     }
 
@@ -96,6 +101,21 @@ public final class FinanceSelfTest {
         checkEquals(30_001_234L, snapshot.quotes().getFirst().priceScaled(), "quote price scale");
         checkEquals(125L, snapshot.quotes().getFirst().changeBps(), "quote change scale");
         checkEquals(MarketStatus.OPEN, snapshot.quotes().getFirst().status(), "quote status");
+    }
+
+    private static void tradingValidationChecks() throws Exception {
+        TradeEstimate estimate = estimate(
+            TradeSide.SELL, 1L, "same-price", 100L, 10L, 1L, 9L);
+        StockPositionView position = new StockPositionView(
+            UUID.randomUUID(), UUID.randomUUID(), Instrument.CN_000001,
+            1L, 0L, "buy-snapshot", 100L, 0L);
+        try {
+            TradeValidator.validateSell(estimate, position, 100L, 101L, 0L, TradingRules.DEFAULT);
+            throw new AssertionError("sell accepted without a later quote");
+        } catch (TradeValidationException expected) {
+            checkEquals("commands.market.trade.same_snapshot", expected.messageKey(), "later quote check");
+        }
+        TradeValidator.validateSell(estimate, position, 101L, 101L, 0L, TradingRules.DEFAULT);
     }
 
     private static void storageChecks() throws Exception {

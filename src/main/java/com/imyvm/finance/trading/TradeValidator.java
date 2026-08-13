@@ -19,6 +19,7 @@ public final class TradeValidator {
 
     public static void validateSell(TradeEstimate estimate,
                                     StockPositionView position,
+                                    long quoteFetchedAtEpochMillis,
                                     long nowEpochMillis,
                                     long dailySellUsed,
                                     TradingRules rules)
@@ -33,7 +34,7 @@ public final class TradeValidator {
             throw new TradeValidationException(
                 "commands.market.trade.sell_cooldown",
                 position.earliestSellAtEpochMillis());
-        if (position.buySnapshotId().equals(estimate.snapshotId()))
+        if (quoteFetchedAtEpochMillis <= position.boughtAtEpochMillis())
             throw new TradeValidationException("commands.market.trade.same_snapshot");
         if (Math.addExact(dailySellUsed, estimate.settlementAmount()) > rules.dailySellLimit())
             throw new TradeValidationException("commands.market.trade.daily_sell_limit");

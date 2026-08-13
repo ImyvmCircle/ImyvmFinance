@@ -11,6 +11,7 @@ public record StockPositionView(
     long remainingUnits,
     long frozenUnits,
     String buySnapshotId,
+    long boughtAtEpochMillis,
     long earliestSellAtEpochMillis
 ) {
     public StockPositionView {
