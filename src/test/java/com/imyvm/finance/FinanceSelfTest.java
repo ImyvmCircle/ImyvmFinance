@@ -138,8 +138,12 @@ public final class FinanceSelfTest {
             transactions.createPrepared(manualSell);
             trading.createPendingSell(
                 manualOrderId, UUID.randomUUID(), positionId, manualSell, manualEstimate, 5L);
-            transactions.transition(
-                manualTransactionId, StockTransactionState.PENDING_MANUAL, "uncertain", 6L);
+            var pending = transactions.markPending(
+                manualTransactionId, "economy_credit", "IOException", 7L, 6L);
+            checkEquals("economy_credit", pending.failureStage(), "pending failure stage");
+            checkEquals("IOException", pending.failureReason(), "pending failure reason");
+            checkEquals(1, pending.retryCount(), "pending retry count");
+            checkEquals(7L, pending.nextRetryAtEpochMillis(), "pending retry time");
             trading.markSellPendingManual(manualTransactionId, positionId);
             StoredOrder order = trading.findOrder(manualTransactionId).orElseThrow();
             transactions.transition(

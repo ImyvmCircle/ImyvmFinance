@@ -450,8 +450,9 @@ public final class MarketCommands {
                 ImyvmFinance.TRADING_STORE.activateSell(transactionId, positionId, estimate.units());
             } catch (Exception exception) {
                 try {
-                    ImyvmFinance.TRANSACTION_STORE.transition(
-                        transactionId, StockTransactionState.PENDING_MANUAL, "finance_activation_uncertain", System.currentTimeMillis());
+                    ImyvmFinance.TRANSACTION_STORE.markPending(
+                        transactionId, "finance_activation", exception.getClass().getSimpleName(),
+                        null, System.currentTimeMillis());
                 } catch (Exception ignored) {
                 }
                 try {
@@ -579,8 +580,9 @@ public final class MarketCommands {
                 ImyvmFinance.TRADING_STORE.activateBuy(transactionId);
             } catch (Exception exception) {
                 try {
-                    ImyvmFinance.TRANSACTION_STORE.transition(
-                        transactionId, StockTransactionState.PENDING_MANUAL, "finance_activation_uncertain", System.currentTimeMillis());
+                    ImyvmFinance.TRANSACTION_STORE.markPending(
+                        transactionId, "finance_activation", exception.getClass().getSimpleName(),
+                        null, System.currentTimeMillis());
                 } catch (Exception ignored) {
                 }
                 try {

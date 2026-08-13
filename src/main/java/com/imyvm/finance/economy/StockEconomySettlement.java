@@ -87,11 +87,12 @@ public final class StockEconomySettlement {
                                                  String result,
                                                  Exception cause) {
         try {
-            StockTransactionState state = transactionStore.transition(
+            StockTransactionState state = transactionStore.markPending(
                 transaction.transactionId(),
-                StockTransactionState.PENDING_MANUAL,
-                result + ":" + cause.getClass().getSimpleName(),
-                System.currentTimeMillis()).state();
+                result,
+                cause.getClass().getSimpleName(),
+                null,
+                System.currentTimeMillis()).transaction().state();
             return new EconomySettlementResult(state, transaction.amount());
         } catch (Exception persistenceFailure) {
             LOGGER.error(

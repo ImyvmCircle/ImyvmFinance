@@ -13,6 +13,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Types;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -32,15 +33,46 @@ public final class StockTransactionStore implements AutoCloseable {
                     amount INTEGER NOT NULL,
                     state TEXT NOT NULL,
                     economy_result TEXT,
+                    failure_stage TEXT,
+                    failure_reason TEXT,
+                    retry_count INTEGER NOT NULL DEFAULT 0,
+                    next_retry_at INTEGER,
+                    external_reference TEXT,
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL
                 )
                 """);
+            ensureColumn(statement, "failure_stage", "failure_stage TEXT");
+            ensureColumn(statement, "failure_reason", "failure_reason TEXT");
+            ensureColumn(statement, "retry_count", "retry_count INTEGER NOT NULL DEFAULT 0");
+            ensureColumn(statement, "next_retry_at", "next_retry_at INTEGER");
+            ensureColumn(statement, "external_reference", "external_reference TEXT");
             statement.execute("""
                 CREATE INDEX IF NOT EXISTS stock_transactions_player_state_idx
                 ON stock_transactions(player_id, state)
                 """);
         }
+    }
+
+    public record PendingSettlement(
+        StockTransaction transaction,
+        String failureStage,
+        String failureReason,
+        int retryCount,
+        Long nextRetryAtEpochMillis,
+        String externalReference
+    ) {
+    }
+
+    private static void ensureColumn(Statement statement, String name, String definition)
+        throws SQLException {
+        try (ResultSet columns = statement.executeQuery("PRAGMA table_info(stock_transactions)")) {
+            while (columns.next()) {
+                if (name.equals(columns.getString("name")))
+                    return;
+            }
+        }
+        statement.execute("ALTER TABLE stock_transactions ADD COLUMN " + definition);
     }
 
     public static StockTransactionStore open(Path databasePath) throws Exception {
@@ -132,6 +164,78 @@ public final class StockTransactionStore implements AutoCloseable {
         }
 
         return find(transactionId).orElseThrow();
+    }
+
+    public synchronized PendingSettlement markPending(
+        UUID transactionId,
+        String failureStage,
+        String failureReason,
+        Long nextRetryAtEpochMillis,
+        long updatedAtEpochMillis
+    ) throws SQLException {
+        if (failureStage == null || failureStage.isBlank()
+            || failureReason == null || failureReason.isBlank())
+            throw new IllegalArgumentException("pending settlement details are required");
+
+        boolean oldAutoCommit = connection.getAutoCommit();
+        connection.setAutoCommit(false);
+        try (PreparedStatement statement = connection.prepareStatement("""
+            UPDATE stock_transactions
+            SET state = ?, economy_result = ?, failure_stage = ?, failure_reason = ?,
+                retry_count = retry_count + 1, next_retry_at = ?, updated_at = ?
+            WHERE transaction_id = ? AND state IN (?, ?, ?)
+            """)) {
+            statement.setString(1, StockTransactionState.PENDING_MANUAL.name());
+            statement.setString(2, failureStage + ":" + failureReason);
+            statement.setString(3, failureStage);
+            statement.setString(4, failureReason);
+            if (nextRetryAtEpochMillis == null)
+                statement.setNull(5, Types.BIGINT);
+            else
+                statement.setLong(5, nextRetryAtEpochMillis);
+            statement.setLong(6, updatedAtEpochMillis);
+            statement.setString(7, transactionId.toString());
+            statement.setString(8, StockTransactionState.PREPARED.name());
+            statement.setString(9, StockTransactionState.ECONOMY_CONFIRMED.name());
+            statement.setString(10, StockTransactionState.PENDING_MANUAL.name());
+            if (statement.executeUpdate() != 1)
+                throw new SQLException("stock transaction cannot be marked pending");
+            connection.commit();
+        } catch (SQLException exception) {
+            connection.rollback();
+            throw exception;
+        } finally {
+            connection.setAutoCommit(oldAutoCommit);
+        }
+
+        return findPendingSettlement(transactionId)
+            .orElseThrow(() -> new SQLException("pending settlement was not persisted"));
+    }
+
+    public synchronized Optional<PendingSettlement> findPendingSettlement(UUID transactionId)
+        throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            SELECT transaction_id, player_id, operation, reference_id, symbol, amount, state,
+                   economy_result, created_at, updated_at, failure_stage, failure_reason,
+                   retry_count, next_retry_at, external_reference
+            FROM stock_transactions
+            WHERE transaction_id = ? AND state = ?
+            """)) {
+            statement.setString(1, transactionId.toString());
+            statement.setString(2, StockTransactionState.PENDING_MANUAL.name());
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next())
+                    return Optional.empty();
+                long nextRetryAt = result.getLong("next_retry_at");
+                return Optional.of(new PendingSettlement(
+                    read(result),
+                    result.getString("failure_stage"),
+                    result.getString("failure_reason"),
+                    result.getInt("retry_count"),
+                    result.wasNull() ? null : nextRetryAt,
+                    result.getString("external_reference")));
+            }
+        }
     }
 
     private static boolean isAllowed(StockTransactionState current,
