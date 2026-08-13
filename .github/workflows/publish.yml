@@ -18,12 +18,12 @@ jobs:
 
       - name: Setup Java
         uses: actions/setup-java@v4
-      - name: make gradle wrapper executable
-        run: chmod +x ./gradlew
-
         with:
           distribution: 'temurin'
           java-version: '25'
+      - name: make gradle wrapper executable
+        run: chmod +x ./gradlew
+
 
       - name: Validate tag version
         run: |
