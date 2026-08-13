@@ -67,9 +67,11 @@ public final class StockTradingStore implements AutoCloseable {
                     buy_fee INTEGER NOT NULL,
                     bought_at INTEGER NOT NULL,
                     earliest_sell_at INTEGER NOT NULL,
+                    closed_at INTEGER,
                     state TEXT NOT NULL
                 )
                 """);
+            ensureColumn(statement, "closed_at", "closed_at INTEGER");
             statement.execute("""
                 CREATE TABLE IF NOT EXISTS stock_trades (
                     trade_id TEXT PRIMARY KEY,
@@ -101,6 +103,17 @@ public final class StockTradingStore implements AutoCloseable {
                 ON stock_trades(player_id, created_at)
                 """);
         }
+    }
+
+    private static void ensureColumn(Statement statement, String name, String definition)
+        throws SQLException {
+        try (ResultSet columns = statement.executeQuery("PRAGMA table_info(stock_positions)")) {
+            while (columns.next()) {
+                if (name.equals(columns.getString("name")))
+                    return;
+            }
+        }
+        statement.execute("ALTER TABLE stock_positions ADD COLUMN " + definition);
     }
 
     public static StockTradingStore open(Path databasePath) throws Exception {
@@ -503,15 +516,18 @@ public final class StockTradingStore implements AutoCloseable {
                     .longValueExact();
             try (PreparedStatement statement = connection.prepareStatement("""
                 UPDATE stock_positions
-                SET remaining_units = ?, frozen_units = ?, position_value = ?, state = ?
+                SET remaining_units = ?, frozen_units = ?, position_value = ?, state = ?,
+                    closed_at = CASE WHEN ? = 0 THEN ? ELSE closed_at END
                 WHERE position_id = ? AND frozen_units >= ?
                 """)) {
                 statement.setLong(1, remainingUnits);
                 statement.setLong(2, frozenUnits);
                 statement.setLong(3, positionValue);
                 statement.setString(4, remainingUnits == 0 ? StockOrderState.CLOSED.name() : StockOrderState.ACTIVE.name());
-                statement.setString(5, positionId.toString());
-                statement.setLong(6, units);
+                statement.setLong(5, remainingUnits);
+                statement.setLong(6, System.currentTimeMillis());
+                statement.setString(7, positionId.toString());
+                statement.setLong(8, units);
                 if (statement.executeUpdate() != 1)
                     throw new SQLException("stock position changed concurrently");
             }
@@ -552,6 +568,67 @@ public final class StockTradingStore implements AutoCloseable {
             throw exception;
         } finally {
             connection.setAutoCommit(oldAutoCommit);
+        }
+    }
+
+    public synchronized void pruneBefore(long cutoffEpochMillis) throws SQLException {
+        boolean oldAutoCommit = connection.getAutoCommit();
+        connection.setAutoCommit(false);
+        try {
+            deleteTradesBefore(cutoffEpochMillis);
+            deleteCancelledOrdersBefore(cutoffEpochMillis);
+            deleteClosedPositionsBefore(cutoffEpochMillis);
+            connection.commit();
+        } catch (SQLException exception) {
+            connection.rollback();
+            throw exception;
+        } finally {
+            connection.setAutoCommit(oldAutoCommit);
+        }
+    }
+
+    private void deleteTradesBefore(long cutoffEpochMillis) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            DELETE FROM stock_trades
+            WHERE created_at < ? AND state IN (?, ?)
+            """)) {
+            statement.setLong(1, cutoffEpochMillis);
+            statement.setString(2, StockTradeState.CONFIRMED.name());
+            statement.setString(3, StockTradeState.CANCELLED.name());
+            statement.executeUpdate();
+        }
+    }
+
+    private void deleteCancelledOrdersBefore(long cutoffEpochMillis) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            DELETE FROM stock_orders
+            WHERE created_at < ? AND state = ?
+            """)) {
+            statement.setLong(1, cutoffEpochMillis);
+            statement.setString(2, StockOrderState.CANCELLED.name());
+            statement.executeUpdate();
+        }
+    }
+
+    private void deleteClosedPositionsBefore(long cutoffEpochMillis) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            DELETE FROM stock_orders
+            WHERE position_id IN (
+                SELECT position_id FROM stock_positions
+                WHERE state = ? AND closed_at < ?
+            )
+            """)) {
+            statement.setString(1, StockOrderState.CLOSED.name());
+            statement.setLong(2, cutoffEpochMillis);
+            statement.executeUpdate();
+        }
+        try (PreparedStatement statement = connection.prepareStatement("""
+            DELETE FROM stock_positions
+            WHERE state = ? AND closed_at < ?
+            """)) {
+            statement.setString(1, StockOrderState.CLOSED.name());
+            statement.setLong(2, cutoffEpochMillis);
+            statement.executeUpdate();
         }
     }
 

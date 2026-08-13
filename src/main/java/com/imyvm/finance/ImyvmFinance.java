@@ -8,6 +8,7 @@ import com.imyvm.finance.economy.StockEconomySettlement;
 import com.imyvm.finance.quote.QuoteRefreshService;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.loader.api.FabricLoader;
@@ -15,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
+import java.time.Duration;
 
 public final class ImyvmFinance implements ModInitializer {
     public static final String MOD_ID = "imyvm_finance";
@@ -26,6 +28,8 @@ public final class ImyvmFinance implements ModInitializer {
     public static StockTradingStore TRADING_STORE;
     public static StockEconomySettlement ECONOMY_SETTLEMENT;
     public static QuoteRefreshService QUOTE_REFRESHER;
+    private static final long RETENTION_MILLIS = Duration.ofDays(30).toMillis();
+    private static long nextRetentionCleanupAt;
 
     @Override
     public void onInitialize() {
@@ -50,8 +54,10 @@ public final class ImyvmFinance implements ModInitializer {
         CommandRegistrationCallback.EVENT.register(MarketCommands::register);
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             recoverInterruptedTransactions();
+            pruneExpiredData();
             startQuoteRefresh();
         });
+        ServerTickEvents.END_SERVER_TICK.register(server -> pruneExpiredData());
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
             notifyPendingSettlement(handler.getPlayer()));
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> closeQuoteStore());
@@ -72,6 +78,22 @@ public final class ImyvmFinance implements ModInitializer {
             }
         } catch (Exception exception) {
             LOGGER.error("Failed to recover interrupted finance transactions", exception);
+        }
+    }
+
+    private static void pruneExpiredData() {
+        long now = System.currentTimeMillis();
+        if (now < nextRetentionCleanupAt)
+            return;
+        nextRetentionCleanupAt = now + RETENTION_MILLIS;
+        if (QUOTE_STORE == null || TRADING_STORE == null)
+            return;
+        try {
+            long cutoff = now - RETENTION_MILLIS;
+            QUOTE_STORE.pruneBefore(cutoff);
+            TRADING_STORE.pruneBefore(cutoff);
+        } catch (Exception exception) {
+            LOGGER.error("Failed to prune expired finance data", exception);
         }
     }
 

@@ -130,6 +130,50 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         }
     }
 
+    public synchronized void pruneBefore(long cutoffEpochMillis) throws SQLException {
+        boolean oldAutoCommit = connection.getAutoCommit();
+        connection.setAutoCommit(false);
+        try {
+            try (PreparedStatement quotes = connection.prepareStatement("""
+                DELETE FROM market_quotes
+                WHERE snapshot_id IN (
+                    SELECT snapshot_id FROM market_snapshots
+                    WHERE fetched_at < ? AND snapshot_id NOT IN (
+                        SELECT buy_snapshot_id FROM stock_positions WHERE state <> ?
+                        UNION
+                        SELECT snapshot_id FROM stock_orders WHERE state IN (?, ?)
+                    )
+                )
+                """)) {
+                quotes.setLong(1, cutoffEpochMillis);
+                quotes.setString(2, com.imyvm.finance.trading.StockOrderState.CLOSED.name());
+                quotes.setString(3, com.imyvm.finance.trading.StockOrderState.PENDING_FINANCE.name());
+                quotes.setString(4, com.imyvm.finance.trading.StockOrderState.PENDING_MANUAL.name());
+                quotes.executeUpdate();
+            }
+            try (PreparedStatement snapshots = connection.prepareStatement("""
+                DELETE FROM market_snapshots
+                WHERE fetched_at < ? AND snapshot_id NOT IN (
+                    SELECT buy_snapshot_id FROM stock_positions WHERE state <> ?
+                    UNION
+                    SELECT snapshot_id FROM stock_orders WHERE state IN (?, ?)
+                )
+                """)) {
+                snapshots.setLong(1, cutoffEpochMillis);
+                snapshots.setString(2, com.imyvm.finance.trading.StockOrderState.CLOSED.name());
+                snapshots.setString(3, com.imyvm.finance.trading.StockOrderState.PENDING_FINANCE.name());
+                snapshots.setString(4, com.imyvm.finance.trading.StockOrderState.PENDING_MANUAL.name());
+                snapshots.executeUpdate();
+            }
+            connection.commit();
+        } catch (SQLException exception) {
+            connection.rollback();
+            throw exception;
+        } finally {
+            connection.setAutoCommit(oldAutoCommit);
+        }
+    }
+
     @Override
     public synchronized void close() throws SQLException {
         connection.close();
