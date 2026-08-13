@@ -7,7 +7,7 @@
   "imyvm_finance.commands.market.quote.failed": "行情抓取失败，{0} 的交易将在十五分钟后停止。",
   "imyvm_finance.commands.market.quote.recovered": "行情抓取已恢复，{0} 可继续等待新报价。",
   "imyvm_finance.commands.market.quote.result": "{0}：{1}，涨跌 {2}，来源 {3}",
-  "imyvm_finance.commands.market.estimate.result": "估算 {0}：{1} 单位，成交价 {2}，手续费 {3}，总成本 {4}，滑点 {5} 基点，快照 {6}",
+  "imyvm_finance.commands.market.estimate.result": "估算 {0}：{1} 单位，成交价 {2}，手续费 {3}，总成本 {4}，滑点 {5} 基点",
   "imyvm_finance.commands.market.estimate.confirm": "[确认按此报价买入]",
   "imyvm_finance.commands.market.briefing.header": "[IMYVM 市场简报]",
   "imyvm_finance.commands.market.briefing.market": "{0}",
@@ -43,13 +43,13 @@
   "imyvm_finance.commands.market.buy.storage_unavailable": "股票交易存储不可用。",
   "imyvm_finance.commands.market.buy.insufficient_balance": "余额不足，股票成本为 {0}。",
   "imyvm_finance.commands.market.buy.pending_manual": "该股票买入待人工处理，暂不可交易。",
-  "imyvm_finance.commands.market.buy.success": "已买入 {0} 的 {1} 单位，成本 {2}，成交价 {3}，手续费 {4}，快照 {5}。",
+  "imyvm_finance.commands.market.buy.success": "已买入 {0} 的 {1} 单位，成本 {2}，成交价 {3}，手续费 {4}。",
   "imyvm_finance.commands.market.sell.invalid_position": "该股票仓位无效或不属于你。",
-  "imyvm_finance.commands.market.sell.estimate.result": "卖出估算 {0}：{1} 单位，到账 {2}，成交价 {3}，手续费 {4}，快照 {5}",
+  "imyvm_finance.commands.market.sell.estimate.result": "卖出估算 {0}：{1} 单位，到账 {2}，成交价 {3}，手续费 {4}",
   "imyvm_finance.commands.market.sell.estimate.confirm": "[确认按此报价卖出]",
   "imyvm_finance.commands.market.sell.storage_unavailable": "股票交易存储不可用。",
   "imyvm_finance.commands.market.sell.pending_manual": "该股票卖出待人工处理，份额仍保持锁定。",
-  "imyvm_finance.commands.market.sell.success": "已卖出 {0} 的 {1} 单位，到账 {2}，成交价 {3}，手续费 {4}，快照 {5}。",
+  "imyvm_finance.commands.market.sell.success": "已卖出 {0} 的 {1} 单位，到账 {2}，成交价 {3}，手续费 {4}。",
   "imyvm_finance.commands.market.positions.storage_unavailable": "股票持仓存储不可用。",
   "imyvm_finance.commands.market.positions.header": "当前持仓 {0} 条，第 {1}\/{2} 页：",
   "imyvm_finance.commands.market.positions.page_unavailable": "页码无效，最大页码为 {0}。",
@@ -68,5 +68,6 @@
   "imyvm_finance.commands.market.pending.resolution_failed": "人工处理失败，股票状态保持待处理，请检查日志。",
   "imyvm_finance.commands.market.pending.confirmed": "已确认事务 {0}，仅完成 Finance 股票状态。",
   "imyvm_finance.commands.market.pending.released": "已释放事务 {0}，仅释放 Finance 股票状态。",
-  "imyvm_finance.commands.market.pending.player_notice": "有 {0} 笔股票交易待管理员核对。"
+  "imyvm_finance.commands.market.pending.player_notice": "有 {0} 笔股票交易待管理员核对。",
+  "imyvm_finance.commands.market.confirmation.expired": "该确认已过期或已使用。"
 }

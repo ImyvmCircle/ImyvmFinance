@@ -13,6 +13,7 @@ import com.imyvm.finance.trading.TradeValidator;
 import com.imyvm.finance.trading.TradeValidationException;
 import com.imyvm.finance.trading.StockPositionView;
 import com.imyvm.finance.trading.TradingRules;
+import com.imyvm.finance.trading.TradeCalculator;
 import com.imyvm.finance.transaction.StockOperation;
 import com.imyvm.finance.transaction.StockTransaction;
 import com.imyvm.finance.transaction.StockTransactionState;
@@ -33,6 +34,7 @@ public final class FinanceSelfTest {
         sidecarChecks();
         storageChecks();
         tradingValidationChecks();
+        marketTimeChecks();
         System.out.println("FINANCE_SELF_TEST_OK");
     }
 
@@ -122,6 +124,22 @@ public final class FinanceSelfTest {
             checkEquals("commands.market.trade.same_snapshot", expected.messageKey(), "later quote check");
         }
         TradeValidator.validateSell(estimate, position, 101L, 101L, 0L, TradingRules.DEFAULT);
+    }
+
+    private static void marketTimeChecks() throws Exception {
+        var quote = new com.imyvm.finance.storage.StoredQuote(
+            "same-price", "test", 2_000L, 1_000L,
+            new com.imyvm.finance.market.MarketQuote(
+                Instrument.CN_000001, "SSE", 10_000L, 0L, MarketStatus.OPEN));
+        TradeCalculator.estimate(TradeSide.BUY, quote, 1L, 1_000L + TradingRules.DEFAULT.maxQuoteAgeMillis(),
+            TradingRules.DEFAULT);
+        try {
+            TradeCalculator.estimate(TradeSide.BUY, quote, 1L, 1_001L + TradingRules.DEFAULT.maxQuoteAgeMillis(),
+                TradingRules.DEFAULT);
+            throw new AssertionError("unchanged market quote was treated as fresh");
+        } catch (TradeValidationException expected) {
+            checkEquals("commands.market.trade.quote_stale", expected.messageKey(), "market time freshness");
+        }
     }
 
     private static void storageChecks() throws Exception {

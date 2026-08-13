@@ -69,8 +69,9 @@ _calendar_lock = threading.Lock()
 _calendars: dict[str, Any] = {}
 
 _cache_lock = threading.Lock()
-_quote_request_slots = threading.BoundedSemaphore(1)
 _cache: tuple[float, dict[str, Any]] | None = None
+_last_market_digest: str | None = None
+_last_market_time = 0
 _unavailable: set[str] = set()
 
 
@@ -240,6 +241,7 @@ def _fallback_missing(quotes: dict[str, dict[str, str]], now: datetime) -> None:
 
 
 def fetch_snapshot() -> dict[str, Any]:
+    global _last_market_digest, _last_market_time
     now = datetime.now(timezone.utc)
     ak = _akshare()
     quotes = _fetch_china_eastmoney(ak, now)
@@ -254,6 +256,9 @@ def fetch_snapshot() -> dict[str, Any]:
         json.dumps(ordered, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     ).hexdigest()[:16]
     timestamp = int(now.timestamp() * 1000)
+    if digest != _last_market_digest:
+        _last_market_digest = digest
+        _last_market_time = timestamp
     available = {quote_value["symbol"] for quote_value in ordered}
     failed = set(INSTRUMENTS) - available
     alerts = ["failed:" + symbol for symbol in sorted(failed - _unavailable)]
@@ -264,21 +269,29 @@ def fetch_snapshot() -> dict[str, Any]:
         "snapshotId": f"quotes-{timestamp}-{digest}",
         "source": "multi-source",
         "fetchedAt": timestamp,
-        "marketTime": timestamp,
+        "marketTime": _last_market_time,
         "quotes": ordered,
         "alerts": alerts,
     }
 
 
-def cached_snapshot(cache_seconds: float) -> dict[str, Any]:
-    global _cache
+def cached_snapshot() -> dict[str, Any]:
     with _cache_lock:
-        now = time.monotonic()
-        if _cache is not None and now - _cache[0] < cache_seconds:
-            return _cache[1]
-        snapshot = fetch_snapshot()
-        _cache = (time.monotonic(), snapshot)
-        return snapshot
+        if _cache is None:
+            raise RuntimeError("quote cache is not ready")
+        return _cache[1]
+
+
+def refresh_loop(refresh_seconds: float) -> None:
+    global _cache
+    while True:
+        try:
+            snapshot = fetch_snapshot()
+            with _cache_lock:
+                _cache = (time.monotonic(), snapshot)
+        except Exception as exc:
+            print(f"[sidecar] quote refresh failed: {exc}")
+        time.sleep(max(1.0, refresh_seconds))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -291,15 +304,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/quotes":
             self._send(404, {"error": "not found"})
             return
-        if not _quote_request_slots.acquire(blocking=False):
-            self._send(503, {"error": "quote refresh is in progress"})
-            return
         try:
-            self._send(200, cached_snapshot(self.cache_seconds))
+            self._send(200, cached_snapshot())
         except Exception as exc:
             self._send(503, {"error": str(exc)})
-        finally:
-            _quote_request_slots.release()
     
     def _send(self, status: int, body: dict[str, Any]) -> None:
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -320,6 +328,7 @@ def main() -> None:
     parser.add_argument("--cache-seconds", type=float, default=60.0)
     args = parser.parse_args()
     Handler.cache_seconds = max(0.0, args.cache_seconds)
+    threading.Thread(target=refresh_loop, args=(Handler.cache_seconds,), daemon=True).start()
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"ImyvmFinance quote sidecar listening on http://{args.host}:{args.port}")
     try:

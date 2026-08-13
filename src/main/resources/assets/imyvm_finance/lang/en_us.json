@@ -7,7 +7,7 @@
   "imyvm_finance.commands.market.quote.failed": "Quote retrieval failed; trading for {0} stops in fifteen minutes.",
   "imyvm_finance.commands.market.quote.recovered": "Quote retrieval recovered for {0}.",
   "imyvm_finance.commands.market.quote.result": "{0}: {1}, change {2}, source {3}",
-  "imyvm_finance.commands.market.estimate.result": "Estimate {0}: {1} units at {2}, fee {3}, total {4}, slippage {5} bps, snapshot {6}",
+  "imyvm_finance.commands.market.estimate.result": "Estimate {0}: {1} units at {2}, fee {3}, total {4}, slippage {5} bps",
   "imyvm_finance.commands.market.estimate.confirm": "[Confirm purchase at this quote]",
   "imyvm_finance.commands.market.briefing.header": "[IMYVM Market Briefing]",
   "imyvm_finance.commands.market.briefing.market": "{0}",
@@ -43,13 +43,13 @@
   "imyvm_finance.commands.market.buy.storage_unavailable": "Stock trading storage is unavailable.",
   "imyvm_finance.commands.market.buy.insufficient_balance": "Insufficient balance for the stock cost of {0}.",
   "imyvm_finance.commands.market.buy.pending_manual": "This stock buy is pending manual handling and is unavailable for trading.",
-  "imyvm_finance.commands.market.buy.success": "Bought {1} units of {0} for {2}, execution price {3}, fee {4}, snapshot {5}.",
+  "imyvm_finance.commands.market.buy.success": "Bought {1} units of {0} for {2}, execution price {3}, fee {4}.",
   "imyvm_finance.commands.market.sell.invalid_position": "This stock position is invalid or does not belong to you.",
-  "imyvm_finance.commands.market.sell.estimate.result": "Sell estimate {0}: {1} units, proceeds {2}, execution price {3}, fee {4}, snapshot {5}",
+  "imyvm_finance.commands.market.sell.estimate.result": "Sell estimate {0}: {1} units, proceeds {2}, execution price {3}, fee {4}",
   "imyvm_finance.commands.market.sell.estimate.confirm": "[Confirm sale at this quote]",
   "imyvm_finance.commands.market.sell.storage_unavailable": "Stock trading storage is unavailable.",
   "imyvm_finance.commands.market.sell.pending_manual": "This stock sell is pending manual handling; its units remain locked.",
-  "imyvm_finance.commands.market.sell.success": "Sold {1} units of {0} for {2}, execution price {3}, fee {4}, snapshot {5}.",
+  "imyvm_finance.commands.market.sell.success": "Sold {1} units of {0} for {2}, execution price {3}, fee {4}.",
   "imyvm_finance.commands.market.positions.storage_unavailable": "Stock position storage is unavailable.",
   "imyvm_finance.commands.market.positions.header": "Current positions ({0}), page {1}\/{2}:",
   "imyvm_finance.commands.market.positions.page_unavailable": "Invalid page; the highest page is {0}.",
@@ -68,5 +68,6 @@
   "imyvm_finance.commands.market.pending.resolution_failed": "Manual handling failed; the stock state remains pending. Check the log.",
   "imyvm_finance.commands.market.pending.confirmed": "Transaction {0} confirmed; only Finance stock state was completed.",
   "imyvm_finance.commands.market.pending.released": "Transaction {0} released; only Finance stock state was released.",
-  "imyvm_finance.commands.market.pending.player_notice": "{0} stock transactions are awaiting administrator review."
+  "imyvm_finance.commands.market.pending.player_notice": "{0} stock transactions are awaiting administrator review.",
+  "imyvm_finance.commands.market.confirmation.expired": "This confirmation has expired or was already used."
 }

@@ -5,6 +5,7 @@ import com.imyvm.finance.storage.QuoteSnapshotStore;
 import com.imyvm.finance.storage.StockTransactionStore;
 import com.imyvm.finance.storage.StockTradingStore;
 import com.imyvm.finance.storage.StoredQuote;
+import com.imyvm.finance.storage.StoredOrder;
 import com.imyvm.finance.market.Instrument;
 import com.imyvm.finance.market.MarketStatus;
 import net.minecraft.network.chat.ClickEvent;
@@ -80,20 +81,60 @@ public final class ImyvmFinance implements ModInitializer {
     }
 
     private static void recoverInterruptedTransactions() {
-        if (TRANSACTION_STORE == null)
+        if (TRANSACTION_STORE == null || TRADING_STORE == null)
             return;
         try {
-            for (var transaction : TRANSACTION_STORE.findInterruptedTransactions()) {
-                TRANSACTION_STORE.markPending(
-                    transaction.transactionId(),
-                    "startup_recovery",
-                    transaction.state().name(),
-                    null,
-                    System.currentTimeMillis());
-            }
+            for (var transaction : TRANSACTION_STORE.findInterruptedTransactions())
+                recoverInterruptedTransaction(transaction, TRADING_STORE.findOrder(transaction.transactionId()).orElse(null));
         } catch (Exception exception) {
             LOGGER.error("Failed to recover interrupted finance transactions", exception);
         }
+    }
+
+    private static void recoverInterruptedTransaction(
+        com.imyvm.finance.transaction.StockTransaction transaction,
+        StoredOrder order
+    ) throws Exception {
+        long now = System.currentTimeMillis();
+        if (order == null) {
+            TRANSACTION_STORE.markPending(
+                transaction.transactionId(), "startup_recovery", "missing_order", null, now);
+            return;
+        }
+        if (transaction.state() == com.imyvm.finance.transaction.StockTransactionState.PREPARED) {
+            markOrderPendingManual(transaction, order);
+            TRANSACTION_STORE.markPending(
+                transaction.transactionId(), "startup_recovery", "economy_unconfirmed", null, now);
+            return;
+        }
+        if (order.state() == com.imyvm.finance.trading.StockOrderState.PENDING_FINANCE)
+            activateOrder(transaction, order);
+        if (order.state() == com.imyvm.finance.trading.StockOrderState.PENDING_MANUAL)
+            return;
+        TRANSACTION_STORE.transition(
+            transaction.transactionId(),
+            com.imyvm.finance.transaction.StockTransactionState.FINANCE_CONFIRMED,
+            "finance_recovered", now);
+    }
+
+    private static void activateOrder(com.imyvm.finance.transaction.StockTransaction transaction,
+                                      StoredOrder order) throws Exception {
+        if (transaction.operation() == com.imyvm.finance.transaction.StockOperation.BUY)
+            TRADING_STORE.activateBuy(transaction.transactionId());
+        else if (order.positionId() != null)
+            TRADING_STORE.activateSell(transaction.transactionId(), order.positionId(), order.units());
+        else
+            throw new IllegalStateException("sell order has no position");
+    }
+
+    private static void markOrderPendingManual(com.imyvm.finance.transaction.StockTransaction transaction,
+                                               StoredOrder order) throws Exception {
+        if (transaction.operation() == com.imyvm.finance.transaction.StockOperation.BUY)
+            TRADING_STORE.markPendingManual(transaction.transactionId());
+        else if (order.positionId() != null)
+            TRADING_STORE.markSellPendingManual(transaction.transactionId(), order.positionId());
+        else
+            throw new IllegalStateException("sell order has no position");
     }
 
     private static void pruneExpiredData() {

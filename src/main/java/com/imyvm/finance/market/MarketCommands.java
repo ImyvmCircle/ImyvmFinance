@@ -35,6 +35,8 @@ import net.minecraft.server.level.ServerPlayer;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Optional;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.time.Instant;
 import java.util.UUID;
@@ -44,6 +46,14 @@ import java.time.ZoneId;
 import java.util.function.Supplier;
 
 public final class MarketCommands {
+    private static final long CONFIRMATION_TTL_MILLIS = 10L * 60 * 1000;
+    private static final Map<UUID, PendingConfirmation> CONFIRMATIONS = new HashMap<>();
+
+    private record PendingConfirmation(
+        UUID playerId, TradeSide side, Instrument instrument, UUID positionId, long units, String snapshotId, long createdAt
+    ) {
+    }
+
     private MarketCommands() {
     }
 
@@ -53,34 +63,28 @@ public final class MarketCommands {
         var buy = Commands.literal("buy")
             .requires(CommandSourceStack::isPlayer)
             .then(Commands.argument("symbol", StringArgumentType.word())
+                .suggests(MarketCommands::suggestInstruments)
                 .then(Commands.argument("units", LongArgumentType.longArg(1))
                     .executes(MarketCommands::estimate)));
 
         var sell = Commands.literal("sell")
             .requires(CommandSourceStack::isPlayer)
             .then(Commands.argument("positionId", StringArgumentType.word())
+                .suggests(MarketCommands::suggestPositions)
                 .then(Commands.argument("units", LongArgumentType.longArg(1))
                     .executes(context -> sell(context, false))));
 
         var estimate = Commands.literal("estimate")
+            .requires(CommandSourceStack::isPlayer)
             .then(Commands.argument("symbol", StringArgumentType.word())
+                .suggests(MarketCommands::suggestInstruments)
                 .then(Commands.argument("units", LongArgumentType.longArg(1))
                     .executes(MarketCommands::estimate)));
 
         var confirm = Commands.literal("confirm")
             .requires(CommandSourceStack::isPlayer)
-            .then(Commands.argument("symbol", StringArgumentType.word())
-                .then(Commands.argument("units", LongArgumentType.longArg(1))
-                    .then(Commands.argument("snapshotId", StringArgumentType.word())
-                        .executes(MarketCommands::confirmBuy))));
-
-        var confirmSell = Commands.literal("confirm-sell")
-            .requires(CommandSourceStack::isPlayer)
-            .then(Commands.argument("positionId", StringArgumentType.word())
-                .suggests(MarketCommands::suggestPositions)
-                .then(Commands.argument("units", LongArgumentType.longArg(1))
-                    .then(Commands.argument("snapshotId", StringArgumentType.word())
-                        .executes(context -> sell(context, true)))));
+            .then(Commands.argument("confirmationId", StringArgumentType.word())
+                .executes(MarketCommands::confirm));
 
         var tradingSymbol = Commands.argument("symbol", StringArgumentType.word())
             .suggests(MarketCommands::suggestInstruments);
@@ -123,10 +127,10 @@ public final class MarketCommands {
                 .executes(MarketCommands::list))
             .then(Commands.literal("quote")
                 .then(Commands.argument("symbol", StringArgumentType.word())
+                    .suggests(MarketCommands::suggestInstruments)
                     .executes(MarketCommands::quote)))
             .then(buy)
             .then(sell)
-            .then(confirmSell)
             .then(estimate)
             .then(confirm)
             .then(trading)
@@ -404,13 +408,8 @@ public final class MarketCommands {
             StockTransaction transaction = storedTransaction.get();
             StoredOrder order = storedOrder.get();
             if (confirm) {
-                if (transaction.state() == StockTransactionState.PENDING_MANUAL) {
-                    ImyvmFinance.TRANSACTION_STORE.transition(
-                        transactionId,
-                        StockTransactionState.FINANCE_CONFIRMED,
-                        "manual_confirmed",
-                        System.currentTimeMillis());
-                } else if (transaction.state() != StockTransactionState.FINANCE_CONFIRMED) {
+                if (transaction.state() != StockTransactionState.PENDING_MANUAL
+                    && transaction.state() != StockTransactionState.FINANCE_CONFIRMED) {
                     context.getSource().sendFailure(Translator.tr("commands.market.pending.not_pending"));
                     return 0;
                 }
@@ -425,18 +424,19 @@ public final class MarketCommands {
                         return 0;
                     }
                 }
+                if (transaction.state() == StockTransactionState.PENDING_MANUAL)
+                    ImyvmFinance.TRANSACTION_STORE.transition(
+                        transactionId,
+                        StockTransactionState.FINANCE_CONFIRMED,
+                        "manual_confirmed",
+                        System.currentTimeMillis());
                 context.getSource().sendSuccess(
                     () -> Translator.tr("commands.market.pending.confirmed", transactionId), false);
                 return Command.SINGLE_SUCCESS;
             }
 
-            if (transaction.state() == StockTransactionState.PENDING_MANUAL) {
-                ImyvmFinance.TRANSACTION_STORE.transition(
-                    transactionId,
-                    StockTransactionState.CANCELLED,
-                    "manual_released",
-                    System.currentTimeMillis());
-            } else if (transaction.state() != StockTransactionState.CANCELLED) {
+            if (transaction.state() != StockTransactionState.PENDING_MANUAL
+                && transaction.state() != StockTransactionState.CANCELLED) {
                 context.getSource().sendFailure(Translator.tr("commands.market.pending.not_pending"));
                 return 0;
             }
@@ -451,6 +451,12 @@ public final class MarketCommands {
                     return 0;
                 }
             }
+            if (transaction.state() == StockTransactionState.PENDING_MANUAL)
+                ImyvmFinance.TRANSACTION_STORE.transition(
+                    transactionId,
+                    StockTransactionState.CANCELLED,
+                    "manual_released",
+                    System.currentTimeMillis());
             context.getSource().sendSuccess(
                 () -> Translator.tr("commands.market.pending.released", transactionId), false);
             return Command.SINGLE_SUCCESS;
@@ -540,11 +546,11 @@ public final class MarketCommands {
                     formatPrice(estimate.executionPriceScaled()),
                     estimate.feeAmount(),
                     estimate.settlementAmount(),
-                    estimate.slippageBps(),
-                    estimate.snapshotId()),
+                    estimate.slippageBps()),
                 false);
-            String command = "/market confirm " + estimate.instrument().symbol() + " " + estimate.units()
-                + " " + estimate.snapshotId();
+            String command = "/market confirm " + createConfirmation(
+                context.getSource().getPlayer().getUUID(), TradeSide.BUY, estimate.instrument(), null,
+                estimate.units(), estimate.snapshotId());
             MutableComponent confirmation = Translator.tr("commands.market.estimate.confirm").copy()
                 .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(command)));
             context.getSource().sendSuccess(() -> confirmation, false);
@@ -562,17 +568,53 @@ public final class MarketCommands {
         }
     }
 
-    private static int sell(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, boolean confirmed) {
-        ServerPlayer player = context.getSource().getPlayer();
-        UUID positionId;
+    private static int confirm(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        UUID confirmationId;
         try {
-            positionId = UUID.fromString(StringArgumentType.getString(context, "positionId"));
+            confirmationId = UUID.fromString(StringArgumentType.getString(context, "confirmationId"));
+        } catch (IllegalArgumentException exception) {
+            context.getSource().sendFailure(Translator.tr("commands.market.confirmation.expired"));
+            return 0;
+        }
+        PendingConfirmation confirmation = CONFIRMATIONS.get(confirmationId);
+        ServerPlayer player = context.getSource().getPlayer();
+        if (confirmation == null || !confirmation.playerId().equals(player.getUUID())
+            || System.currentTimeMillis() - confirmation.createdAt() > CONFIRMATION_TTL_MILLIS) {
+            context.getSource().sendFailure(Translator.tr("commands.market.confirmation.expired"));
+            return 0;
+        }
+        CONFIRMATIONS.remove(confirmationId);
+        return confirmation.side() == TradeSide.BUY
+            ? buy(context, confirmation.instrument(), confirmation.units(), confirmation.snapshotId())
+            : sell(context, confirmation.positionId(), confirmation.units(), confirmation.snapshotId(), true);
+    }
+
+    private static UUID createConfirmation(UUID playerId, TradeSide side, Instrument instrument,
+                                           UUID positionId, long units, String snapshotId) {
+        long now = System.currentTimeMillis();
+        CONFIRMATIONS.entrySet().removeIf(entry -> now - entry.getValue().createdAt() > CONFIRMATION_TTL_MILLIS
+            || entry.getValue().playerId().equals(playerId));
+        UUID confirmationId = UUID.randomUUID();
+        CONFIRMATIONS.put(confirmationId,
+            new PendingConfirmation(playerId, side, instrument, positionId, units, snapshotId, now));
+        return confirmationId;
+    }
+
+    private static int sell(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, boolean confirmed) {
+        try {
+            return sell(context, UUID.fromString(StringArgumentType.getString(context, "positionId")),
+                LongArgumentType.getLong(context, "units"), null, confirmed);
         } catch (IllegalArgumentException exception) {
             context.getSource().sendFailure(Translator.tr("commands.market.sell.invalid_position"));
             return 0;
         }
-        long units = LongArgumentType.getLong(context, "units");
-        String snapshotId = confirmed ? StringArgumentType.getString(context, "snapshotId") : null;
+    }
+
+    private static int sell(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        UUID positionId, long units, String snapshotId, boolean confirmed
+    ) {
+        ServerPlayer player = context.getSource().getPlayer();
         if (ImyvmFinance.QUOTE_STORE == null
             || ImyvmFinance.TRANSACTION_STORE == null
             || ImyvmFinance.TRADING_STORE == null
@@ -617,13 +659,15 @@ public final class MarketCommands {
                 ImyvmFinance.TRADING_RULES);
 
             if (!confirmed) {
-                String command = "/market confirm-sell " + positionId + " " + estimate.units() + " " + estimate.snapshotId();
+                String command = "/market confirm " + createConfirmation(
+                    player.getUUID(), TradeSide.SELL, estimate.instrument(), positionId,
+                    estimate.units(), estimate.snapshotId());
                 MutableComponent confirmation = Translator.tr("commands.market.sell.estimate.confirm").copy()
                     .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(command)));
                 context.getSource().sendSuccess(() -> Translator.tr(
                     "commands.market.sell.estimate.result",
                     estimate.instrument().symbol(), estimate.units(), estimate.settlementAmount(),
-                    formatPrice(estimate.executionPriceScaled()), estimate.feeAmount(), estimate.snapshotId()), false);
+                    formatPrice(estimate.executionPriceScaled()), estimate.feeAmount()), false);
                 context.getSource().sendSuccess(() -> confirmation, false);
                 return Command.SINGLE_SUCCESS;
             }
@@ -660,8 +704,6 @@ public final class MarketCommands {
             }
 
             try {
-                ImyvmFinance.TRANSACTION_STORE.transition(
-                    transactionId, StockTransactionState.FINANCE_CONFIRMED, "finance_confirmed", System.currentTimeMillis());
                 ImyvmFinance.TRADING_STORE.activateSell(transactionId, positionId, estimate.units());
             } catch (Exception exception) {
                 try {
@@ -677,6 +719,13 @@ public final class MarketCommands {
                 context.getSource().sendFailure(Translator.tr("commands.market.sell.pending_manual"));
                 return 0;
             }
+            try {
+                ImyvmFinance.TRANSACTION_STORE.transition(
+                    transactionId, StockTransactionState.FINANCE_CONFIRMED, "finance_confirmed", System.currentTimeMillis());
+            } catch (Exception exception) {
+                context.getSource().sendFailure(Translator.tr("commands.market.sell.pending_manual"));
+                return 0;
+            }
 
             context.getSource().sendSuccess(
                 () -> Translator.tr(
@@ -685,8 +734,7 @@ public final class MarketCommands {
                     estimate.units(),
                     estimate.settlementAmount(),
                     formatPrice(estimate.executionPriceScaled()),
-                    estimate.feeAmount(),
-                    estimate.snapshotId()),
+                    estimate.feeAmount()),
                 false);
             return Command.SINGLE_SUCCESS;
         } catch (TradeValidationException exception) {
@@ -711,18 +759,11 @@ public final class MarketCommands {
             date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli());
     }
 
-    private static int confirmBuy(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
-        return buy(context, StringArgumentType.getString(context, "snapshotId"));
-    }
-
-    private static int buy(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
-        return buy(context, null);
-    }
-
-    private static int buy(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, String snapshotId) {
+    private static int buy(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        Instrument instrument, long units, String snapshotId
+    ) {
         ServerPlayer player = context.getSource().getPlayer();
-        Instrument instrument = Instrument.fromSymbol(StringArgumentType.getString(context, "symbol"));
-        long units = LongArgumentType.getLong(context, "units");
         if (instrument == null) {
             context.getSource().sendFailure(Translator.tr("commands.market.quote.unknown_symbol"));
             return 0;
@@ -802,8 +843,6 @@ public final class MarketCommands {
             }
 
             try {
-                ImyvmFinance.TRANSACTION_STORE.transition(
-                    transactionId, StockTransactionState.FINANCE_CONFIRMED, "finance_confirmed", System.currentTimeMillis());
                 ImyvmFinance.TRADING_STORE.activateBuy(transactionId);
             } catch (Exception exception) {
                 try {
@@ -819,6 +858,13 @@ public final class MarketCommands {
                 context.getSource().sendFailure(Translator.tr("commands.market.buy.pending_manual"));
                 return 0;
             }
+            try {
+                ImyvmFinance.TRANSACTION_STORE.transition(
+                    transactionId, StockTransactionState.FINANCE_CONFIRMED, "finance_confirmed", System.currentTimeMillis());
+            } catch (Exception exception) {
+                context.getSource().sendFailure(Translator.tr("commands.market.buy.pending_manual"));
+                return 0;
+            }
 
             context.getSource().sendSuccess(
                 () -> Translator.tr(
@@ -827,8 +873,7 @@ public final class MarketCommands {
                     estimate.units(),
                     estimate.settlementAmount(),
                     formatPrice(estimate.executionPriceScaled()),
-                    estimate.feeAmount(),
-                    estimate.snapshotId()),
+                    estimate.feeAmount()),
                 false);
             return Command.SINGLE_SUCCESS;
         } catch (TradeValidationException exception) {
