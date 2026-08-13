@@ -23,6 +23,7 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         try (Statement statement = connection.createStatement()) {
             statement.execute("PRAGMA foreign_keys = ON");
             statement.execute("PRAGMA busy_timeout = 2000");
+            statement.execute("PRAGMA journal_mode = WAL");
             statement.execute("""
                 CREATE TABLE IF NOT EXISTS market_snapshots (
                     snapshot_id TEXT PRIMARY KEY,

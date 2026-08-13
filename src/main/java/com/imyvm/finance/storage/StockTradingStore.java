@@ -108,6 +108,11 @@ public final class StockTradingStore implements AutoCloseable {
         Files.createDirectories(databasePath.getParent());
         Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databasePath);
         connection.setAutoCommit(true);
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("PRAGMA foreign_keys = ON");
+            statement.execute("PRAGMA busy_timeout = 2000");
+            statement.execute("PRAGMA journal_mode = WAL");
+        }
         return new StockTradingStore(connection);
     }
 
