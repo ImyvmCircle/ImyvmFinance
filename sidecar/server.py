@@ -13,10 +13,11 @@ import json
 import math
 import threading
 import time
-from datetime import datetime, time as day_time, timezone
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from zoneinfo import ZoneInfo
+import exchange_calendars as xcals
+import pandas as pd
 
 INSTRUMENTS = (
     "CN:000001",
@@ -44,15 +45,16 @@ GLOBAL_ALIASES = {
     "KR:KOSPI": {"KOSPI", "韩国综合指数"},
 }
 
-MARKET_SESSIONS = {
-    "CN": (ZoneInfo("Asia/Shanghai"), ((day_time(9, 30), day_time(11, 30)),
-                                      (day_time(13, 0), day_time(15, 0)))),
-    "HK": (ZoneInfo("Asia/Hong_Kong"), ((day_time(9, 30), day_time(12, 0)),
-                                       (day_time(13, 0), day_time(16, 0)))),
-    "US": (ZoneInfo("America/New_York"), ((day_time(9, 30), day_time(16, 0)),)),
-    "JP": (ZoneInfo("Asia/Tokyo"), ((day_time(9, 0), day_time(15, 0)),)),
-    "KR": (ZoneInfo("Asia/Seoul"), ((day_time(9, 0), day_time(15, 0)),)),
+MARKET_CALENDARS = {
+    "CN": "XSHG",
+    "HK": "XHKG",
+    "US": "XNYS",
+    "JP": "XTKS",
+    "KR": "XKRX",
 }
+
+_calendar_lock = threading.Lock()
+_calendars: dict[str, Any] = {}
 
 _cache_lock = threading.Lock()
 _cache: tuple[float, dict[str, Any]] | None = None
@@ -82,14 +84,15 @@ def _number(value: Any) -> float | None:
 
 def _market_status(symbol: str, now: datetime) -> str:
     market = symbol.split(":", 1)[0]
-    timezone_info, sessions = MARKET_SESSIONS[market]
-    local = now.astimezone(timezone_info)
-    if local.weekday() >= 5:
+    try:
+        with _calendar_lock:
+            calendar = _calendars.get(market)
+            if calendar is None:
+                calendar = xcals.get_calendar(MARKET_CALENDARS[market])
+                _calendars[market] = calendar
+        return "OPEN" if calendar.is_trading_minute(pd.Timestamp(now)) else "CLOSED"
+    except Exception:
         return "CLOSED"
-    for start, end in sessions:
-        if start <= local.time() < end:
-            return "OPEN"
-    return "CLOSED"
 
 
 def _quote(symbol: str, name: str, price: Any, change: Any, now: datetime) -> dict[str, str]:
