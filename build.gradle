@@ -1,5 +1,6 @@
 plugins {
 	 id 'net.fabricmc.fabric-loom' version "${loom_version}"
+	 id 'maven-publish'
 }
 
 version = project.mod_version
@@ -72,3 +73,22 @@ java {
 
 	withSourcesJar()
 }
+
+publishing {
+	publications {
+		mavenJava(MavenPublication) {
+			artifactId = project.archives_base_name
+			from components.java
+		}
+	}
+
+	repositories {
+		maven {
+			url = 's3://imyvm-maven-repository'
+			credentials(AwsCredentials) {
+				accessKey = System.getenv("S3_ACCESS_KEY_ID")
+				secretKey = System.getenv("S3_SECRET_ACCESS_KEY")
+			}
+		}
+		}
+	}
