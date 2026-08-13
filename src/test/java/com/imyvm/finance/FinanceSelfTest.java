@@ -208,6 +208,11 @@ public final class FinanceSelfTest {
                 heldOrderId, UUID.randomUUID(), positionId, heldSell, heldEstimate, 8L);
             checkEquals(6_000L, trading.positionValue(player),
                 "frozen position still counts toward exposure");
+
+            transactions.pruneBefore(7L);
+            check(transactions.find(sellTransactionId).isEmpty(), "completed transaction pruned");
+            check(transactions.find(manualTransactionId).isPresent(), "recent cancelled transaction retained");
+            check(transactions.find(heldTransactionId).isPresent(), "prepared transaction retained");
         } finally {
             if (trading != null)
                 trading.close();

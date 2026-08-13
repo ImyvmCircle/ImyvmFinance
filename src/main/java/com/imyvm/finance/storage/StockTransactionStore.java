@@ -171,6 +171,18 @@ public final class StockTransactionStore implements AutoCloseable {
         return find(transactionId).orElseThrow();
     }
 
+    public synchronized void pruneBefore(long cutoffEpochMillis) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            DELETE FROM stock_transactions
+            WHERE updated_at < ? AND state IN (?, ?)
+            """)) {
+            statement.setLong(1, cutoffEpochMillis);
+            statement.setString(2, StockTransactionState.FINANCE_CONFIRMED.name());
+            statement.setString(3, StockTransactionState.CANCELLED.name());
+            statement.executeUpdate();
+        }
+    }
+
     public synchronized java.util.List<StockTransaction> findInterruptedTransactions()
         throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""

@@ -98,11 +98,12 @@ public final class ImyvmFinance implements ModInitializer {
         if (now < nextRetentionCleanupAt)
             return;
         nextRetentionCleanupAt = now + RETENTION_MILLIS;
-        if (QUOTE_STORE == null || TRADING_STORE == null)
+        if (QUOTE_STORE == null || TRADING_STORE == null || TRANSACTION_STORE == null)
             return;
         try {
             long cutoff = now - RETENTION_MILLIS;
             QUOTE_STORE.pruneBefore(cutoff);
+            TRANSACTION_STORE.pruneBefore(cutoff);
             TRADING_STORE.pruneBefore(cutoff);
         } catch (Exception exception) {
             LOGGER.error("Failed to prune expired finance data", exception);
