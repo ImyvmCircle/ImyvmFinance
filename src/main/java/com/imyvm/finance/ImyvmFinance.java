@@ -11,6 +11,7 @@ import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.server.permissions.Permissions;
 import com.imyvm.finance.economy.StockEconomySettlement;
 import com.imyvm.finance.quote.QuoteRefreshService;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -38,6 +39,7 @@ public final class ImyvmFinance implements ModInitializer {
     private static final long RETENTION_MILLIS = Duration.ofDays(30).toMillis();
     private static long nextRetentionCleanupAt;
     private static long nextBriefingAt;
+    private static volatile net.minecraft.server.MinecraftServer SERVER;
 
     @Override
     public void onInitialize() {
@@ -61,6 +63,7 @@ public final class ImyvmFinance implements ModInitializer {
 
         CommandRegistrationCallback.EVENT.register(MarketCommands::register);
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            SERVER = server;
             recoverInterruptedTransactions();
             pruneExpiredData();
             nextBriefingAt = System.currentTimeMillis() + Duration.ofMinutes(CONFIG.briefingIntervalMinutes()).toMillis();
@@ -180,11 +183,27 @@ public final class ImyvmFinance implements ModInitializer {
         if (QUOTE_STORE == null || QUOTE_REFRESHER != null)
             return;
 
-        QUOTE_REFRESHER = new QuoteRefreshService(QUOTE_STORE, CONFIG);
+        QUOTE_REFRESHER = new QuoteRefreshService(QUOTE_STORE, CONFIG, ImyvmFinance::notifyQuoteAlert);
         QUOTE_REFRESHER.start();
     }
 
+    private static void notifyQuoteAlert(String alert) {
+        net.minecraft.server.MinecraftServer server = SERVER;
+        if (server == null)
+            return;
+        server.execute(() -> {
+            Component message = alert.startsWith("recovered:")
+                ? Translator.tr("commands.market.quote.recovered", alert.substring("recovered:".length()))
+                : Translator.tr("commands.market.quote.failed", alert.substring("failed:".length()));
+            for (var player : server.getPlayerList().getPlayers()) {
+                if (player.createCommandSourceStack().permissions().hasPermission(Permissions.COMMANDS_ADMIN))
+                    player.sendSystemMessage(message);
+            }
+        });
+    }
+
     private static void closeQuoteStore() {
+        SERVER = null;
         if (QUOTE_REFRESHER != null) {
             QUOTE_REFRESHER.close();
             QUOTE_REFRESHER = null;

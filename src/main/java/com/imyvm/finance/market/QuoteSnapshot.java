@@ -7,7 +7,8 @@ public record QuoteSnapshot(
     String source,
     long fetchedAtEpochMillis,
     long marketTimeEpochMillis,
-    List<MarketQuote> quotes
+    List<MarketQuote> quotes,
+    List<String> alerts
 ) {
     public QuoteSnapshot {
         if (snapshotId == null || snapshotId.isBlank())
@@ -17,5 +18,6 @@ public record QuoteSnapshot(
         if (quotes == null || quotes.isEmpty())
             throw new IllegalArgumentException("quotes are required");
         quotes = List.copyOf(quotes);
+        alerts = alerts == null ? List.of() : List.copyOf(alerts);
     }
 }

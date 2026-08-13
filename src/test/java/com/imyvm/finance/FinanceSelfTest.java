@@ -46,6 +46,7 @@ public final class FinanceSelfTest {
                 defaults.sidecarEndpoint().toString(), "default endpoint");
             checkEquals(5L, defaults.quoteRefreshMinutes(), "default refresh");
             checkEquals(20L, defaults.briefingIntervalMinutes(), "default briefing interval");
+            checkEquals(15L * 60 * 1000, defaults.tradingRules().maxQuoteAgeMillis(), "default quote age");
 
             Properties properties = new Properties();
             properties.setProperty("sidecar.endpoint", "http://127.0.0.1:9000/quotes");
@@ -80,6 +81,7 @@ public final class FinanceSelfTest {
               "source": "test",
               "fetchedAt": "1",
               "marketTime": "2",
+              "alerts": ["failed:US:SPX"],
               "quotes": [
                 {
                   "symbol": "CN:000001",
@@ -104,6 +106,7 @@ public final class FinanceSelfTest {
         checkEquals(30_001_234L, snapshot.quotes().getFirst().priceScaled(), "quote price scale");
         checkEquals(125L, snapshot.quotes().getFirst().changeBps(), "quote change scale");
         checkEquals(MarketStatus.OPEN, snapshot.quotes().getFirst().status(), "quote status");
+        checkEquals(java.util.List.of("failed:US:SPX"), snapshot.alerts(), "quote alerts");
     }
 
     private static void tradingValidationChecks() throws Exception {

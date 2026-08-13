@@ -50,7 +50,7 @@ public record FinanceConfig(
                     Long.toString(defaults.quoteRefreshMinutes()));
                 properties.setProperty("briefing.interval-minutes",
                     Long.toString(defaults.briefingIntervalMinutes()));
-                properties.setProperty("trading.max-quote-age-hours", "36");
+                properties.setProperty("trading.max-quote-age-minutes", "15");
                 properties.setProperty("trading.sell-cooldown-minutes", "30");
                 properties.setProperty("trading.fee-bps", "20");
                 properties.setProperty("trading.base-slippage-bps", "10");
@@ -71,7 +71,7 @@ public record FinanceConfig(
             positiveLong(properties, "sidecar.refresh-minutes", defaults.quoteRefreshMinutes()),
             positiveLong(properties, "briefing.interval-minutes", defaults.briefingIntervalMinutes()),
             new TradingRules(
-                positiveLong(properties, "trading.max-quote-age-hours", 36) * 60 * 60 * 1000,
+                positiveLong(properties, "trading.max-quote-age-minutes", 15) * 60 * 1000,
                 positiveLong(properties, "trading.sell-cooldown-minutes", 30) * 60 * 1000,
                 nonNegativeInt(properties, "trading.fee-bps", 20),
                 nonNegativeInt(properties, "trading.base-slippage-bps", 10),

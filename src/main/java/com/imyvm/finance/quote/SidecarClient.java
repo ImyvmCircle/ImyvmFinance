@@ -81,7 +81,15 @@ public final class SidecarClient {
         if (quotes.isEmpty())
             throw new IllegalArgumentException("sidecar snapshot has no valid whitelisted quotes");
 
-        return new QuoteSnapshot(snapshotId, source, fetchedAt, marketTime, quotes);
+        List<String> alerts = new ArrayList<>();
+        JsonElement alertArray = root.get("alerts");
+        if (alertArray != null && alertArray.isJsonArray()) {
+            for (JsonElement element : alertArray.getAsJsonArray()) {
+                if (element.isJsonPrimitive())
+                    alerts.add(element.getAsString());
+            }
+        }
+        return new QuoteSnapshot(snapshotId, source, fetchedAt, marketTime, quotes, alerts);
     }
 
     private static MarketQuote parseQuote(JsonObject object) {

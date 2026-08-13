@@ -16,6 +16,8 @@ import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 import exchange_calendars as xcals
 import pandas as pd
 
@@ -53,12 +55,23 @@ MARKET_CALENDARS = {
     "KR": "XKRX",
 }
 
+YAHOO_SYMBOLS = {
+    "HK:HSI": "^HSI",
+    "HK:HSTECH": "^HSTECH",
+    "US:DJI": "^DJI",
+    "US:SPX": "^GSPC",
+    "US:NDX": "^NDX",
+    "JP:N225": "^N225",
+    "KR:KOSPI": "^KS11",
+}
+
 _calendar_lock = threading.Lock()
 _calendars: dict[str, Any] = {}
 
 _cache_lock = threading.Lock()
 _quote_request_slots = threading.BoundedSemaphore(1)
 _cache: tuple[float, dict[str, Any]] | None = None
+_unavailable: set[str] = set()
 
 
 def _akshare():
@@ -117,7 +130,7 @@ def _row_value(row: dict[str, Any], *names: str) -> Any:
     return None
 
 
-def _fetch_china(ak, now: datetime) -> dict[str, dict[str, str]]:
+def _fetch_china_eastmoney(ak, now: datetime) -> dict[str, dict[str, str]]:
     wanted = {symbol.split(":", 1)[1]: symbol for symbol in INSTRUMENTS if symbol.startswith("CN:")}
     result: dict[str, dict[str, str]] = {}
     for category in CHINA_CATEGORIES:
@@ -141,6 +154,28 @@ def _fetch_china(ak, now: datetime) -> dict[str, dict[str, str]]:
             except ValueError:
                 continue
     return result
+
+
+def _fetch_china_sina(ak, now: datetime) -> dict[str, dict[str, str]]:
+    wanted = {symbol.split(":", 1)[1]: symbol for symbol in INSTRUMENTS if symbol.startswith("CN:")}
+    result: dict[str, dict[str, str]] = {}
+    try:
+        frame = ak.stock_zh_index_spot_sina()
+    except Exception:
+        return result
+    for row in frame.to_dict("records"):
+        code = _text(_row_value(row, "代码", "code")).replace("sh", "").replace("sz", "").zfill(6)
+        symbol = wanted.get(code)
+        if symbol is None:
+            continue
+        try:
+            result[symbol] = _quote(symbol, _text(_row_value(row, "名称", "name")) or symbol,
+                _row_value(row, "最新价", "最新价格", "price"),
+                _row_value(row, "涨跌幅", "changePercent"), now)
+        except ValueError:
+            continue
+    return result
+
 
 
 def _global_symbol(row: dict[str, Any]) -> str | None:
@@ -175,11 +210,43 @@ def _fetch_global(ak, now: datetime) -> dict[str, dict[str, str]]:
     return result
 
 
+def _fetch_yahoo(symbol: str, now: datetime) -> dict[str, str] | None:
+    request = Request(
+        "https://query1.finance.yahoo.com/v8/finance/chart/"
+        + quote(YAHOO_SYMBOLS[symbol], safe="") + "?range=1d&interval=1m",
+        headers={"User-Agent": "ImyvmFinance/1.0"},
+    )
+    with urlopen(request, timeout=3) as response:
+        meta = json.load(response)["chart"]["result"][0]["meta"]
+    price = _number(meta.get("regularMarketPrice"))
+    previous = _number(meta.get("previousClose"))
+    if price is None or previous is None or previous <= 0:
+        return None
+    return _quote(symbol, _text(meta.get("shortName")) or symbol, price,
+        (price - previous) * 100 / previous, now)
+
+
+def _fallback_missing(quotes: dict[str, dict[str, str]], now: datetime) -> None:
+    for symbol in YAHOO_SYMBOLS:
+        if symbol in quotes:
+            continue
+        try:
+            fallback = _fetch_yahoo(symbol, now)
+            if fallback is not None:
+                quotes[symbol] = fallback
+        except Exception:
+            continue
+
+
+
 def fetch_snapshot() -> dict[str, Any]:
     now = datetime.now(timezone.utc)
     ak = _akshare()
-    quotes = _fetch_china(ak, now)
+    quotes = _fetch_china_eastmoney(ak, now)
+    for symbol, value in _fetch_china_sina(ak, now).items():
+        quotes.setdefault(symbol, value)
     quotes.update(_fetch_global(ak, now))
+    _fallback_missing(quotes, now)
     ordered = [quotes[symbol] for symbol in INSTRUMENTS if symbol in quotes]
     if not ordered:
         raise RuntimeError("no whitelisted quotes are available")
@@ -187,12 +254,19 @@ def fetch_snapshot() -> dict[str, Any]:
         json.dumps(ordered, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     ).hexdigest()[:16]
     timestamp = int(now.timestamp() * 1000)
+    available = {quote_value["symbol"] for quote_value in ordered}
+    failed = set(INSTRUMENTS) - available
+    alerts = ["failed:" + symbol for symbol in sorted(failed - _unavailable)]
+    alerts.extend("recovered:" + symbol for symbol in sorted(_unavailable & available))
+    _unavailable.clear()
+    _unavailable.update(failed)
     return {
-        "snapshotId": f"akshare-{timestamp}-{digest}",
-        "source": "akshare",
+        "snapshotId": f"quotes-{timestamp}-{digest}",
+        "source": "multi-source",
         "fetchedAt": timestamp,
         "marketTime": timestamp,
         "quotes": ordered,
+        "alerts": alerts,
     }
 
 
