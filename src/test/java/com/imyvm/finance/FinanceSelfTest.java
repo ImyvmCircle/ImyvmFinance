@@ -124,6 +124,10 @@ public final class FinanceSelfTest {
             checkEquals(40L, trading.findPosition(positionId).orElseThrow().frozenUnits(),
                 "frozen sell units");
             trading.activateSell(sellTransactionId, positionId, 40L);
+            transactions.transition(
+                sellTransactionId, StockTransactionState.ECONOMY_CONFIRMED, "credit_accepted", 5L);
+            transactions.transition(
+                sellTransactionId, StockTransactionState.FINANCE_CONFIRMED, "finance_confirmed", 6L);
             var active = trading.findPosition(positionId).orElseThrow();
             checkEquals(60L, active.remainingUnits(), "remaining units");
             checkEquals(0L, active.frozenUnits(), "released frozen units");
@@ -144,6 +148,8 @@ public final class FinanceSelfTest {
             checkEquals("IOException", pending.failureReason(), "pending failure reason");
             checkEquals(1, pending.retryCount(), "pending retry count");
             checkEquals(7L, pending.nextRetryAtEpochMillis(), "pending retry time");
+            checkEquals(1, transactions.pendingSettlementCount(player), "pending player count");
+            check(transactions.findInterruptedTransactions().isEmpty(), "pending transactions are not interrupted");
             trading.markSellPendingManual(manualTransactionId, positionId);
             StoredOrder order = trading.findOrder(manualTransactionId).orElseThrow();
             transactions.transition(
@@ -183,6 +189,8 @@ public final class FinanceSelfTest {
         transactions.transition(
             transactionId, StockTransactionState.ECONOMY_CONFIRMED, "debit_accepted", 2L);
         trading.activateBuy(transactionId);
+        transactions.transition(
+            transactionId, StockTransactionState.FINANCE_CONFIRMED, "finance_confirmed", 3L);
         return positionId;
     }
 

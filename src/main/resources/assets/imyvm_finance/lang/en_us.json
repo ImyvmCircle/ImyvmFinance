@@ -40,5 +40,6 @@
   "imyvm_finance.commands.market.pending.missing_position": "The sell transaction has no position link and cannot be resolved.",
   "imyvm_finance.commands.market.pending.resolution_failed": "Manual handling failed; the stock state remains pending. Check the log.",
   "imyvm_finance.commands.market.pending.confirmed": "Transaction {0} confirmed; only Finance stock state was completed.",
-  "imyvm_finance.commands.market.pending.released": "Transaction {0} released; only Finance stock state was released."
+  "imyvm_finance.commands.market.pending.released": "Transaction {0} released; only Finance stock state was released.",
+  "imyvm_finance.commands.market.pending.player_notice": "{0} stock transactions are awaiting administrator review."
 }

@@ -166,6 +166,39 @@ public final class StockTransactionStore implements AutoCloseable {
         return find(transactionId).orElseThrow();
     }
 
+    public synchronized java.util.List<StockTransaction> findInterruptedTransactions()
+        throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            SELECT transaction_id, player_id, operation, reference_id, symbol, amount, state,
+                   economy_result, created_at, updated_at
+            FROM stock_transactions
+            WHERE state IN (?, ?)
+            ORDER BY updated_at ASC
+            """)) {
+            statement.setString(1, StockTransactionState.PREPARED.name());
+            statement.setString(2, StockTransactionState.ECONOMY_CONFIRMED.name());
+            java.util.List<StockTransaction> transactions = new java.util.ArrayList<>();
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next())
+                    transactions.add(read(result));
+            }
+            return transactions;
+        }
+    }
+
+    public synchronized int pendingSettlementCount(UUID playerId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            SELECT COUNT(*) FROM stock_transactions
+            WHERE player_id = ? AND state = ?
+            """)) {
+            statement.setString(1, playerId.toString());
+            statement.setString(2, StockTransactionState.PENDING_MANUAL.name());
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() ? result.getInt(1) : 0;
+            }
+        }
+    }
+
     public synchronized PendingSettlement markPending(
         UUID transactionId,
         String failureStage,

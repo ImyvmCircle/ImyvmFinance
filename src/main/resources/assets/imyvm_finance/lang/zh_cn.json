@@ -40,5 +40,6 @@
   "imyvm_finance.commands.market.pending.missing_position": "卖出事务缺少持仓关联，不能自动释放或确认。",
   "imyvm_finance.commands.market.pending.resolution_failed": "人工处理失败，股票状态保持待处理，请检查日志。",
   "imyvm_finance.commands.market.pending.confirmed": "已确认事务 {0}，仅完成 Finance 股票状态。",
-  "imyvm_finance.commands.market.pending.released": "已释放事务 {0}，仅释放 Finance 股票状态。"
+  "imyvm_finance.commands.market.pending.released": "已释放事务 {0}，仅释放 Finance 股票状态。",
+  "imyvm_finance.commands.market.pending.player_notice": "有 {0} 笔股票交易待管理员核对。"
 }

@@ -8,6 +8,7 @@ import com.imyvm.finance.economy.StockEconomySettlement;
 import com.imyvm.finance.quote.QuoteRefreshService;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
@@ -47,9 +48,43 @@ public final class ImyvmFinance implements ModInitializer {
         }
 
         CommandRegistrationCallback.EVENT.register(MarketCommands::register);
-        ServerLifecycleEvents.SERVER_STARTED.register(server -> startQuoteRefresh());
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            recoverInterruptedTransactions();
+            startQuoteRefresh();
+        });
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+            notifyPendingSettlement(handler.getPlayer()));
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> closeQuoteStore());
         LOGGER.info("Initializing Imyvm Finance");
+    }
+
+    private static void recoverInterruptedTransactions() {
+        if (TRANSACTION_STORE == null)
+            return;
+        try {
+            for (var transaction : TRANSACTION_STORE.findInterruptedTransactions()) {
+                TRANSACTION_STORE.markPending(
+                    transaction.transactionId(),
+                    "startup_recovery",
+                    transaction.state().name(),
+                    null,
+                    System.currentTimeMillis());
+            }
+        } catch (Exception exception) {
+            LOGGER.error("Failed to recover interrupted finance transactions", exception);
+        }
+    }
+
+    private static void notifyPendingSettlement(net.minecraft.server.level.ServerPlayer player) {
+        if (TRANSACTION_STORE == null)
+            return;
+        try {
+            int count = TRANSACTION_STORE.pendingSettlementCount(player.getUUID());
+            if (count > 0)
+                player.sendSystemMessage(Translator.tr("commands.market.pending.player_notice", count));
+        } catch (Exception exception) {
+            LOGGER.error("Failed to read pending finance settlements for {}", player.getUUID(), exception);
+        }
     }
 
     private static void startQuoteRefresh() {
