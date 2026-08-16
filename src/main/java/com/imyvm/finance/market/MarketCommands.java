@@ -135,7 +135,12 @@ public final class MarketCommands {
                     .suggests(MarketCommands::suggestPendingTransactionIds)
                     .executes(MarketCommands::releasePending)));
 
-        var market = dispatcher.register(Commands.literal("market")
+        var help = Commands.literal("help")
+            .executes(MarketCommands::help);
+
+        var market = dispatcher.register(Commands.literal("imyvm-market")
+            .executes(MarketCommands::help)
+            .then(help)
             .then(Commands.literal("list")
                 .executes(MarketCommands::list))
             .then(Commands.literal("quote")
@@ -156,6 +161,22 @@ public final class MarketCommands {
     }
 
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger(ImyvmFinance.MOD_ID);
+
+    private static int help(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        source.sendSuccess(() -> Translator.tr("commands.market.help.header"), false);
+        source.sendSuccess(() -> Translator.tr("commands.market.help.intro"), false);
+        for (String entry : new String[]{
+            "list", "quote", "buy", "estimate", "sell", "positions", "history", "rules", "briefing", "help"
+        })
+            source.sendSuccess(() -> Translator.tr("commands.market.help.command." + entry), false);
+        if (source.permissions().hasPermission(Permissions.COMMANDS_ADMIN)) {
+            source.sendSuccess(() -> Translator.tr("commands.market.help.admin.header"), false);
+            source.sendSuccess(() -> Translator.tr("commands.market.help.command.trading"), false);
+            source.sendSuccess(() -> Translator.tr("commands.market.help.command.pending"), false);
+        }
+        return Command.SINGLE_SUCCESS;
+    }
 
     private static int rules(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         TradingRules rules = ImyvmFinance.TRADING_RULES;
@@ -268,16 +289,16 @@ public final class MarketCommands {
                     item.append(" ").append(Translator.tr("commands.market.positions.sell").copy()
                         .withStyle(style -> style
                             .withClickEvent(new ClickEvent.SuggestCommand(
-                                "/market sell " + position.positionId() + " "))
+                                "/imyvm-market sell " + position.positionId() + " "))
                             .withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(
                                 Translator.tr("commands.market.positions.sell_hint")))));
                     item.append(" ").append(Translator.tr("commands.market.positions.sell_all").copy()
                         .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(
-                            "/market sell " + position.positionId() + " " + availableUnits))));
+                            "/imyvm-market sell " + position.positionId() + " " + availableUnits))));
                 }
                 context.getSource().sendSuccess(() -> item, false);
             }
-            sendPageFooter(context, "/market positions", page, pageCount);
+            sendPageFooter(context, "/imyvm-market positions", page, pageCount);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) {
             return failUnexpected(context.getSource(), "positions", exception);
@@ -316,7 +337,7 @@ public final class MarketCommands {
                         Instant.ofEpochMilli(trade.createdAtEpochMillis())),
                     false);
             }
-            sendPageFooter(context, "/market history", page, pageCount);
+            sendPageFooter(context, "/imyvm-market history", page, pageCount);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) {
             return failUnexpected(context.getSource(), "history", exception);
@@ -636,7 +657,7 @@ public final class MarketCommands {
             if (tradable)
                 item = item.copy().withStyle(style -> style
                     .withClickEvent(new ClickEvent.RunCommand(
-                        "/market estimate " + instrument.symbol() + " " + ImyvmFinance.TRADING_RULES.minUnits()))
+                        "/imyvm-market estimate " + instrument.symbol() + " " + ImyvmFinance.TRADING_RULES.minUnits()))
                     .withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(
                         Translator.tr("commands.market.briefing.buy_hint")))
                     .withUnderlined(true));
@@ -752,7 +773,7 @@ public final class MarketCommands {
                     balance - estimate.settlementAmount(),
                     dailyBuyRemaining),
                 false);
-            String command = "/market confirm " + createConfirmation(
+            String command = "/imyvm-market confirm " + createConfirmation(
                 player.getUUID(), TradeSide.BUY, estimate.instrument(), null,
                 estimate.units(), estimate.snapshotId());
             MutableComponent confirmation = Translator.tr("commands.market.estimate.confirm").copy()
@@ -867,7 +888,7 @@ public final class MarketCommands {
             long soldProfitLoss = estimate.settlementAmount() - soldCostBasis;
 
             if (!confirmed) {
-                String command = "/market confirm " + createConfirmation(
+                String command = "/imyvm-market confirm " + createConfirmation(
                     player.getUUID(), TradeSide.SELL, estimate.instrument(), positionId,
                     estimate.units(), estimate.snapshotId());
                 MutableComponent confirmation = Translator.tr("commands.market.sell.estimate.confirm").copy()
