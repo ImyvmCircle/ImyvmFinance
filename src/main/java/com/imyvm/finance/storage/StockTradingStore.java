@@ -379,7 +379,20 @@ public final class StockTradingStore implements AutoCloseable {
         }
     }
 
+    public synchronized long tradeCount(UUID playerId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT COUNT(*) FROM stock_trades WHERE player_id = ?")) {
+            statement.setString(1, playerId.toString());
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next() ? result.getLong(1) : 0L;
+            }
+        }
+    }
+
     public synchronized List<StoredTrade> findRecentTrades(UUID playerId, int limit) throws SQLException {
+        return findRecentTrades(playerId, limit, 0L);
+    }
+
+    public synchronized List<StoredTrade> findRecentTrades(UUID playerId, int limit, long offset) throws SQLException {
         if (limit < 1)
             throw new IllegalArgumentException("trade history limit must be positive");
         limit = Math.min(limit, 20);
@@ -390,10 +403,11 @@ public final class StockTradingStore implements AutoCloseable {
             FROM stock_trades
             WHERE player_id = ?
             ORDER BY created_at DESC
-            LIMIT ?
+            LIMIT ? OFFSET ?
             """)) {
             statement.setString(1, playerId.toString());
             statement.setInt(2, limit);
+            statement.setLong(3, offset);
             List<StoredTrade> trades = new ArrayList<>();
             try (ResultSet result = statement.executeQuery()) {
                 while (result.next()) {

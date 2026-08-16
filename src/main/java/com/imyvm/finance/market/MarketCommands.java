@@ -65,6 +65,7 @@ public final class MarketCommands {
             .then(Commands.argument("symbol", StringArgumentType.word())
                 .suggests(MarketCommands::suggestInstruments)
                 .then(Commands.argument("units", LongArgumentType.longArg(1))
+                    .suggests(MarketCommands::suggestUnits)
                     .executes(MarketCommands::estimate)));
 
         var sell = Commands.literal("sell")
@@ -72,6 +73,7 @@ public final class MarketCommands {
             .then(Commands.argument("positionId", StringArgumentType.word())
                 .suggests(MarketCommands::suggestPositions)
                 .then(Commands.argument("units", LongArgumentType.longArg(1))
+                    .suggests(MarketCommands::suggestSellUnits)
                     .executes(context -> sell(context, false))));
 
         var estimate = Commands.literal("estimate")
@@ -79,6 +81,7 @@ public final class MarketCommands {
             .then(Commands.argument("symbol", StringArgumentType.word())
                 .suggests(MarketCommands::suggestInstruments)
                 .then(Commands.argument("units", LongArgumentType.longArg(1))
+                    .suggests(MarketCommands::suggestUnits)
                     .executes(MarketCommands::estimate)));
 
         var confirm = Commands.literal("confirm")
@@ -108,7 +111,9 @@ public final class MarketCommands {
 
         var history = Commands.literal("history")
             .requires(CommandSourceStack::isPlayer)
-            .executes(MarketCommands::history);
+            .executes(context -> history(context, 1L))
+            .then(Commands.argument("page", LongArgumentType.longArg(1))
+                .executes(context -> history(context, LongArgumentType.getLong(context, "page"))));
 
         var pendingTransactionId = Commands.argument("transactionId", StringArgumentType.word())
             .suggests(MarketCommands::suggestPendingTransactionIds);
@@ -122,7 +127,7 @@ public final class MarketCommands {
                     .suggests(MarketCommands::suggestPendingTransactionIds)
                     .executes(MarketCommands::releasePending)));
 
-        dispatcher.register(Commands.literal("market")
+        var market = dispatcher.register(Commands.literal("market")
             .then(Commands.literal("list")
                 .executes(MarketCommands::list))
             .then(Commands.literal("quote")
@@ -137,6 +142,7 @@ public final class MarketCommands {
             .then(positions)
             .then(history)
             .then(pending));
+        dispatcher.register(Commands.literal("mkt").redirect(market));
     }
 
     private static int positions(
@@ -207,17 +213,26 @@ public final class MarketCommands {
         }
     }
 
-    private static int history(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+    private static int history(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        long page
+    ) {
         if (ImyvmFinance.TRADING_STORE == null) {
             context.getSource().sendFailure(Translator.tr("commands.market.history.storage_unavailable"));
             return 0;
         }
         ServerPlayer player = context.getSource().getPlayer();
         try {
+            long total = ImyvmFinance.TRADING_STORE.tradeCount(player.getUUID());
+            long pageCount = Math.max(1L, (total + 9L) / 10L);
+            if (page > pageCount) {
+                context.getSource().sendFailure(Translator.tr("commands.market.positions.page_unavailable", pageCount));
+                return 0;
+            }
             java.util.List<StoredTrade> trades =
-                ImyvmFinance.TRADING_STORE.findRecentTrades(player.getUUID(), 10);
+                ImyvmFinance.TRADING_STORE.findRecentTrades(player.getUUID(), 10, (page - 1L) * 10L);
             context.getSource().sendSuccess(
-                () -> Translator.tr("commands.market.history.header", trades.size()), false);
+                () -> Translator.tr("commands.market.history.header", total, page, pageCount), false);
             for (StoredTrade trade : trades) {
                 context.getSource().sendSuccess(
                     () -> Translator.tr(
@@ -282,8 +297,43 @@ public final class MarketCommands {
         if (ImyvmFinance.TRADING_STORE == null || !context.getSource().isPlayer())
             return builder.buildFuture();
         try {
-            for (StoredPosition position : ImyvmFinance.TRADING_STORE.findPositions(context.getSource().getPlayer().getUUID()))
-                builder.suggest(position.positionId().toString());
+            for (StoredPosition position : ImyvmFinance.TRADING_STORE.findPositions(context.getSource().getPlayer().getUUID())) {
+                long availableUnits = position.remainingUnits() - position.frozenUnits();
+                builder.suggest(position.positionId().toString(),
+                    () -> position.instrument().symbol() + " | " + availableUnits);
+            }
+        } catch (Exception exception) {
+            return builder.buildFuture();
+        }
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestUnits(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        SuggestionsBuilder builder
+    ) {
+        builder.suggest(Long.toString(ImyvmFinance.TRADING_RULES.minUnits()));
+        builder.suggest("10");
+        builder.suggest("100");
+        builder.suggest("1000");
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestSellUnits(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        SuggestionsBuilder builder
+    ) {
+        if (ImyvmFinance.TRADING_STORE == null || !context.getSource().isPlayer())
+            return builder.buildFuture();
+        try {
+            UUID positionId = UUID.fromString(StringArgumentType.getString(context, "positionId"));
+            Optional<StoredPosition> storedPosition = ImyvmFinance.TRADING_STORE.findPosition(positionId);
+            if (storedPosition.isPresent()
+                && storedPosition.get().playerId().equals(context.getSource().getPlayer().getUUID())) {
+                long availableUnits = storedPosition.get().remainingUnits() - storedPosition.get().frozenUnits();
+                if (availableUnits > 0)
+                    builder.suggest(Long.toString(availableUnits));
+            }
         } catch (Exception exception) {
             return builder.buildFuture();
         }

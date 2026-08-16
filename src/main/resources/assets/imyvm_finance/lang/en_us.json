@@ -81,7 +81,7 @@
   "imyvm_finance.commands.market.side.buy": "Buy",
   "imyvm_finance.commands.market.side.sell": "Sell",
   "imyvm_finance.commands.market.history.storage_unavailable": "Stock trade history is unavailable.",
-  "imyvm_finance.commands.market.history.header": "Recent trades ({0}):",
+  "imyvm_finance.commands.market.history.header": "Trade history ({0}), page {1}/{2}:",
   "imyvm_finance.commands.market.history.item": "{0} {1} | {2} units | settlement {3}$ | state {4} | {5}",
   "imyvm_finance.commands.market.pending.storage_unavailable": "Manual handling queue is unavailable.",
   "imyvm_finance.commands.market.pending.header": "Pending manual orders ({0}):",

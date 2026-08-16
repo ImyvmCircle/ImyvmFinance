@@ -17,6 +17,7 @@ public record FinanceConfig(
     Duration sidecarReadTimeout,
     long quoteRefreshMinutes,
     long briefingIntervalMinutes,
+    boolean briefingEnabled,
     String language,
     TradingRules tradingRules
 ) {
@@ -29,6 +30,7 @@ public record FinanceConfig(
             Duration.ofSeconds(2),
             5,
             20,
+            true,
             "en_us",
             TradingRules.DEFAULT);
     }
@@ -52,6 +54,7 @@ public record FinanceConfig(
                     Long.toString(defaults.quoteRefreshMinutes()));
                 properties.setProperty("briefing.interval-minutes",
                     Long.toString(defaults.briefingIntervalMinutes()));
+                properties.setProperty("briefing.enabled", Boolean.toString(defaults.briefingEnabled()));
                 properties.setProperty("language", defaults.language());
                 properties.setProperty("trading.max-quote-age-minutes", "15");
                 properties.setProperty("trading.sell-cooldown-minutes", "30");
@@ -73,6 +76,7 @@ public record FinanceConfig(
                 defaults.sidecarReadTimeout().toMillis()),
             positiveLong(properties, "sidecar.refresh-minutes", defaults.quoteRefreshMinutes()),
             positiveLong(properties, "briefing.interval-minutes", defaults.briefingIntervalMinutes()),
+            parseBoolean(properties, "briefing.enabled", defaults.briefingEnabled()),
             properties.getProperty("language", defaults.language()).trim(),
             new TradingRules(
                 positiveLong(properties, "trading.max-quote-age-minutes", 15) * 60 * 1000,
@@ -83,6 +87,11 @@ public record FinanceConfig(
                 nonNegativeLong(properties, "trading.daily-sell-limit", 100000),
                 nonNegativeLong(properties, "trading.position-value-limit", 300000),
                 positiveLong(properties, "trading.min-units", 1)));
+    }
+
+    private static boolean parseBoolean(Properties properties, String key, boolean fallback) {
+        String value = properties.getProperty(key);
+        return value == null ? fallback : Boolean.parseBoolean(value.trim());
     }
 
     private static Duration positiveDuration(Properties properties, String key, long fallback) {

@@ -51,6 +51,7 @@ public final class FinanceSelfTest {
             checkEquals(5L, defaults.quoteRefreshMinutes(), "default refresh");
             checkEquals(20L, defaults.briefingIntervalMinutes(), "default briefing interval");
             checkEquals("en_us", defaults.language(), "default language");
+            check(defaults.briefingEnabled(), "default briefing enabled");
             checkEquals(15L * 60 * 1000, defaults.tradingRules().maxQuoteAgeMillis(), "default quote age");
 
             Properties properties = new Properties();

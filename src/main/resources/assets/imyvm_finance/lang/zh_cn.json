@@ -81,7 +81,7 @@
   "imyvm_finance.commands.market.side.buy": "买入",
   "imyvm_finance.commands.market.side.sell": "卖出",
   "imyvm_finance.commands.market.history.storage_unavailable": "股票成交历史不可用。",
-  "imyvm_finance.commands.market.history.header": "最近成交 {0} 条：",
+  "imyvm_finance.commands.market.history.header": "成交历史共 {0} 条，第 {1}/{2} 页：",
   "imyvm_finance.commands.market.history.item": "{0} {1} | {2} 单位 | 结算 {3}$ | 状态 {4} | {5}",
   "imyvm_finance.commands.market.pending.storage_unavailable": "人工处理队列不可用。",
   "imyvm_finance.commands.market.pending.header": "待人工处理订单 {0} 条：",

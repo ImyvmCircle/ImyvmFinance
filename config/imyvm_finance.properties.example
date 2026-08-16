@@ -4,6 +4,7 @@ sidecar.connect-timeout-ms=1000
 sidecar.read-timeout-ms=2000
 sidecar.refresh-minutes=5
 briefing.interval-minutes=20
+briefing.enabled=true
 language=en_us
 trading.max-quote-age-minutes=15
 trading.sell-cooldown-minutes=30

@@ -172,6 +172,8 @@ public final class ImyvmFinance implements ModInitializer {
         if (now < nextBriefingAt || QUOTE_STORE == null || TRADING_STORE == null)
             return;
         nextBriefingAt = now + Duration.ofMinutes(CONFIG.briefingIntervalMinutes()).toMillis();
+        if (!CONFIG.briefingEnabled())
+            return;
         MutableComponent briefing = Component.empty().append(Translator.tr("commands.market.briefing.header"));
         for (String market : new String[]{"CN", "HK", "US", "JP", "KR"}) {
             MutableComponent line = Component.empty().append("\n").append(Translator.tr("commands.market.briefing.market", market));
