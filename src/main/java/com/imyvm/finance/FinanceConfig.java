@@ -17,6 +17,7 @@ public record FinanceConfig(
     Duration sidecarReadTimeout,
     long quoteRefreshMinutes,
     long briefingIntervalMinutes,
+    String language,
     TradingRules tradingRules
 ) {
     private static final String DEFAULT_ENDPOINT = "http://127.0.0.1:8765/quotes";
@@ -28,6 +29,7 @@ public record FinanceConfig(
             Duration.ofSeconds(2),
             5,
             20,
+            "en_us",
             TradingRules.DEFAULT);
     }
 
@@ -50,6 +52,7 @@ public record FinanceConfig(
                     Long.toString(defaults.quoteRefreshMinutes()));
                 properties.setProperty("briefing.interval-minutes",
                     Long.toString(defaults.briefingIntervalMinutes()));
+                properties.setProperty("language", defaults.language());
                 properties.setProperty("trading.max-quote-age-minutes", "15");
                 properties.setProperty("trading.sell-cooldown-minutes", "30");
                 properties.setProperty("trading.fee-bps", "20");
@@ -70,6 +73,7 @@ public record FinanceConfig(
                 defaults.sidecarReadTimeout().toMillis()),
             positiveLong(properties, "sidecar.refresh-minutes", defaults.quoteRefreshMinutes()),
             positiveLong(properties, "briefing.interval-minutes", defaults.briefingIntervalMinutes()),
+            properties.getProperty("language", defaults.language()).trim(),
             new TradingRules(
                 positiveLong(properties, "trading.max-quote-age-minutes", 15) * 60 * 1000,
                 positiveLong(properties, "trading.sell-cooldown-minutes", 30) * 60 * 1000,

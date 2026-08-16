@@ -31,6 +31,7 @@ public final class FinanceSelfTest {
 
     public static void main(String[] args) throws Exception {
         configChecks();
+        translationChecks();
         sidecarChecks();
         storageChecks();
         tradingValidationChecks();
@@ -48,6 +49,7 @@ public final class FinanceSelfTest {
                 defaults.sidecarEndpoint().toString(), "default endpoint");
             checkEquals(5L, defaults.quoteRefreshMinutes(), "default refresh");
             checkEquals(20L, defaults.briefingIntervalMinutes(), "default briefing interval");
+            checkEquals("en_us", defaults.language(), "default language");
             checkEquals(15L * 60 * 1000, defaults.tradingRules().maxQuoteAgeMillis(), "default quote age");
 
             Properties properties = new Properties();
@@ -74,6 +76,19 @@ public final class FinanceSelfTest {
         } finally {
             deleteTree(directory);
         }
+    }
+
+    private static void translationChecks() {
+        Translator.setLanguage("zh_cn");
+        String rendered = Translator.tr("commands.market.list.item", "CN:000001", "上证指数").getString();
+        check(rendered.contains("CN:000001") && rendered.contains("上证指数"),
+            "zh_cn translation did not interpolate arguments: " + rendered);
+        check(!rendered.contains("{0}") && !rendered.contains("imyvm_finance."),
+            "zh_cn translation leaked placeholder or key: " + rendered);
+        Translator.setLanguage("en_us");
+        String english = Translator.tr("commands.market.list.item", "CN:000001", "SSE").getString();
+        check(english.contains("CN:000001") && !english.contains("{0}"),
+            "en_us translation did not interpolate arguments: " + english);
     }
 
     private static void sidecarChecks() {

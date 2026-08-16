@@ -49,6 +49,7 @@ public final class ImyvmFinance implements ModInitializer {
                 .resolve(MOD_ID + ".properties");
             CONFIG = FinanceConfig.load(configPath);
             TRADING_RULES = CONFIG.tradingRules();
+            Translator.setLanguage(CONFIG.language());
             Path databasePath = FabricLoader.getInstance().getGameDir()
                 .resolve(MOD_ID)
                 .resolve("finance.db");
