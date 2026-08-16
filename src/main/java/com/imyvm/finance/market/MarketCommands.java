@@ -103,6 +103,10 @@ public final class MarketCommands {
                 .executes(context -> setTrading(context, false, null))
                 .then(tradingSymbol.executes(context -> setInstrumentTrading(context, false))));
 
+        var rules = Commands.literal("rules")
+            .requires(CommandSourceStack::isPlayer)
+            .executes(MarketCommands::rules);
+
         var positions = Commands.literal("positions")
             .requires(CommandSourceStack::isPlayer)
             .executes(context -> positions(context, 1L))
@@ -139,6 +143,7 @@ public final class MarketCommands {
             .then(estimate)
             .then(confirm)
             .then(trading)
+            .then(rules)
             .then(positions)
             .then(history)
             .then(pending));
@@ -146,6 +151,22 @@ public final class MarketCommands {
     }
 
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger(ImyvmFinance.MOD_ID);
+
+    private static int rules(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        TradingRules rules = ImyvmFinance.TRADING_RULES;
+        context.getSource().sendSuccess(() -> Translator.tr("commands.market.rules.header"), false);
+        context.getSource().sendSuccess(
+            () -> Translator.tr("commands.market.rules.pricing", rules.minUnits()), false);
+        context.getSource().sendSuccess(
+            () -> Translator.tr("commands.market.rules.fees", rules.feeBps(), rules.baseSlippageBps()), false);
+        context.getSource().sendSuccess(
+            () -> Translator.tr("commands.market.rules.limits",
+                rules.dailyBuyLimit(), rules.dailySellLimit(), rules.positionValueLimit()), false);
+        context.getSource().sendSuccess(
+            () -> Translator.tr("commands.market.rules.timing",
+                rules.sellCooldownMillis() / 60000, rules.maxQuoteAgeMillis() / 60000), false);
+        return Command.SINGLE_SUCCESS;
+    }
 
     private static void sendPageFooter(
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
