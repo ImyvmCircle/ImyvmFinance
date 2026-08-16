@@ -33,7 +33,9 @@ public final class TradeValidator {
         if (nowEpochMillis < position.earliestSellAtEpochMillis())
             throw new TradeValidationException(
                 "commands.market.trade.sell_cooldown",
-                position.earliestSellAtEpochMillis());
+                java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+                    .withZone(java.time.ZoneId.systemDefault())
+                    .format(java.time.Instant.ofEpochMilli(position.earliestSellAtEpochMillis())));
         if (quoteFetchedAtEpochMillis <= position.boughtAtEpochMillis())
             throw new TradeValidationException("commands.market.trade.same_snapshot");
         if (Math.addExact(dailySellUsed, estimate.settlementAmount()) > rules.dailySellLimit())

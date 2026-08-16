@@ -161,16 +161,43 @@ public final class MarketCommands {
                 () -> Translator.tr("commands.market.positions.header", total, page, pageCount), false);
             for (StoredPosition position : positions) {
                 long availableUnits = position.remainingUnits() - position.frozenUnits();
+                String currentValue = "-";
+                String profitLoss = "-";
+                if (ImyvmFinance.QUOTE_STORE != null) {
+                    try {
+                        Optional<StoredQuote> storedQuote =
+                            ImyvmFinance.QUOTE_STORE.findLatest(position.instrument());
+                        if (storedQuote.isPresent()) {
+                            long value = BigDecimal.valueOf(storedQuote.get().quote().priceScaled(), 4)
+                                .multiply(BigDecimal.valueOf(position.remainingUnits()))
+                                .divide(BigDecimal.TEN, 0, RoundingMode.FLOOR)
+                                .longValueExact();
+                            currentValue = Long.toString(value);
+                            profitLoss = Long.toString(value - position.positionValue());
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
                 MutableComponent item = Translator.tr(
                     "commands.market.positions.item",
                     position.instrument().symbol(),
                     availableUnits,
                     position.frozenUnits(),
-                    position.state().name()).copy();
-                if (availableUnits > 0)
+                    position.positionValue(),
+                    currentValue,
+                    profitLoss,
+                    positionState(position.state())).copy();
+                if (availableUnits > 0) {
+                    item.append(" ").append(Translator.tr("commands.market.positions.sell").copy()
+                        .withStyle(style -> style
+                            .withClickEvent(new ClickEvent.SuggestCommand(
+                                "/market sell " + position.positionId() + " "))
+                            .withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(
+                                Translator.tr("commands.market.positions.sell_hint")))));
                     item.append(" ").append(Translator.tr("commands.market.positions.sell_all").copy()
                         .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(
                             "/market sell " + position.positionId() + " " + availableUnits))));
+                }
                 context.getSource().sendSuccess(() -> item, false);
             }
             return Command.SINGLE_SUCCESS;
@@ -195,11 +222,11 @@ public final class MarketCommands {
                 context.getSource().sendSuccess(
                     () -> Translator.tr(
                         "commands.market.history.item",
-                        trade.side().name(),
+                        tradeSide(trade.side()),
                         trade.instrument().symbol(),
                         trade.units(),
                         trade.settlementAmount(),
-                        trade.state().name(),
+                        tradeState(trade.state()),
                         Instant.ofEpochMilli(trade.createdAtEpochMillis())),
                     false);
             }
@@ -887,6 +914,18 @@ public final class MarketCommands {
             context.getSource().sendFailure(Translator.tr("commands.market.buy.storage_unavailable"));
             return 0;
         }
+    }
+
+    private static Component positionState(com.imyvm.finance.trading.StockOrderState state) {
+        return Translator.tr("commands.market.state.position." + state.name().toLowerCase());
+    }
+
+    private static Component tradeState(com.imyvm.finance.trading.StockTradeState state) {
+        return Translator.tr("commands.market.state.trade." + state.name().toLowerCase());
+    }
+
+    private static Component tradeSide(TradeSide side) {
+        return Translator.tr("commands.market.side." + side.name().toLowerCase());
     }
 
     private static String formatPrice(long priceScaled) {
