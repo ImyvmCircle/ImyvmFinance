@@ -21,7 +21,7 @@
   "imyvm_finance.commands.market.quote.recovered": "行情抓取已恢复，{0} 可继续等待新报价。",
   "imyvm_finance.commands.market.quote.result": "{0}：{1}，涨跌 {2}",
   "imyvm_finance.commands.market.error": "操作未完成，请稍后重试；若反复出现请联系管理员。",
-  "imyvm_finance.commands.market.estimate.result": "买入预估 {0}：{1} 单位，成交价 {2}，手续费 {3}$，总成本 {4}$，滑点 {5} 基点（尚未成交；1 单位 = 0.1 指数点价值）",
+  "imyvm_finance.commands.market.estimate.result": "买入预估 {0}：{1} 单位，成交价 {2}，手续费 {3}$，总成本 {4}$，滑点 {5} 基点；余额 {6}$，成交后约剩 {7}$，今日买入额度剩余 {8}$（尚未成交；1 单位 = 0.1 指数点价值）",
   "imyvm_finance.commands.market.estimate.confirm": "[确认按此报价买入]",
   "imyvm_finance.commands.market.briefing.header": "[IMYVM 市场简报]",
   "imyvm_finance.commands.market.briefing.market": "{0}",

@@ -602,7 +602,7 @@ public final class MarketCommands {
             context.getSource().sendFailure(Translator.tr("commands.market.quote.unknown_symbol"));
             return 0;
         }
-        if (ImyvmFinance.QUOTE_STORE == null) {
+        if (ImyvmFinance.QUOTE_STORE == null || ImyvmFinance.TRADING_STORE == null) {
             context.getSource().sendFailure(Translator.tr("commands.market.quote.storage_unavailable"));
             return 0;
         }
@@ -613,8 +613,24 @@ public final class MarketCommands {
                 context.getSource().sendFailure(Translator.tr("commands.market.quote.unavailable", instrument.symbol()));
                 return 0;
             }
+            long now = System.currentTimeMillis();
             TradeEstimate estimate = TradeCalculator.estimate(
-                TradeSide.BUY, storedQuote.get(), units, System.currentTimeMillis(), ImyvmFinance.TRADING_RULES);
+                TradeSide.BUY, storedQuote.get(), units, now, ImyvmFinance.TRADING_RULES);
+            ServerPlayer player = context.getSource().getPlayer();
+            ZoneId zone = ZoneId.systemDefault();
+            LocalDate date = LocalDate.now(zone);
+            long dailyBuyUsed = ImyvmFinance.TRADING_STORE.dailyBuyAmount(
+                player.getUUID(),
+                date.atStartOfDay(zone).toInstant().toEpochMilli(),
+                date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli());
+            TradeValidator.validateBuy(
+                estimate,
+                dailyBuyUsed,
+                ImyvmFinance.TRADING_STORE.positionValue(player.getUUID()),
+                ImyvmFinance.TRADING_RULES);
+            long balance = com.imyvm.economy.api.DatabaseApi.getInstance().getPlayer(player).getMoney();
+            long dailyBuyRemaining =
+                ImyvmFinance.TRADING_RULES.dailyBuyLimit() - dailyBuyUsed - estimate.settlementAmount();
             context.getSource().sendSuccess(
                 () -> Translator.tr(
                     "commands.market.estimate.result",
@@ -623,10 +639,13 @@ public final class MarketCommands {
                     formatPrice(estimate.executionPriceScaled()),
                     estimate.feeAmount(),
                     estimate.settlementAmount(),
-                    estimate.slippageBps()),
+                    estimate.slippageBps(),
+                    balance,
+                    balance - estimate.settlementAmount(),
+                    dailyBuyRemaining),
                 false);
             String command = "/market confirm " + createConfirmation(
-                context.getSource().getPlayer().getUUID(), TradeSide.BUY, estimate.instrument(), null,
+                player.getUUID(), TradeSide.BUY, estimate.instrument(), null,
                 estimate.units(), estimate.snapshotId());
             MutableComponent confirmation = Translator.tr("commands.market.estimate.confirm").copy()
                 .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(command)));
