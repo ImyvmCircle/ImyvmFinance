@@ -1,6 +1,11 @@
 {
   "imyvm_finance.commands.market.help.header": "§6§l=== IMYVM 金融市场 ===§r",
   "imyvm_finance.commands.market.help.intro": "§7ImyvmFinance 把真实指数行情接入服务器经济：§f用游戏货币按实时行情买卖指数份额§7，随行就市、自负盈亏。",
+  "imyvm_finance.commands.market.help.symbol_hint": "§7命令中的标的不带冒号输入，如 §fCN000001§7（对应 CN:000001），可按提示补全。",
+  "imyvm_finance.commands.market.suggest.units": "§7买入数量（单位）",
+  "imyvm_finance.commands.market.suggest.sell_units": "§7卖出数量（可用 {0} 单位）",
+  "imyvm_finance.commands.market.suggest.position": "§7{0} | 可用 {1} 单位",
+  "imyvm_finance.commands.market.suggest.transaction": "§7{0} | {1} 单位 | {2}$",
   "imyvm_finance.commands.market.help.command.list": "§e/imyvm-market list §7- 查看全部可交易标的与状态。",
   "imyvm_finance.commands.market.help.command.quote": "§e/imyvm-market quote <标的> §7- 查询指定标的的最新行情。",
   "imyvm_finance.commands.market.help.command.buy": "§e/imyvm-market buy <标的> <单位数> §7- 预估买入成本，确认后成交。",

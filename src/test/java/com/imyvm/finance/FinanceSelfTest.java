@@ -85,6 +85,10 @@ public final class FinanceSelfTest {
         String label = MarketCommands.instrumentLabel(Instrument.CN_000001).getString();
         check(label.contains("上证指数") && label.contains("CN:000001"),
             "instrument label missing readable name or symbol: " + label);
+        check(Instrument.fromSymbol("CN000001") == Instrument.CN_000001,
+            "command-form symbol without colon did not resolve");
+        check(Instrument.fromSymbol("cn:000001") == Instrument.CN_000001,
+            "display-form symbol did not resolve");
         String rendered = Translator.tr("commands.market.list.item", "CN:000001", "上证指数", "开市").getString();
         check(rendered.contains("CN:000001") && rendered.contains("上证指数"),
             "zh_cn translation did not interpolate arguments: " + rendered);

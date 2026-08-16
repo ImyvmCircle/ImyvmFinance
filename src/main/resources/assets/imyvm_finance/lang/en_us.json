@@ -1,6 +1,11 @@
 {
   "imyvm_finance.commands.market.help.header": "§6§l=== IMYVM Finance Market ===§r",
   "imyvm_finance.commands.market.help.intro": "§7ImyvmFinance brings real index quotes into the server economy: §fbuy and sell index shares with in-game money at live prices§7 and ride the market swings.",
+  "imyvm_finance.commands.market.help.symbol_hint": "§7Enter symbols without the colon, e.g. §fCN000001§7 for CN:000001; suggestions complete them for you.",
+  "imyvm_finance.commands.market.suggest.units": "§7Quantity to buy (units)",
+  "imyvm_finance.commands.market.suggest.sell_units": "§7Quantity to sell ({0} available)",
+  "imyvm_finance.commands.market.suggest.position": "§7{0} | {1} units available",
+  "imyvm_finance.commands.market.suggest.transaction": "§7{0} | {1} units | {2}$",
   "imyvm_finance.commands.market.help.command.list": "§e/imyvm-market list §7- List all tradable instruments and their status.",
   "imyvm_finance.commands.market.help.command.quote": "§e/imyvm-market quote <symbol> §7- Show the latest quote for an instrument.",
   "imyvm_finance.commands.market.help.command.buy": "§e/imyvm-market buy <symbol> <units> §7- Estimate the buy cost, then confirm to execute.",

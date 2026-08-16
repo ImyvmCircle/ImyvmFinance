@@ -166,6 +166,7 @@ public final class MarketCommands {
         CommandSourceStack source = context.getSource();
         source.sendSuccess(() -> Translator.tr("commands.market.help.header"), false);
         source.sendSuccess(() -> Translator.tr("commands.market.help.intro"), false);
+        source.sendSuccess(() -> Translator.tr("commands.market.help.symbol_hint"), false);
         for (String entry : new String[]{
             "list", "quote", "buy", "estimate", "sell", "positions", "history", "rules", "briefing", "help"
         })
@@ -376,8 +377,14 @@ public final class MarketCommands {
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
         SuggestionsBuilder builder
     ) {
-        for (Instrument instrument : Instrument.values())
-            builder.suggest(instrument.symbol());
+        String remaining = builder.getRemaining().toLowerCase(java.util.Locale.ROOT);
+        for (Instrument instrument : Instrument.values()) {
+            if (instrument.commandForm().toLowerCase(java.util.Locale.ROOT).startsWith(remaining))
+                builder.suggest(instrument.commandForm(),
+                    Translator.tr("commands.market.instrument.label",
+                        Translator.tr("instrument." + instrument.name().toLowerCase(java.util.Locale.ROOT)),
+                        instrument.symbol()));
+        }
         return builder.buildFuture();
     }
 
@@ -388,10 +395,14 @@ public final class MarketCommands {
         if (ImyvmFinance.TRADING_STORE == null || !context.getSource().isPlayer())
             return builder.buildFuture();
         try {
+            String remaining = builder.getRemaining().toLowerCase(java.util.Locale.ROOT);
             for (StoredPosition position : ImyvmFinance.TRADING_STORE.findPositions(context.getSource().getPlayer().getUUID())) {
                 long availableUnits = position.remainingUnits() - position.frozenUnits();
-                builder.suggest(position.positionId().toString(),
-                    () -> position.instrument().symbol() + " | " + availableUnits);
+                String positionId = position.positionId().toString();
+                if (positionId.startsWith(remaining))
+                    builder.suggest(positionId,
+                        Translator.tr("commands.market.suggest.position",
+                            position.instrument().symbol(), availableUnits));
             }
         } catch (Exception exception) {
             return builder.buildFuture();
@@ -403,10 +414,13 @@ public final class MarketCommands {
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
         SuggestionsBuilder builder
     ) {
-        builder.suggest(Long.toString(ImyvmFinance.TRADING_RULES.minUnits()));
-        builder.suggest("10");
-        builder.suggest("100");
-        builder.suggest("1000");
+        String remaining = builder.getRemaining();
+        for (String units : new String[]{
+            Long.toString(ImyvmFinance.TRADING_RULES.minUnits()), "10", "100", "1000"
+        }) {
+            if (units.startsWith(remaining))
+                builder.suggest(units, Translator.tr("commands.market.suggest.units"));
+        }
         return builder.buildFuture();
     }
 
@@ -422,8 +436,10 @@ public final class MarketCommands {
             if (storedPosition.isPresent()
                 && storedPosition.get().playerId().equals(context.getSource().getPlayer().getUUID())) {
                 long availableUnits = storedPosition.get().remainingUnits() - storedPosition.get().frozenUnits();
-                if (availableUnits > 0)
-                    builder.suggest(Long.toString(availableUnits));
+                String suggestion = Long.toString(availableUnits);
+                if (availableUnits > 0 && suggestion.startsWith(builder.getRemaining()))
+                    builder.suggest(suggestion,
+                        Translator.tr("commands.market.suggest.sell_units", availableUnits));
             }
         } catch (Exception exception) {
             return builder.buildFuture();
@@ -442,8 +458,14 @@ public final class MarketCommands {
         if (ImyvmFinance.TRADING_STORE == null)
             return builder.buildFuture();
         try {
-            for (StoredOrder order : ImyvmFinance.TRADING_STORE.findPendingManualOrders())
-                builder.suggest(order.transactionId().toString());
+            String remaining = builder.getRemaining().toLowerCase(java.util.Locale.ROOT);
+            for (StoredOrder order : ImyvmFinance.TRADING_STORE.findPendingManualOrders()) {
+                String transactionId = order.transactionId().toString();
+                if (transactionId.startsWith(remaining))
+                    builder.suggest(transactionId,
+                        Translator.tr("commands.market.suggest.transaction",
+                            order.instrument().symbol(), order.units(), order.amount()));
+            }
         } catch (Exception exception) {
             return builder.buildFuture();
         }

@@ -40,9 +40,14 @@ public enum Instrument {
 
     public static Instrument fromSymbol(String symbol) {
         for (Instrument instrument : values()) {
-            if (instrument.symbol.equalsIgnoreCase(symbol))
+            if (instrument.symbol.equalsIgnoreCase(symbol)
+                || instrument.commandForm().equalsIgnoreCase(symbol))
                 return instrument;
         }
         return null;
+    }
+
+    public String commandForm() {
+        return symbol.replace(":", "");
     }
 }
