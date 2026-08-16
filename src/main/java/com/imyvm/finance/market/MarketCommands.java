@@ -180,7 +180,7 @@ public final class MarketCommands {
                 }
                 MutableComponent item = Translator.tr(
                     "commands.market.positions.item",
-                    position.instrument().symbol(),
+                    instrumentLabel(position.instrument()),
                     availableUnits,
                     position.frozenUnits(),
                     position.positionValue(),
@@ -223,7 +223,7 @@ public final class MarketCommands {
                     () -> Translator.tr(
                         "commands.market.history.item",
                         tradeSide(trade.side()),
-                        trade.instrument().symbol(),
+                        instrumentLabel(trade.instrument()),
                         trade.units(),
                         trade.settlementAmount(),
                         tradeState(trade.state()),
@@ -393,7 +393,7 @@ public final class MarketCommands {
             return false;
         }
         if (!ImyvmFinance.TRADING_STORE.isTradingEnabled(instrument)) {
-            source.sendFailure(Translator.tr("commands.market.trade.disabled_instrument", instrument.symbol()));
+            source.sendFailure(Translator.tr("commands.market.trade.disabled_instrument", instrumentLabel(instrument)));
             return false;
         }
         return true;
@@ -498,7 +498,7 @@ public final class MarketCommands {
             .append(Translator.tr("commands.market.list.header"));
         for (Instrument instrument : Instrument.values()) {
             Component item = Translator.tr(
-                "commands.market.list.item", instrument.symbol(), instrument.market()).copy()
+                "commands.market.list.item", instrumentLabel(instrument), instrument.market()).copy()
                 .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(
                     "/market estimate " + instrument.symbol() + " " + ImyvmFinance.TRADING_RULES.minUnits())));
             message.append("\n").append(item);
@@ -537,7 +537,7 @@ public final class MarketCommands {
         context.getSource().sendSuccess(
             () -> Translator.tr(
                 "commands.market.quote.result",
-                quote.quote().instrument().symbol(),
+                instrumentLabel(quote.quote().instrument()),
                 formatPrice(quote.quote().priceScaled()),
                 formatPercent(quote.quote().changeBps()),
                 quote.source()),
@@ -568,7 +568,7 @@ public final class MarketCommands {
             context.getSource().sendSuccess(
                 () -> Translator.tr(
                     "commands.market.estimate.result",
-                    estimate.instrument().symbol(),
+                    instrumentLabel(estimate.instrument()),
                     estimate.units(),
                     formatPrice(estimate.executionPriceScaled()),
                     estimate.feeAmount(),
@@ -684,6 +684,11 @@ public final class MarketCommands {
                 now,
                 dailySellAmount(player.getUUID(), now),
                 ImyvmFinance.TRADING_RULES);
+            long soldCostBasis = BigDecimal.valueOf(position.positionValue())
+                .multiply(BigDecimal.valueOf(estimate.units()))
+                .divide(BigDecimal.valueOf(position.remainingUnits()), 0, RoundingMode.FLOOR)
+                .longValueExact();
+            long soldProfitLoss = estimate.settlementAmount() - soldCostBasis;
 
             if (!confirmed) {
                 String command = "/market confirm " + createConfirmation(
@@ -693,8 +698,8 @@ public final class MarketCommands {
                     .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(command)));
                 context.getSource().sendSuccess(() -> Translator.tr(
                     "commands.market.sell.estimate.result",
-                    estimate.instrument().symbol(), estimate.units(), estimate.settlementAmount(),
-                    formatPrice(estimate.executionPriceScaled()), estimate.feeAmount()), false);
+                    instrumentLabel(estimate.instrument()), estimate.units(), estimate.settlementAmount(),
+                    formatPrice(estimate.executionPriceScaled()), estimate.feeAmount(), soldProfitLoss), false);
                 context.getSource().sendSuccess(() -> confirmation, false);
                 return Command.SINGLE_SUCCESS;
             }
@@ -757,11 +762,12 @@ public final class MarketCommands {
             context.getSource().sendSuccess(
                 () -> Translator.tr(
                     "commands.market.sell.success",
-                    estimate.instrument().symbol(),
+                    instrumentLabel(estimate.instrument()),
                     estimate.units(),
                     estimate.settlementAmount(),
                     formatPrice(estimate.executionPriceScaled()),
-                    estimate.feeAmount()),
+                    estimate.feeAmount(),
+                    soldProfitLoss),
                 false);
             return Command.SINGLE_SUCCESS;
         } catch (TradeValidationException exception) {
@@ -896,7 +902,7 @@ public final class MarketCommands {
             context.getSource().sendSuccess(
                 () -> Translator.tr(
                     "commands.market.buy.success",
-                    estimate.instrument().symbol(),
+                    instrumentLabel(estimate.instrument()),
                     estimate.units(),
                     estimate.settlementAmount(),
                     formatPrice(estimate.executionPriceScaled()),
@@ -914,6 +920,11 @@ public final class MarketCommands {
             context.getSource().sendFailure(Translator.tr("commands.market.buy.storage_unavailable"));
             return 0;
         }
+    }
+
+    public static Component instrumentLabel(Instrument instrument) {
+        return Translator.tr("commands.market.instrument.label",
+            Translator.tr("instrument." + instrument.name().toLowerCase()), instrument.symbol());
     }
 
     private static Component positionState(com.imyvm.finance.trading.StockOrderState state) {

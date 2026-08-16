@@ -185,7 +185,7 @@ public final class ImyvmFinance implements ModInitializer {
                     StoredQuote quote = stored.get();
                     boolean tradable = quote.quote().status() == MarketStatus.OPEN
                         && TRADING_STORE.isGlobalTradingEnabled() && TRADING_STORE.isTradingEnabled(instrument);
-                    Component name = Translator.tr("commands.market.briefing.instrument", instrument.symbol()).copy();
+                    Component name = MarketCommands.instrumentLabel(instrument).copy();
                     if (tradable)
                         name = name.copy().withStyle(style -> style
                             .withClickEvent(new ClickEvent.RunCommand(

@@ -1,6 +1,7 @@
 package com.imyvm.finance;
 
 import com.imyvm.finance.market.Instrument;
+import com.imyvm.finance.market.MarketCommands;
 import com.imyvm.finance.market.MarketStatus;
 import com.imyvm.finance.quote.SidecarClient;
 import com.imyvm.finance.storage.StockTradingStore;
@@ -80,6 +81,9 @@ public final class FinanceSelfTest {
 
     private static void translationChecks() {
         Translator.setLanguage("zh_cn");
+        String label = MarketCommands.instrumentLabel(Instrument.CN_000001).getString();
+        check(label.contains("上证指数") && label.contains("CN:000001"),
+            "instrument label missing readable name or symbol: " + label);
         String rendered = Translator.tr("commands.market.list.item", "CN:000001", "上证指数").getString();
         check(rendered.contains("CN:000001") && rendered.contains("上证指数"),
             "zh_cn translation did not interpolate arguments: " + rendered);
