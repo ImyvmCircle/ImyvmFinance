@@ -31,7 +31,7 @@ public record FinanceConfig(
             5,
             20,
             true,
-            "en_us",
+            "zh_cn",
             TradingRules.DEFAULT);
     }
 

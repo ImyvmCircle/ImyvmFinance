@@ -11,7 +11,7 @@ import net.minecraft.network.chat.contents.PlainTextContents;
 import java.io.InputStream;
 
 public final class Translator {
-    private static volatile HokiLanguage language = loadLanguage("en_us");
+    private static volatile HokiLanguage language = loadLanguage("zh_cn");
 
     private Translator() {
     }
