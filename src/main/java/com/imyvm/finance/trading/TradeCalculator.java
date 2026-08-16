@@ -25,12 +25,12 @@ public final class TradeCalculator {
         if (storedQuote.quote().status() != com.imyvm.finance.market.MarketStatus.OPEN)
             throw new TradeValidationException(
                 "commands.market.trade.market_not_open",
-                storedQuote.quote().instrument().symbol());
+                storedQuote.quote().instrument().label());
         if (storedQuote.marketTimeEpochMillis() > nowEpochMillis
             || nowEpochMillis - storedQuote.marketTimeEpochMillis() > rules.maxQuoteAgeMillis())
             throw new TradeValidationException(
                 "commands.market.trade.quote_stale",
-                storedQuote.quote().instrument().symbol());
+                storedQuote.quote().instrument().label());
 
         Instrument instrument = storedQuote.quote().instrument();
         BigDecimal indexPrice = BigDecimal.valueOf(storedQuote.quote().priceScaled(), 4);

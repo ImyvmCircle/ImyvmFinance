@@ -614,10 +614,32 @@ public final class MarketCommands {
         MutableComponent message = Component.empty()
             .append(Translator.tr("commands.market.list.header"));
         for (Instrument instrument : Instrument.values()) {
+            Component status = Translator.tr("commands.market.briefing.status.unavailable");
+            boolean tradable = false;
+            if (ImyvmFinance.QUOTE_STORE != null) {
+                try {
+                    Optional<StoredQuote> stored = ImyvmFinance.QUOTE_STORE.findLatest(instrument);
+                    if (stored.isPresent()) {
+                        boolean enabled = stored.get().quote().status() == MarketStatus.OPEN;
+                        if (enabled && ImyvmFinance.TRADING_STORE != null)
+                            enabled = ImyvmFinance.TRADING_STORE.isGlobalTradingEnabled()
+                                && ImyvmFinance.TRADING_STORE.isTradingEnabled(instrument);
+                        tradable = enabled;
+                        status = marketStatus(stored.get(), enabled);
+                    }
+                } catch (Exception exception) {
+                    tradable = false;
+                }
+            }
             Component item = Translator.tr(
-                "commands.market.list.item", instrumentLabel(instrument), instrument.market()).copy()
-                .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(
-                    "/market estimate " + instrument.symbol() + " " + ImyvmFinance.TRADING_RULES.minUnits())));
+                "commands.market.list.item", instrumentLabel(instrument), instrument.market(), status).copy();
+            if (tradable)
+                item = item.copy().withStyle(style -> style
+                    .withClickEvent(new ClickEvent.RunCommand(
+                        "/market estimate " + instrument.symbol() + " " + ImyvmFinance.TRADING_RULES.minUnits()))
+                    .withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(
+                        Translator.tr("commands.market.briefing.buy_hint")))
+                    .withUnderlined(true));
             message.append("\n").append(item);
         }
 
@@ -645,19 +667,38 @@ public final class MarketCommands {
         }
 
         if (storedQuote.isEmpty()) {
-            context.getSource().sendFailure(Translator.tr("commands.market.quote.unavailable", instrument.symbol()));
+            context.getSource().sendFailure(Translator.tr("commands.market.quote.unavailable", instrument.label()));
             return 0;
         }
 
         StoredQuote quote = storedQuote.get();
+        boolean tradable = quote.quote().status() == MarketStatus.OPEN;
+        if (tradable && ImyvmFinance.TRADING_STORE != null) {
+            try {
+                tradable = ImyvmFinance.TRADING_STORE.isGlobalTradingEnabled()
+                    && ImyvmFinance.TRADING_STORE.isTradingEnabled(instrument);
+            } catch (Exception exception) {
+                tradable = false;
+            }
+        }
+        Component status = marketStatus(quote, tradable);
         context.getSource().sendSuccess(
             () -> Translator.tr(
                 "commands.market.quote.result",
                 instrumentLabel(quote.quote().instrument()),
                 formatPrice(quote.quote().priceScaled()),
-                formatPercent(quote.quote().changeBps())),
+                formatPercent(quote.quote().changeBps()),
+                status),
             false);
         return Command.SINGLE_SUCCESS;
+    }
+
+    private static Component marketStatus(StoredQuote quote, boolean tradable) {
+        if (tradable)
+            return Translator.tr("commands.market.briefing.status.open");
+        if (quote.quote().status() == MarketStatus.OPEN)
+            return Translator.tr("commands.market.briefing.status.paused");
+        return Translator.tr("commands.market.briefing.status." + quote.quote().status().name().toLowerCase());
     }
 
     private static int estimate(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
@@ -673,9 +714,11 @@ public final class MarketCommands {
         }
 
         try {
+            if (!tradingEnabled(context.getSource(), instrument))
+                return 0;
             Optional<StoredQuote> storedQuote = ImyvmFinance.QUOTE_STORE.findLatest(instrument);
             if (storedQuote.isEmpty()) {
-                context.getSource().sendFailure(Translator.tr("commands.market.quote.unavailable", instrument.symbol()));
+                context.getSource().sendFailure(Translator.tr("commands.market.quote.unavailable", instrument.label()));
                 return 0;
             }
             long now = System.currentTimeMillis();
@@ -797,7 +840,7 @@ public final class MarketCommands {
                 ? ImyvmFinance.QUOTE_STORE.findLatest(position.instrument())
                 : ImyvmFinance.QUOTE_STORE.find(position.instrument(), snapshotId);
             if (storedQuote.isEmpty()) {
-                context.getSource().sendFailure(Translator.tr("commands.market.quote.unavailable", position.instrument().symbol()));
+                context.getSource().sendFailure(Translator.tr("commands.market.quote.unavailable", position.instrument().label()));
                 return 0;
             }
             TradeEstimate estimate = TradeCalculator.estimate(
@@ -949,7 +992,7 @@ public final class MarketCommands {
                 ? ImyvmFinance.QUOTE_STORE.findLatest(instrument)
                 : ImyvmFinance.QUOTE_STORE.find(instrument, snapshotId);
             if (storedQuote.isEmpty()) {
-                context.getSource().sendFailure(Translator.tr("commands.market.quote.unavailable", instrument.symbol()));
+                context.getSource().sendFailure(Translator.tr("commands.market.quote.unavailable", instrument.label()));
                 return 0;
             }
             TradeEstimate estimate = TradeCalculator.estimate(
@@ -1054,8 +1097,7 @@ public final class MarketCommands {
     }
 
     public static Component instrumentLabel(Instrument instrument) {
-        return Translator.tr("commands.market.instrument.label",
-            Translator.tr("instrument." + instrument.name().toLowerCase()), instrument.symbol());
+        return instrument.label();
     }
 
     private static Component positionState(com.imyvm.finance.trading.StockOrderState state) {

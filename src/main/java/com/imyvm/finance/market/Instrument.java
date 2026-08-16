@@ -1,5 +1,8 @@
 package com.imyvm.finance.market;
 
+import com.imyvm.finance.Translator;
+import net.minecraft.network.chat.Component;
+
 public enum Instrument {
     CN_000001("CN:000001", "CN"),
     CN_399001("CN:399001", "CN"),
@@ -28,6 +31,11 @@ public enum Instrument {
 
     public String market() {
         return market;
+    }
+
+    public Component label() {
+        return Translator.tr("commands.market.instrument.label",
+            Translator.tr("instrument." + name().toLowerCase()), symbol);
     }
 
     public static Instrument fromSymbol(String symbol) {
