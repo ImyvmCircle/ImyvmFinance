@@ -147,6 +147,24 @@ public final class MarketCommands {
 
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger(ImyvmFinance.MOD_ID);
 
+    private static void sendPageFooter(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        String command, long page, long pageCount
+    ) {
+        if (pageCount <= 1)
+            return;
+        MutableComponent footer = Component.empty();
+        if (page > 1)
+            footer.append(Translator.tr("commands.market.page.prev").copy()
+                .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(command + " " + (page - 1)))));
+        if (page > 1 && page < pageCount)
+            footer.append(" ");
+        if (page < pageCount)
+            footer.append(Translator.tr("commands.market.page.next").copy()
+                .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(command + " " + (page + 1)))));
+        context.getSource().sendSuccess(() -> footer, false);
+    }
+
     private static int failUnexpected(CommandSourceStack source, String operation, Exception exception) {
         LOGGER.warn("Finance {} failed unexpectedly", operation, exception);
         source.sendFailure(Translator.tr("commands.market.error"));
@@ -214,6 +232,7 @@ public final class MarketCommands {
                 }
                 context.getSource().sendSuccess(() -> item, false);
             }
+            sendPageFooter(context, "/market positions", page, pageCount);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) {
             return failUnexpected(context.getSource(), "positions", exception);
@@ -252,6 +271,7 @@ public final class MarketCommands {
                         Instant.ofEpochMilli(trade.createdAtEpochMillis())),
                     false);
             }
+            sendPageFooter(context, "/market history", page, pageCount);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) {
             return failUnexpected(context.getSource(), "history", exception);

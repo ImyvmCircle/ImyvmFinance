@@ -70,6 +70,8 @@
   "imyvm_finance.commands.market.positions.sell": "[卖出]",
   "imyvm_finance.commands.market.positions.sell_hint": "点击填入卖出命令，再输入数量",
   "imyvm_finance.commands.market.positions.sell_all": "[卖出全部]",
+  "imyvm_finance.commands.market.page.prev": "[上一页]",
+  "imyvm_finance.commands.market.page.next": "[下一页]",
   "imyvm_finance.commands.market.state.position.pending_finance": "结算中",
   "imyvm_finance.commands.market.state.position.active": "持仓中",
   "imyvm_finance.commands.market.state.position.pending_manual": "待人工核对",
