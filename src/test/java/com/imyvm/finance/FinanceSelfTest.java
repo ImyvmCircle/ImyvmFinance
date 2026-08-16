@@ -182,6 +182,16 @@ public final class FinanceSelfTest {
             check(trading.isGlobalTradingEnabled(), "global trading resumes");
             check(trading.isTradingEnabled(Instrument.CN_000001), "instrument trading resumes");
 
+            UUID subscriber = UUID.randomUUID();
+            check(!trading.isBriefingOptedOut(subscriber), "briefing defaults subscribed");
+            trading.setBriefingOptedOut(subscriber, true);
+            check(trading.isBriefingOptedOut(subscriber), "briefing opt-out persisted");
+            check(trading.findBriefingOptOuts().contains(subscriber), "briefing opt-out listed");
+            trading.setBriefingOptedOut(subscriber, true);
+            trading.setBriefingOptedOut(subscriber, false);
+            check(!trading.isBriefingOptedOut(subscriber), "briefing re-subscribed");
+            check(trading.findBriefingOptOuts().isEmpty(), "briefing opt-out cleared");
+
             UUID player = UUID.randomUUID();
             UUID positionId = createActiveBuy(trading, transactions, player, 100L);
             checkEquals(1, trading.findPositions(player).size(), "player position count");

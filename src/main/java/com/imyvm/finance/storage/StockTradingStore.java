@@ -96,6 +96,11 @@ public final class StockTradingStore implements AutoCloseable {
                 )
                 """);
             statement.execute("""
+                CREATE TABLE IF NOT EXISTS briefing_opt_outs (
+                    player_id TEXT PRIMARY KEY
+                )
+                """);
+            statement.execute("""
                 CREATE INDEX IF NOT EXISTS stock_orders_player_state_idx
                 ON stock_orders(player_id, state)
                 """);
@@ -164,6 +169,36 @@ public final class StockTradingStore implements AutoCloseable {
             enabled ? "DELETE FROM trading_halts WHERE scope = ?" : "INSERT OR IGNORE INTO trading_halts(scope) VALUES (?)")) {
             statement.setString(1, scope);
             statement.executeUpdate();
+        }
+    }
+
+    public synchronized boolean isBriefingOptedOut(UUID playerId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+            "SELECT 1 FROM briefing_opt_outs WHERE player_id = ?")) {
+            statement.setString(1, playerId.toString());
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next();
+            }
+        }
+    }
+
+    public synchronized void setBriefingOptedOut(UUID playerId, boolean optedOut) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+            optedOut
+                ? "INSERT OR IGNORE INTO briefing_opt_outs (player_id) VALUES (?)"
+                : "DELETE FROM briefing_opt_outs WHERE player_id = ?")) {
+            statement.setString(1, playerId.toString());
+            statement.executeUpdate();
+        }
+    }
+
+    public synchronized java.util.Set<UUID> findBriefingOptOuts() throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT player_id FROM briefing_opt_outs");
+             ResultSet result = statement.executeQuery()) {
+            java.util.Set<UUID> players = new java.util.HashSet<>();
+            while (result.next())
+                players.add(UUID.fromString(result.getString(1)));
+            return players;
         }
     }
 

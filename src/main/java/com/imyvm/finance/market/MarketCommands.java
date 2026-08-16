@@ -48,7 +48,6 @@ import java.util.function.Supplier;
 public final class MarketCommands {
     private static final long CONFIRMATION_TTL_MILLIS = 10L * 60 * 1000;
     private static final Map<UUID, PendingConfirmation> CONFIRMATIONS = new HashMap<>();
-    private static final java.util.Set<UUID> BRIEFING_OPT_OUT = new java.util.HashSet<>();
 
     private record PendingConfirmation(
         UUID playerId, TradeSide side, Instrument instrument, UUID positionId, long units, String snapshotId, long createdAt
@@ -175,20 +174,22 @@ public final class MarketCommands {
     }
 
     private static int briefing(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
-        UUID playerId = context.getSource().getPlayer().getUUID();
-        if (BRIEFING_OPT_OUT.remove(playerId))
-            context.getSource().sendSuccess(
-                () -> Translator.tr("commands.market.briefing.subscription.on"), false);
-        else {
-            BRIEFING_OPT_OUT.add(playerId);
-            context.getSource().sendSuccess(
-                () -> Translator.tr("commands.market.briefing.subscription.off"), false);
+        if (ImyvmFinance.TRADING_STORE == null) {
+            context.getSource().sendFailure(Translator.tr("commands.market.trading.storage_unavailable"));
+            return 0;
         }
-        return Command.SINGLE_SUCCESS;
-    }
-
-    public static boolean briefingOptedOut(UUID playerId) {
-        return BRIEFING_OPT_OUT.contains(playerId);
+        UUID playerId = context.getSource().getPlayer().getUUID();
+        try {
+            boolean optedOut = !ImyvmFinance.TRADING_STORE.isBriefingOptedOut(playerId);
+            ImyvmFinance.TRADING_STORE.setBriefingOptedOut(playerId, optedOut);
+            context.getSource().sendSuccess(
+                () -> Translator.tr(optedOut
+                    ? "commands.market.briefing.subscription.off"
+                    : "commands.market.briefing.subscription.on"), false);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) {
+            return failUnexpected(context.getSource(), "briefing toggle", exception);
+        }
     }
 
     private static void sendPageFooter(

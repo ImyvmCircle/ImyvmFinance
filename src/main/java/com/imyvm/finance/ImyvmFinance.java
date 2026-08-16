@@ -231,8 +231,15 @@ public final class ImyvmFinance implements ModInitializer {
             briefing.append(line);
         }
         briefing.append("\n").append(Translator.tr("commands.market.briefing.toggle_hint"));
+        java.util.Set<UUID> briefingOptOuts;
+        try {
+            briefingOptOuts = TRADING_STORE.findBriefingOptOuts();
+        } catch (Exception exception) {
+            LOGGER.warn("Failed to load briefing opt-outs", exception);
+            briefingOptOuts = java.util.Set.of();
+        }
         for (var player : server.getPlayerList().getPlayers()) {
-            if (!MarketCommands.briefingOptedOut(player.getUUID()))
+            if (!briefingOptOuts.contains(player.getUUID()))
                 player.sendSystemMessage(briefing);
         }
     }
