@@ -174,17 +174,39 @@ public final class ImyvmFinance implements ModInitializer {
         nextBriefingAt = now + Duration.ofMinutes(CONFIG.briefingIntervalMinutes()).toMillis();
         if (!CONFIG.briefingEnabled())
             return;
+        Instrument[] instruments = Instrument.values();
+        java.util.List<StoredQuote> quotes = new java.util.ArrayList<>();
+        for (Instrument instrument : instruments) {
+            try {
+                quotes.add(QUOTE_STORE.findLatest(instrument).orElse(null));
+            } catch (Exception exception) {
+                LOGGER.warn("Failed to prepare market briefing for {}", instrument.symbol(), exception);
+                quotes.add(null);
+            }
+        }
+        StoredQuote leader = null;
+        StoredQuote loser = null;
+        for (StoredQuote quote : quotes) {
+            if (quote == null)
+                continue;
+            if (leader == null || quote.quote().changeBps() > leader.quote().changeBps())
+                leader = quote;
+            if (loser == null || quote.quote().changeBps() < loser.quote().changeBps())
+                loser = quote;
+        }
+        boolean markMovers = leader != null && loser != null
+            && leader.quote().changeBps() != loser.quote().changeBps();
         MutableComponent briefing = Component.empty().append(Translator.tr("commands.market.briefing.header"));
         for (String market : new String[]{"CN", "HK", "US", "JP", "KR"}) {
             MutableComponent line = Component.empty().append("\n").append(Translator.tr("commands.market.briefing.market", market));
-            for (Instrument instrument : Instrument.values()) {
+            for (int index = 0; index < instruments.length; index++) {
+                Instrument instrument = instruments[index];
                 if (!instrument.market().equals(market))
                     continue;
+                StoredQuote quote = quotes.get(index);
+                if (quote == null)
+                    continue;
                 try {
-                    java.util.Optional<StoredQuote> stored = QUOTE_STORE.findLatest(instrument);
-                    if (stored.isEmpty())
-                        continue;
-                    StoredQuote quote = stored.get();
                     boolean tradable = quote.quote().status() == MarketStatus.OPEN
                         && TRADING_STORE.isGlobalTradingEnabled() && TRADING_STORE.isTradingEnabled(instrument);
                     Component name = MarketCommands.instrumentLabel(instrument).copy();
@@ -194,17 +216,25 @@ public final class ImyvmFinance implements ModInitializer {
                                 "/market estimate " + instrument.symbol() + " " + TRADING_RULES.minUnits()))
                             .withHoverEvent(new HoverEvent.ShowText(Translator.tr("commands.market.briefing.buy_hint")))
                             .withUnderlined(true));
+                    Component mover = Component.empty();
+                    if (markMovers && quote == leader)
+                        mover = Translator.tr("commands.market.briefing.leader");
+                    else if (markMovers && quote == loser)
+                        mover = Translator.tr("commands.market.briefing.loser");
                     line.append(Translator.tr("commands.market.briefing.item", name,
                         formatPrice(quote.quote().priceScaled()), formatPercent(quote.quote().changeBps()),
-                        briefingStatus(quote, tradable)));
+                        briefingStatus(quote, tradable), mover));
                 } catch (Exception exception) {
                     LOGGER.warn("Failed to prepare market briefing for {}", instrument.symbol(), exception);
                 }
             }
             briefing.append(line);
         }
-        for (var player : server.getPlayerList().getPlayers())
-            player.sendSystemMessage(briefing);
+        briefing.append("\n").append(Translator.tr("commands.market.briefing.toggle_hint"));
+        for (var player : server.getPlayerList().getPlayers()) {
+            if (!MarketCommands.briefingOptedOut(player.getUUID()))
+                player.sendSystemMessage(briefing);
+        }
     }
 
     private static Component briefingStatus(StoredQuote quote, boolean tradable) {

@@ -48,6 +48,7 @@ import java.util.function.Supplier;
 public final class MarketCommands {
     private static final long CONFIRMATION_TTL_MILLIS = 10L * 60 * 1000;
     private static final Map<UUID, PendingConfirmation> CONFIRMATIONS = new HashMap<>();
+    private static final java.util.Set<UUID> BRIEFING_OPT_OUT = new java.util.HashSet<>();
 
     private record PendingConfirmation(
         UUID playerId, TradeSide side, Instrument instrument, UUID positionId, long units, String snapshotId, long createdAt
@@ -107,6 +108,10 @@ public final class MarketCommands {
             .requires(CommandSourceStack::isPlayer)
             .executes(MarketCommands::rules);
 
+        var briefing = Commands.literal("briefing")
+            .requires(CommandSourceStack::isPlayer)
+            .executes(MarketCommands::briefing);
+
         var positions = Commands.literal("positions")
             .requires(CommandSourceStack::isPlayer)
             .executes(context -> positions(context, 1L))
@@ -144,6 +149,7 @@ public final class MarketCommands {
             .then(confirm)
             .then(trading)
             .then(rules)
+            .then(briefing)
             .then(positions)
             .then(history)
             .then(pending));
@@ -166,6 +172,23 @@ public final class MarketCommands {
             () -> Translator.tr("commands.market.rules.timing",
                 rules.sellCooldownMillis() / 60000, rules.maxQuoteAgeMillis() / 60000), false);
         return Command.SINGLE_SUCCESS;
+    }
+
+    private static int briefing(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        UUID playerId = context.getSource().getPlayer().getUUID();
+        if (BRIEFING_OPT_OUT.remove(playerId))
+            context.getSource().sendSuccess(
+                () -> Translator.tr("commands.market.briefing.subscription.on"), false);
+        else {
+            BRIEFING_OPT_OUT.add(playerId);
+            context.getSource().sendSuccess(
+                () -> Translator.tr("commands.market.briefing.subscription.off"), false);
+        }
+        return Command.SINGLE_SUCCESS;
+    }
+
+    public static boolean briefingOptedOut(UUID playerId) {
+        return BRIEFING_OPT_OUT.contains(playerId);
     }
 
     private static void sendPageFooter(
