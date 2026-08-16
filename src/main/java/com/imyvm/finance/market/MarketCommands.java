@@ -145,6 +145,14 @@ public final class MarketCommands {
         dispatcher.register(Commands.literal("mkt").redirect(market));
     }
 
+    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger(ImyvmFinance.MOD_ID);
+
+    private static int failUnexpected(CommandSourceStack source, String operation, Exception exception) {
+        LOGGER.warn("Finance {} failed unexpectedly", operation, exception);
+        source.sendFailure(Translator.tr("commands.market.error"));
+        return 0;
+    }
+
     private static int positions(
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
         long page
@@ -208,8 +216,7 @@ public final class MarketCommands {
             }
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) {
-            context.getSource().sendFailure(Translator.tr("commands.market.positions.storage_unavailable"));
-            return 0;
+            return failUnexpected(context.getSource(), "positions", exception);
         }
     }
 
@@ -247,8 +254,7 @@ public final class MarketCommands {
             }
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) {
-            context.getSource().sendFailure(Translator.tr("commands.market.history.storage_unavailable"));
-            return 0;
+            return failUnexpected(context.getSource(), "history", exception);
         }
     }
 
@@ -276,8 +282,7 @@ public final class MarketCommands {
             }
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) {
-            context.getSource().sendFailure(Translator.tr("commands.market.pending.storage_unavailable"));
-            return 0;
+            return failUnexpected(context.getSource(), "pending list", exception);
         }
     }
 
@@ -372,8 +377,7 @@ public final class MarketCommands {
                     : "commands.market.trading.global.disabled"), false);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) {
-            context.getSource().sendFailure(Translator.tr("commands.market.trading.storage_unavailable"));
-            return 0;
+            return failUnexpected(context.getSource(), "trading control", exception);
         }
     }
 
@@ -395,8 +399,7 @@ public final class MarketCommands {
                     : "commands.market.trading.instrument.disabled", instrument.symbol()), false);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) {
-            context.getSource().sendFailure(Translator.tr("commands.market.trading.storage_unavailable"));
-            return 0;
+            return failUnexpected(context.getSource(), "trading control", exception);
         }
     }
 
@@ -432,8 +435,7 @@ public final class MarketCommands {
             }
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) {
-            context.getSource().sendFailure(Translator.tr("commands.market.trading.storage_unavailable"));
-            return 0;
+            return failUnexpected(context.getSource(), "trading control", exception);
         }
     }
 
@@ -574,8 +576,7 @@ public final class MarketCommands {
         try {
             storedQuote = ImyvmFinance.QUOTE_STORE.findLatest(instrument);
         } catch (Exception exception) {
-            context.getSource().sendFailure(Translator.tr("commands.market.quote.storage_unavailable"));
-            return 0;
+            return failUnexpected(context.getSource(), "quote", exception);
         }
 
         if (storedQuote.isEmpty()) {
@@ -589,8 +590,7 @@ public final class MarketCommands {
                 "commands.market.quote.result",
                 instrumentLabel(quote.quote().instrument()),
                 formatPrice(quote.quote().priceScaled()),
-                formatPercent(quote.quote().changeBps()),
-                quote.source()),
+                formatPercent(quote.quote().changeBps())),
             false);
         return Command.SINGLE_SUCCESS;
     }
@@ -640,8 +640,7 @@ public final class MarketCommands {
             context.getSource().sendFailure(Translator.tr("commands.market.trade.amount_too_large"));
             return 0;
         } catch (Exception exception) {
-            context.getSource().sendFailure(Translator.tr("commands.market.quote.storage_unavailable"));
-            return 0;
+            return failUnexpected(context.getSource(), "estimate", exception);
         }
     }
 
@@ -828,8 +827,7 @@ public final class MarketCommands {
             context.getSource().sendFailure(Translator.tr("commands.market.trade.amount_too_large"));
             return 0;
         } catch (Exception exception) {
-            context.getSource().sendFailure(Translator.tr("commands.market.sell.storage_unavailable"));
-            return 0;
+            return failUnexpected(context.getSource(), "sell", exception);
         }
     }
 
@@ -967,8 +965,7 @@ public final class MarketCommands {
             context.getSource().sendFailure(Translator.tr("commands.market.trade.amount_too_large"));
             return 0;
         } catch (Exception exception) {
-            context.getSource().sendFailure(Translator.tr("commands.market.buy.storage_unavailable"));
-            return 0;
+            return failUnexpected(context.getSource(), "buy", exception);
         }
     }
 
