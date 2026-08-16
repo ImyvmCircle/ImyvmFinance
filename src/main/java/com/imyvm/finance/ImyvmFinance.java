@@ -231,7 +231,7 @@ public final class ImyvmFinance implements ModInitializer {
             briefing.append(line);
         }
         briefing.append("\n").append(Translator.tr("commands.market.briefing.toggle_hint"));
-        java.util.Set<UUID> briefingOptOuts;
+        java.util.Set<java.util.UUID> briefingOptOuts;
         try {
             briefingOptOuts = TRADING_STORE.findBriefingOptOuts();
         } catch (Exception exception) {
