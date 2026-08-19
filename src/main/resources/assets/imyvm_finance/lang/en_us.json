@@ -1,4 +1,5 @@
 {
+  "imyvm_finance.commands.market.disclaimer": "§c§l[Game Simulation Notice]§r §cQuotes are for in-game simulation only and may be delayed or abnormal; they are not real investment advice and have no real-world value.",
   "imyvm_finance.commands.market.help.header": "§6§l=== IMYVM Finance Market ===§r",
   "imyvm_finance.commands.market.help.intro": "§7ImyvmFinance brings real index quotes into the server economy: §fbuy and sell index shares with in-game money at live prices§7 and ride the market swings.",
   "imyvm_finance.commands.market.help.symbol_hint": "§7Enter symbols without the colon, e.g. §fCN000001§7 for CN:000001; suggestions complete them for you.",

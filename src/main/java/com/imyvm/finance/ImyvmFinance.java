@@ -185,7 +185,7 @@ public final class ImyvmFinance implements ModInitializer {
         try {
             int count = TRANSACTION_STORE.pendingSettlementCount(player.getUUID());
             if (count > 0)
-                player.sendSystemMessage(Translator.tr("commands.market.pending.player_notice", count));
+                player.sendSystemMessage(playerMessage(Translator.tr("commands.market.pending.player_notice", count)));
         } catch (Exception exception) {
             LOGGER.error("Failed to read pending finance settlements for {}", player.getUUID(), exception);
         }
@@ -198,7 +198,7 @@ public final class ImyvmFinance implements ModInitializer {
             return;
         try {
             for (StockTradingStore.MarketAlert alert : TRADING_STORE.findUndeliveredMarketAlerts(player.getUUID())) {
-                player.sendSystemMessage(marketAlertMessage(alert.alert()));
+                player.sendSystemMessage(playerMessage(marketAlertMessage(alert.alert())));
                 TRADING_STORE.markMarketAlertDelivered(player.getUUID(), alert.id());
             }
         } catch (Exception exception) {
@@ -285,7 +285,7 @@ public final class ImyvmFinance implements ModInitializer {
         }
         for (var player : server.getPlayerList().getPlayers()) {
             if (!briefingOptOuts.contains(player.getUUID()))
-                player.sendSystemMessage(briefing);
+                player.sendSystemMessage(playerMessage(briefing));
         }
     }
 
@@ -374,10 +374,15 @@ public final class ImyvmFinance implements ModInitializer {
         return Math.min(distance, interval - distance) <= tolerance;
     }
 
+    private static Component playerMessage(Component message) {
+        return Component.empty().append(Translator.tr("commands.market.disclaimer"))
+            .append("\n").append(message);
+    }
+
     private static void sendStartupAnnouncement(net.minecraft.server.MinecraftServer server) {
         Component message = Translator.tr("commands.market.notice.startup");
         for (var player : server.getPlayerList().getPlayers())
-            player.sendSystemMessage(message);
+            player.sendSystemMessage(playerMessage(message));
     }
 
     private static void handleQuoteSnapshot(com.imyvm.finance.market.QuoteSnapshot snapshot) {
@@ -428,7 +433,7 @@ public final class ImyvmFinance implements ModInitializer {
                                         String key, String market) {
         Component message = Translator.tr(key, marketLabel(market));
         for (var player : server.getPlayerList().getPlayers())
-            player.sendSystemMessage(message);
+            player.sendSystemMessage(playerMessage(message));
     }
 
     public static CompletableFuture<QuoteSnapshot> checkMarketData() {
@@ -495,7 +500,7 @@ public final class ImyvmFinance implements ModInitializer {
             Component message = marketAlertMessage(alert);
             for (var player : server.getPlayerList().getPlayers()) {
                 if (player.createCommandSourceStack().permissions().hasPermission(Permissions.COMMANDS_ADMIN)) {
-                    player.sendSystemMessage(message);
+                    player.sendSystemMessage(playerMessage(message));
                     if (persistedAlertId >= 0 && TRADING_STORE != null) {
                         try {
                             TRADING_STORE.markMarketAlertDelivered(player.getUUID(), persistedAlertId);
