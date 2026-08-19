@@ -15,7 +15,9 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.permissions.Permissions;
 import com.imyvm.finance.economy.StockEconomySettlement;
 import com.imyvm.finance.quote.QuoteRefreshService;
+import com.imyvm.finance.quote.DirectMarketQuoteClient;
 import com.imyvm.finance.quote.SidecarClient;
+import com.imyvm.finance.market.QuoteSnapshot;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -50,12 +52,14 @@ public final class ImyvmFinance implements ModInitializer {
     private static String lastBriefingSnapshotId;
     private static final Map<String, MarketStatus> MARKET_STATUSES = new HashMap<>();
     private static volatile net.minecraft.server.MinecraftServer SERVER;
+    private static Path CONFIG_PATH;
 
     @Override
     public void onInitialize() {
         try {
             Path configPath = FabricLoader.getInstance().getConfigDir()
                 .resolve(MOD_ID + ".properties");
+            CONFIG_PATH = configPath;
             CONFIG = FinanceConfig.load(configPath);
             TRADING_RULES = CONFIG.tradingRules();
             Translator.setLanguage(CONFIG.language());
@@ -80,7 +84,8 @@ public final class ImyvmFinance implements ModInitializer {
             pruneExpiredData();
             nextBriefingAt = Long.MAX_VALUE;
             lastBriefingSnapshotId = null;
-            sendStartupAnnouncement(server);
+            if (CONFIG.setupInitialized())
+                sendStartupAnnouncement(server);
             startQuoteRefresh();
         });
         ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -88,6 +93,9 @@ public final class ImyvmFinance implements ModInitializer {
             sendMarketBriefing(server);
         });
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            if (!CONFIG.setupInitialized()
+                && handler.getPlayer().createCommandSourceStack().permissions().hasPermission(Permissions.COMMANDS_ADMIN))
+                handler.getPlayer().sendSystemMessage(Translator.tr("commands.market.setup.required"));
             notifyPendingSettlement(handler.getPlayer());
             notifyPendingMarketAlerts(handler.getPlayer());
         });
@@ -196,6 +204,8 @@ public final class ImyvmFinance implements ModInitializer {
     }
 
     private static void sendMarketBriefing(net.minecraft.server.MinecraftServer server) {
+        if (!CONFIG.setupInitialized())
+            return;
         long now = System.currentTimeMillis();
         if (now < nextBriefingAt || QUOTE_STORE == null || TRADING_STORE == null)
             return;
@@ -333,6 +343,8 @@ public final class ImyvmFinance implements ModInitializer {
         if (server == null)
             return;
         server.execute(() -> {
+            if (!CONFIG.setupInitialized())
+                return;
             if (isBriefingSnapshot(snapshot) && !snapshot.snapshotId().equals(lastBriefingSnapshotId)) {
                 lastBriefingSnapshotId = snapshot.snapshotId();
                 nextBriefingAt = snapshot.fetchedAtEpochMillis() + CONFIG.briefingDelaySeconds() * 1000L;
@@ -377,7 +389,20 @@ public final class ImyvmFinance implements ModInitializer {
             player.sendSystemMessage(message);
     }
 
+    public static CompletableFuture<QuoteSnapshot> checkMarketData() {
+        return new DirectMarketQuoteClient(CONFIG.sidecarConnectTimeout(), CONFIG.sidecarReadTimeout()).fetch();
+    }
+
+    public static void completeSetup() throws java.io.IOException {
+        if (CONFIG_PATH == null)
+            throw new IllegalStateException("finance config path is unavailable");
+        FinanceConfig.writeSetupInitialized(CONFIG_PATH, true);
+        CONFIG = CONFIG.withSetupInitialized(true);
+    }
+
     private static void notifyQuoteAlert(String alert) {
+        if (!CONFIG.setupInitialized())
+            return;
         long alertId = -1L;
         if (TRADING_STORE != null) {
             try {

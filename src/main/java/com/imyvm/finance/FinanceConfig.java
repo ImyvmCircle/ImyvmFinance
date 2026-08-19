@@ -20,6 +20,7 @@ public record FinanceConfig(
     long briefingIntervalMinutes,
     long briefingDelaySeconds,
     boolean briefingEnabled,
+    boolean setupInitialized,
     String language,
     TradingRules tradingRules
 ) {
@@ -35,6 +36,7 @@ public record FinanceConfig(
             20,
             20,
             true,
+            false,
             "zh_cn",
             TradingRules.DEFAULT);
     }
@@ -63,6 +65,7 @@ public record FinanceConfig(
                 properties.setProperty("briefing.delay-seconds",
                     Long.toString(defaults.briefingDelaySeconds()));
                 properties.setProperty("briefing.enabled", Boolean.toString(defaults.briefingEnabled()));
+                properties.setProperty("setup.initialized", Boolean.toString(defaults.setupInitialized()));
                 properties.setProperty("language", defaults.language());
                 properties.setProperty("trading.max-quote-age-minutes", "15");
                 properties.setProperty("trading.sell-cooldown-minutes", "30");
@@ -87,6 +90,7 @@ public record FinanceConfig(
             positiveLong(properties, "briefing.interval-minutes", defaults.briefingIntervalMinutes()),
             positiveLong(properties, "briefing.delay-seconds", defaults.briefingDelaySeconds()),
             parseBoolean(properties, "briefing.enabled", defaults.briefingEnabled()),
+            parseBoolean(properties, "setup.initialized", defaults.setupInitialized()),
             properties.getProperty("language", defaults.language()).trim(),
             new TradingRules(
                 positiveLong(properties, "trading.max-quote-age-minutes", 15) * 60 * 1000,
@@ -97,6 +101,25 @@ public record FinanceConfig(
                 nonNegativeLong(properties, "trading.daily-sell-limit", 100000),
                 nonNegativeLong(properties, "trading.position-value-limit", 300000),
                 positiveLong(properties, "trading.min-units", 1)));
+    }
+
+    public FinanceConfig withSetupInitialized(boolean initialized) {
+        return new FinanceConfig(sidecarEndpoint, sidecarConnectTimeout, sidecarReadTimeout,
+            quotePollIntervalMinutes, quotePollDelaySeconds, briefingIntervalMinutes, briefingDelaySeconds,
+            briefingEnabled, initialized, language, tradingRules);
+    }
+
+    public static void writeSetupInitialized(Path path, boolean initialized) throws IOException {
+        Properties properties = new Properties();
+        if (Files.exists(path)) {
+            try (Reader reader = Files.newBufferedReader(path)) {
+                properties.load(reader);
+            }
+        }
+        properties.setProperty("setup.initialized", Boolean.toString(initialized));
+        try (Writer writer = Files.newBufferedWriter(path)) {
+            properties.store(writer, "ImyvmFinance settings");
+        }
     }
 
     private static boolean parseBoolean(Properties properties, String key, boolean fallback) {

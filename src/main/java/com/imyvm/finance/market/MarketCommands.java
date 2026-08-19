@@ -175,9 +175,14 @@ public final class MarketCommands {
         var help = Commands.literal("help")
             .executes(MarketCommands::help);
 
+        var setup = Commands.literal("setup")
+            .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
+            .executes(MarketCommands::setup);
+
         var market = dispatcher.register(Commands.literal("imyvm-market")
             .executes(MarketCommands::help)
             .then(help)
+            .then(setup)
             .then(Commands.literal("list")
                 .executes(MarketCommands::list))
             .then(Commands.literal("quote")
@@ -208,7 +213,7 @@ public final class MarketCommands {
         source.sendSuccess(() -> Translator.tr("commands.market.help.intro"), false);
         source.sendSuccess(() -> Translator.tr("commands.market.help.symbol_hint"), false);
         for (String entry : new String[]{
-            "list", "quote", "buy", "estimate", "sell", "positions", "history", "rules", "briefing", "help"
+            "list", "quote", "buy", "estimate", "sell", "positions", "history", "rules", "briefing", "setup", "help"
         })
             source.sendSuccess(() -> Translator.tr("commands.market.help.command." + entry), false);
         if (source.permissions().hasPermission(Permissions.COMMANDS_ADMIN)) {
@@ -217,6 +222,25 @@ public final class MarketCommands {
             source.sendSuccess(() -> Translator.tr("commands.market.help.command.trading"), false);
             source.sendSuccess(() -> Translator.tr("commands.market.help.command.pending"), false);
         }
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int setup(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        source.sendSuccess(() -> Translator.tr("commands.market.setup.checking"), false);
+        ImyvmFinance.checkMarketData().thenAccept(snapshot ->
+            source.getServer().execute(() -> {
+                try {
+                    ImyvmFinance.completeSetup();
+                    source.sendSuccess(() -> Translator.tr("commands.market.setup.success", snapshot.quotes().size()), true);
+                } catch (Exception exception) {
+                    source.sendFailure(Translator.tr("commands.market.setup.failed", exception.getMessage()));
+                }
+            })).exceptionally(error -> {
+                source.getServer().execute(() -> source.sendFailure(Translator.tr(
+                    "commands.market.setup.failed", error.getCause() == null ? error.getMessage() : error.getCause().getMessage())));
+                return null;
+            });
         return Command.SINGLE_SUCCESS;
     }
 
