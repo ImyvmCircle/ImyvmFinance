@@ -65,14 +65,26 @@ YAHOO_SYMBOLS = {
     "KR:KOSPI": "^KS11",
 }
 
+DEFAULT_MARKET_PROVIDERS = {
+    "CN": ("eastmoney", "sina"),
+    "HK": ("global", "yahoo"),
+    "US": ("global", "yahoo"),
+    "JP": ("global", "yahoo"),
+    "KR": ("global", "yahoo"),
+}
+
 _calendar_lock = threading.Lock()
 _calendars: dict[str, Any] = {}
 
 _cache_lock = threading.Lock()
 _cache: tuple[float, dict[str, Any]] | None = None
+_last_quotes: dict[str, dict[str, str]] = {}
 _last_market_digest: str | None = None
 _last_market_time = 0
 _unavailable: set[str] = set()
+_market_providers = DEFAULT_MARKET_PROVIDERS
+_open_delay_seconds = 60.0
+_closed_poll_seconds = 30.0
 
 
 def _akshare():
@@ -108,6 +120,31 @@ def _market_status(symbol: str, now: datetime) -> str:
         return "OPEN" if calendar.is_trading_minute(pd.Timestamp(now)) else "CLOSED"
     except Exception:
         return "CLOSED"
+
+
+def _market_statuses(now: datetime) -> dict[str, str]:
+    return {
+        market: "OPEN" if any(_market_status(symbol, now) == "OPEN"
+            for symbol in INSTRUMENTS if symbol.startswith(market + ":")) else "CLOSED"
+        for market in MARKET_CALENDARS
+    }
+
+
+def _active_markets(now: datetime) -> set[str]:
+    return {market for market, status in _market_statuses(now).items() if status == "OPEN"}
+
+
+def _parse_market_providers(value: str) -> dict[str, tuple[str, ...]]:
+    result = {market: tuple(providers) for market, providers in DEFAULT_MARKET_PROVIDERS.items()}
+    for item in value.split(";"):
+        if "=" not in item:
+            continue
+        market, providers = item.split("=", 1)
+        market = market.strip().upper()
+        names = tuple(name.strip().lower() for name in providers.split(",") if name.strip())
+        if market in MARKET_CALENDARS and names:
+            result[market] = names
+    return result
 
 
 def _quote(symbol: str, name: str, price: Any, change: Any, now: datetime) -> dict[str, str]:
@@ -227,33 +264,56 @@ def _fetch_yahoo(symbol: str, now: datetime) -> dict[str, str] | None:
         (price - previous) * 100 / previous, now)
 
 
-def _fallback_missing(quotes: dict[str, dict[str, str]], now: datetime) -> None:
-    for symbol in YAHOO_SYMBOLS:
-        if symbol in quotes:
-            continue
-        try:
-            fallback = _fetch_yahoo(symbol, now)
-            if fallback is not None:
-                quotes[symbol] = fallback
-        except Exception:
-            continue
+def _provider_quotes(provider: str, ak: Any, now: datetime, active: set[str]) -> dict[str, dict[str, str]]:
+    if provider == "eastmoney" and "CN" in active:
+        return _fetch_china_eastmoney(ak, now)
+    if provider == "sina" and "CN" in active:
+        return _fetch_china_sina(ak, now)
+    if provider == "global" and active & {"HK", "US", "JP", "KR"}:
+        return _fetch_global(ak, now)
+    return {}
 
 
+def _fetch_market_quotes(active: set[str], now: datetime) -> dict[str, dict[str, str]]:
+    ak = None
+    provider_cache: dict[str, dict[str, dict[str, str]]] = {}
+    result: dict[str, dict[str, str]] = {}
+    for market in sorted(active):
+        expected = {symbol for symbol in INSTRUMENTS if symbol.startswith(market + ":")}
+        for provider in _market_providers.get(market, ()):
+            if provider == "yahoo":
+                for symbol in expected - result.keys():
+                    try:
+                        fallback = _fetch_yahoo(symbol, now)
+                        if fallback is not None:
+                            result[symbol] = fallback
+                    except Exception:
+                        continue
+            else:
+                if ak is None:
+                    ak = _akshare()
+                if provider not in provider_cache:
+                    provider_cache[provider] = _provider_quotes(provider, ak, now, active)
+                for symbol, quote_value in provider_cache[provider].items():
+                    if symbol in expected:
+                        result.setdefault(symbol, quote_value)
+            if expected <= result.keys():
+                break
+    return result
 
-def fetch_snapshot() -> dict[str, Any]:
-    global _last_market_digest, _last_market_time
-    now = datetime.now(timezone.utc)
-    ak = _akshare()
-    quotes = _fetch_china_eastmoney(ak, now)
-    for symbol, value in _fetch_china_sina(ak, now).items():
-        quotes.setdefault(symbol, value)
-    quotes.update(_fetch_global(ak, now))
-    _fallback_missing(quotes, now)
-    ordered = [quotes[symbol] for symbol in INSTRUMENTS if symbol in quotes]
+
+def _build_snapshot(quotes: dict[str, dict[str, str]], now: datetime) -> dict[str, Any]:
+    global _last_market_digest, _last_market_time, _last_quotes
+    _last_quotes.update(quotes)
+    statuses = _market_statuses(now)
+    for quote_value in _last_quotes.values():
+        quote_value["marketStatus"] = statuses.get(quote_value["symbol"].split(":", 1)[0], "CLOSED")
+    ordered = [_last_quotes[symbol] for symbol in INSTRUMENTS if symbol in _last_quotes]
     if not ordered:
         raise RuntimeError("no whitelisted quotes are available")
     digest = hashlib.sha256(
-        json.dumps(ordered, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        json.dumps([{key: value for key, value in quote_value.items() if key != "marketStatus"}
+                    for quote_value in ordered], ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     ).hexdigest()[:16]
     timestamp = int(now.timestamp() * 1000)
     if digest != _last_market_digest:
@@ -275,6 +335,18 @@ def fetch_snapshot() -> dict[str, Any]:
     }
 
 
+def fetch_snapshot() -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    active = _active_markets(now)
+    if active:
+        fresh = _fetch_market_quotes(active, now)
+        if fresh:
+            return _build_snapshot(fresh, now)
+    if _last_quotes:
+        return _build_snapshot({}, now)
+    raise RuntimeError("all markets are closed and quote cache is empty")
+
+
 def cached_snapshot() -> dict[str, Any]:
     with _cache_lock:
         if _cache is None:
@@ -284,7 +356,23 @@ def cached_snapshot() -> dict[str, Any]:
 
 def refresh_loop(refresh_seconds: float) -> None:
     global _cache
+    was_active = False
     while True:
+        active = _active_markets(datetime.now(timezone.utc))
+        if not active:
+            was_active = False
+            if _last_quotes:
+                with _cache_lock:
+                    _cache = (time.monotonic(), fetch_snapshot())
+            time.sleep(max(5.0, _closed_poll_seconds))
+            continue
+        if not was_active and _open_delay_seconds > 0:
+            time.sleep(_open_delay_seconds)
+            active = _active_markets(datetime.now(timezone.utc))
+            if not active:
+                was_active = False
+                continue
+        was_active = True
         try:
             snapshot = fetch_snapshot()
             with _cache_lock:
@@ -295,7 +383,7 @@ def refresh_loop(refresh_seconds: float) -> None:
 
 
 class Handler(BaseHTTPRequestHandler):
-    cache_seconds = 60.0
+    cache_seconds = 300.0
 
     def do_GET(self) -> None:
         if self.path == "/health":
@@ -325,8 +413,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="ImyvmFinance quote sidecar")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--cache-seconds", type=float, default=60.0)
+    parser.add_argument("--cache-seconds", type=float, default=300.0)
+    parser.add_argument("--market-providers", default="CN=eastmoney,sina;HK=global,yahoo;US=global,yahoo;JP=global,yahoo;KR=global,yahoo")
+    parser.add_argument("--open-delay-seconds", type=float, default=60.0)
+    parser.add_argument("--closed-poll-seconds", type=float, default=30.0)
     args = parser.parse_args()
+    global _market_providers, _open_delay_seconds, _closed_poll_seconds
+    _market_providers = _parse_market_providers(args.market_providers)
+    _open_delay_seconds = max(0.0, args.open_delay_seconds)
+    _closed_poll_seconds = max(5.0, args.closed_poll_seconds)
     Handler.cache_seconds = max(0.0, args.cache_seconds)
     threading.Thread(target=refresh_loop, args=(Handler.cache_seconds,), daemon=True).start()
     server = ThreadingHTTPServer((args.host, args.port), Handler)
