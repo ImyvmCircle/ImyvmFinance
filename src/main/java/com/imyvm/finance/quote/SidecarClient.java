@@ -43,6 +43,34 @@ public final class SidecarClient {
             .build();
     }
 
+    public CompletableFuture<String> inspect(String path) {
+        HttpRequest request = HttpRequest.newBuilder(endpoint.resolve(path))
+            .timeout(requestTimeout)
+            .header("Accept", "application/json")
+            .GET()
+            .build();
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+            .thenApply(response -> {
+                if (response.statusCode() / 100 != 2)
+                    throw new IllegalStateException("sidecar returned HTTP " + response.statusCode() + ": " + response.body());
+                return response.body();
+            });
+    }
+
+    public CompletableFuture<String> control(String path) {
+        HttpRequest request = HttpRequest.newBuilder(endpoint.resolve(path))
+            .timeout(requestTimeout)
+            .header("Accept", "application/json")
+            .POST(HttpRequest.BodyPublishers.noBody())
+            .build();
+        return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+            .thenApply(response -> {
+                if (response.statusCode() / 100 != 2)
+                    throw new IllegalStateException("sidecar returned HTTP " + response.statusCode() + ": " + response.body());
+                return response.body();
+            });
+    }
+
     public CompletableFuture<QuoteSnapshot> fetch() {
         HttpRequest request = HttpRequest.newBuilder(endpoint)
             .timeout(requestTimeout)

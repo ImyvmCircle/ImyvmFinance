@@ -15,6 +15,7 @@ import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.permissions.Permissions;
 import com.imyvm.finance.economy.StockEconomySettlement;
 import com.imyvm.finance.quote.QuoteRefreshService;
+import com.imyvm.finance.quote.SidecarClient;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -31,6 +32,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 public final class ImyvmFinance implements ModInitializer {
     public static final String MOD_ID = "imyvm_finance";
@@ -286,6 +288,11 @@ public final class ImyvmFinance implements ModInitializer {
 
     private static String formatPercent(long changeBps) {
         return java.math.BigDecimal.valueOf(changeBps, 2).setScale(2).toPlainString() + "%";
+    }
+
+    public static CompletableFuture<String> controlSidecar(String path) {
+        return new SidecarClient(CONFIG.sidecarEndpoint(), CONFIG.sidecarConnectTimeout(), CONFIG.sidecarReadTimeout())
+            .control(path);
     }
 
     private static void startQuoteRefresh() {

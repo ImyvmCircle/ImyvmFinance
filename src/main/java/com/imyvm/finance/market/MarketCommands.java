@@ -103,6 +103,16 @@ public final class MarketCommands {
                 .executes(context -> setTrading(context, false, null))
                 .then(tradingSymbol.executes(context -> setInstrumentTrading(context, false))));
 
+        var sourceMarket = Commands.argument("market", StringArgumentType.word());
+        var sourceProvider = Commands.argument("provider", StringArgumentType.word());
+        var sourceControl = Commands.literal("source")
+            .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
+            .then(Commands.literal("status").executes(MarketCommands::sourceStatus))
+            .then(Commands.literal("enable")
+                .then(sourceMarket.then(sourceProvider.executes(context -> setSource(context, true)))))
+            .then(Commands.literal("disable")
+                .then(sourceMarket.then(sourceProvider.executes(context -> setSource(context, false)))));
+
         var rules = Commands.literal("rules")
             .requires(CommandSourceStack::isPlayer)
             .executes(MarketCommands::rules);
@@ -152,6 +162,7 @@ public final class MarketCommands {
             .then(estimate)
             .then(confirm)
             .then(trading)
+            .then(sourceControl)
             .then(rules)
             .then(briefing)
             .then(positions)
@@ -173,6 +184,7 @@ public final class MarketCommands {
             source.sendSuccess(() -> Translator.tr("commands.market.help.command." + entry), false);
         if (source.permissions().hasPermission(Permissions.COMMANDS_ADMIN)) {
             source.sendSuccess(() -> Translator.tr("commands.market.help.admin.header"), false);
+            source.sendSuccess(() -> Translator.tr("commands.market.help.command.source"), false);
             source.sendSuccess(() -> Translator.tr("commands.market.help.command.trading"), false);
             source.sendSuccess(() -> Translator.tr("commands.market.help.command.pending"), false);
         }
@@ -470,6 +482,35 @@ public final class MarketCommands {
             return builder.buildFuture();
         }
         return builder.buildFuture();
+    }
+
+    private static int sourceStatus(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        ImyvmFinance.controlSidecar("/control/status").thenAccept(body ->
+            source.getServer().execute(() -> source.sendSuccess(() -> Component.literal(body), false)))
+            .exceptionally(error -> {
+                source.getServer().execute(() -> source.sendFailure(Translator.tr("commands.market.control.failed")));
+                return null;
+            });
+        source.sendSuccess(() -> Translator.tr("commands.market.control.requested"), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static int setSource(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, boolean enabled
+    ) {
+        CommandSourceStack source = context.getSource();
+        String market = StringArgumentType.getString(context, "market").toUpperCase();
+        String provider = StringArgumentType.getString(context, "provider").toLowerCase();
+        String path = "/control/provider?market=" + market + "&provider=" + provider + "&enabled=" + enabled;
+        ImyvmFinance.controlSidecar(path).thenAccept(ignored -> source.getServer().execute(() ->
+            source.sendSuccess(() -> Translator.tr("commands.market.source." + (enabled ? "enabled" : "disabled"), market, provider), true)))
+            .exceptionally(error -> {
+                source.getServer().execute(() -> source.sendFailure(Translator.tr("commands.market.control.failed")));
+                return null;
+            });
+        source.sendSuccess(() -> Translator.tr("commands.market.control.requested"), false);
+        return Command.SINGLE_SUCCESS;
     }
 
     private static int tradingStatus(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {

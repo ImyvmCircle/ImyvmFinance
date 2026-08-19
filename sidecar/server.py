@@ -16,7 +16,7 @@ import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlparse
 from urllib.request import Request, urlopen
 import exchange_calendars as xcals
 import pandas as pd
@@ -86,6 +86,8 @@ _unavailable: set[str] = set()
 _market_unavailable: set[str] = set()
 _market_providers = DEFAULT_MARKET_PROVIDERS
 _active_providers: dict[str, str] = {market: providers[0] for market, providers in DEFAULT_MARKET_PROVIDERS.items()}
+_disabled_providers: dict[str, set[str]] = {market: set() for market in MARKET_CALENDARS}
+_manual_closed_markets: set[str] = set()
 _open_delay_seconds = 60.0
 _closed_poll_seconds = 30.0
 
@@ -134,7 +136,8 @@ def _market_statuses(now: datetime) -> dict[str, str]:
 
 
 def _active_markets(now: datetime) -> set[str]:
-    return {market for market, status in _market_statuses(now).items() if status == "OPEN"}
+    return {market for market, status in _market_statuses(now).items()
+        if status == "OPEN" and market not in _manual_closed_markets}
 
 
 def _parse_market_providers(value: str) -> dict[str, tuple[str, ...]]:
@@ -284,7 +287,8 @@ def _fetch_market_quotes(active: set[str], now: datetime) -> tuple[dict[str, dic
     result: dict[str, dict[str, str]] = {}
     for market in sorted(active):
         expected = {symbol for symbol in INSTRUMENTS if symbol.startswith(market + ":")}
-        providers = _market_providers.get(market, ())
+        providers = tuple(provider for provider in _market_providers.get(market, ())
+            if provider not in _disabled_providers.get(market, set()))
         if not providers:
             continue
         current = _active_providers.get(market, providers[0])
@@ -427,17 +431,60 @@ class Handler(BaseHTTPRequestHandler):
     cache_seconds = 300.0
 
     def do_GET(self) -> None:
-        if self.path == "/health":
+        parsed = urlparse(self.path)
+        if parsed.path == "/health":
             self._send(200, {"status": "ok"})
             return
-        if self.path != "/quotes":
+        if parsed.path == "/control/status":
+            self._send(200, {
+                "markets": {market: {"closed": market in _manual_closed_markets,
+                    "providers": list(_market_providers.get(market, ())),
+                    "disabledProviders": sorted(_disabled_providers.get(market, set()))}
+                    for market in MARKET_CALENDARS}
+            })
+            return
+        if parsed.path != "/quotes":
             self._send(404, {"error": "not found"})
             return
         try:
             self._send(200, cached_snapshot())
         except Exception as exc:
             self._send(503, {"error": str(exc)})
-    
+
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        query = parse_qs(parsed.query)
+        market = query.get("market", [""])[0].upper()
+        enabled_value = query.get("enabled", [""])[0].lower()
+        if market not in MARKET_CALENDARS or enabled_value not in {"true", "false"}:
+            self._send(400, {"error": "invalid market or enabled value"})
+            return
+        enabled = enabled_value == "true"
+        if parsed.path == "/control/market":
+            if enabled:
+                _manual_closed_markets.discard(market)
+            else:
+                _manual_closed_markets.add(market)
+            self._send(200, {"market": market, "closed": not enabled})
+            return
+        if parsed.path == "/control/provider":
+            provider = query.get("provider", [""])[0].lower()
+            if provider not in _market_providers.get(market, ()):
+                self._send(400, {"error": "unknown provider for market"})
+                return
+            if enabled:
+                _disabled_providers.setdefault(market, set()).discard(provider)
+            else:
+                _disabled_providers.setdefault(market, set()).add(provider)
+                if _active_providers.get(market) == provider:
+                    available = [candidate for candidate in _market_providers[market]
+                        if candidate not in _disabled_providers[market]]
+                    if available:
+                        _active_providers[market] = available[0]
+            self._send(200, {"market": market, "provider": provider, "disabled": not enabled})
+            return
+        self._send(404, {"error": "not found"})
+
     def _send(self, status: int, body: dict[str, Any]) -> None:
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
