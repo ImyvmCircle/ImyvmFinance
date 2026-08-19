@@ -72,6 +72,7 @@ public final class ImyvmFinance implements ModInitializer {
         CommandRegistrationCallback.EVENT.register(MarketCommands::register);
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             SERVER = server;
+            MARKET_STATUSES.clear();
             recoverInterruptedTransactions();
             pruneExpiredData();
             nextBriefingAt = nextBriefingAt(System.currentTimeMillis());
