@@ -50,7 +50,7 @@ public record FinanceConfig(
             Map.of(),
             Map.of("CN", true, "HK", true, "US", true, "CRYPTO", true),
             Set.of(),
-            Map.of("CN", java.util.List.of("eastmoney", "sina", "tencent"), "HK", java.util.List.of("yahoo"), "US", java.util.List.of("yahoo"), "CRYPTO", java.util.List.of("binance", "coinbase", "kraken", "okx")),
+            Map.of("CN", java.util.List.of("eastmoney", "sina", "tencent"), "HK", java.util.List.of("yahoo"), "US", java.util.List.of("yahoo"), "CRYPTO", java.util.List.of("binance", "coinbase", "kraken", "okx", "bybit")),
             "zh_cn",
             TradingRules.DEFAULT);
     }
@@ -161,7 +161,7 @@ public record FinanceConfig(
             "CN", java.util.List.of("eastmoney", "sina", "tencent"),
             "HK", java.util.List.of("yahoo"),
             "US", java.util.List.of("yahoo"),
-            "CRYPTO", java.util.List.of("binance", "coinbase", "kraken", "okx"));
+            "CRYPTO", java.util.List.of("binance", "coinbase", "kraken", "okx", "bybit"));
         Map<String, java.util.List<String>> result = new HashMap<>();
         for (Map.Entry<String, java.util.List<String>> entry : defaults.entrySet()) {
             java.util.List<String> providers = new ArrayList<>();

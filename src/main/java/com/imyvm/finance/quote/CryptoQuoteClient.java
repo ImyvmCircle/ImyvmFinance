@@ -27,6 +27,8 @@ public final class CryptoQuoteClient {
     private static final URI KRAKEN_ENDPOINT = URI.create("https://api.kraken.com/0/public/Ticker?pair=XBTUSD,ETHUSD");
     private static final URI OKX_BTC_ENDPOINT = URI.create("https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT");
     private static final URI OKX_ETH_ENDPOINT = URI.create("https://www.okx.com/api/v5/market/ticker?instId=ETH-USDT");
+    private static final URI BYBIT_BTC_ENDPOINT = URI.create("https://api.bybit.com/v5/market/tickers?category=spot&symbol=BTCUSDT");
+    private static final URI BYBIT_ETH_ENDPOINT = URI.create("https://api.bybit.com/v5/market/tickers?category=spot&symbol=ETHUSDT");
     private static final String COINBASE_BASE = "https://api.exchange.coinbase.com/products/";
     private final HttpClient httpClient;
     private final Duration requestTimeout;
@@ -48,6 +50,12 @@ public final class CryptoQuoteClient {
         CompletableFuture<String> btc = request(OKX_BTC_ENDPOINT);
         CompletableFuture<String> eth = request(OKX_ETH_ENDPOINT);
         return btc.thenCombine(eth, (btcBody, ethBody) -> parseOkx(btcBody, ethBody, Instant.now()));
+    }
+
+    public CompletableFuture<QuoteSnapshot> fetchBybit() {
+        CompletableFuture<String> btc = request(BYBIT_BTC_ENDPOINT);
+        CompletableFuture<String> eth = request(BYBIT_ETH_ENDPOINT);
+        return btc.thenCombine(eth, (btcBody, ethBody) -> parseBybit(btcBody, ethBody, Instant.now()));
     }
 
     public CompletableFuture<QuoteSnapshot> fetchBinance() {
@@ -124,6 +132,24 @@ public final class CryptoQuoteClient {
             quotes.add(quote(instrument, instrument.name(), last.toPlainString(), percent(last, opening)));
         }
         return snapshot("okx", quotes, fetchedAt);
+    }
+
+    public static QuoteSnapshot parseBybit(String btcBody, String ethBody, Instant fetchedAt) {
+        List<MarketQuote> quotes = List.of(
+            tickerQuote(Instrument.CRYPTO_BTC, btcBody, "BTCUSDT"),
+            tickerQuote(Instrument.CRYPTO_ETH, ethBody, "ETHUSDT"));
+        return snapshot("bybit", quotes, fetchedAt);
+    }
+
+    private static MarketQuote tickerQuote(Instrument instrument, String body, String symbol) {
+        JsonObject root = JsonParser.parseString(body).getAsJsonObject();
+        JsonArray rows = root.getAsJsonObject("result").getAsJsonArray("list");
+        if (rows.size() != 1 || !symbol.equals(rows.get(0).getAsJsonObject().get("symbol").getAsString()))
+            throw new IllegalArgumentException("Bybit returned an incomplete ticker");
+        JsonObject ticker = rows.get(0).getAsJsonObject();
+        BigDecimal last = new BigDecimal(ticker.get("lastPrice").getAsString());
+        BigDecimal opening = new BigDecimal(ticker.get("prevPrice24h").getAsString());
+        return quote(instrument, instrument.name(), last.toPlainString(), percent(last, opening));
     }
 
     private static String percent(BigDecimal value, BigDecimal opening) {
