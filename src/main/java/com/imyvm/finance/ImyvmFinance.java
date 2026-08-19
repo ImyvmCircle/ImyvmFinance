@@ -341,12 +341,19 @@ public final class ImyvmFinance implements ModInitializer {
     }
 
     private static void startQuoteRefresh() {
+        startQuoteRefresh(true);
+    }
+
+    private static void startQuoteRefresh(boolean immediate) {
         if (QUOTE_STORE == null || QUOTE_REFRESHER != null)
             return;
 
         QUOTE_REFRESHER = new QuoteRefreshService(
             QUOTE_STORE, CONFIG, ImyvmFinance::notifyQuoteAlert, ImyvmFinance::handleQuoteSnapshot);
-        QUOTE_REFRESHER.start();
+        if (immediate)
+            QUOTE_REFRESHER.start();
+        else
+            QUOTE_REFRESHER.startAfterInitialSnapshot();
     }
 
     private static boolean isBriefingSnapshot(com.imyvm.finance.market.QuoteSnapshot snapshot) {
@@ -453,12 +460,17 @@ public final class ImyvmFinance implements ModInitializer {
         FinanceConfig.writeHolidays(CONFIG_PATH, market, dates);
     }
 
-    public static void completeSetup() throws java.io.IOException {
+    public static void completeSetup(QuoteSnapshot initialSnapshot) throws Exception {
         try {
             if (CONFIG_PATH == null)
                 throw new IllegalStateException("finance config path is unavailable");
+            if (QUOTE_STORE == null)
+                throw new IllegalStateException("quote storage is unavailable");
+            QUOTE_STORE.save(initialSnapshot);
             FinanceConfig.writeSetupInitialized(CONFIG_PATH, true);
             CONFIG = CONFIG.withSetupInitialized(true);
+            handleQuoteSnapshot(initialSnapshot);
+            startQuoteRefresh(false);
         } finally {
             SETUP_CHECKING.set(false);
         }

@@ -261,7 +261,7 @@ public final class MarketCommands {
         ImyvmFinance.checkMarketData().thenAccept(snapshot ->
             source.getServer().execute(() -> {
                 try {
-                    ImyvmFinance.completeSetup();
+                    ImyvmFinance.completeSetup(snapshot);
                     source.sendSuccess(() -> Translator.tr("commands.market.setup.success", snapshot.quotes().size()), true);
                 } catch (Exception exception) {
                     source.sendFailure(Translator.tr("commands.market.setup.failed", exception.getMessage()));
