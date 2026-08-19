@@ -39,6 +39,8 @@
   "imyvm_finance.commands.market.help.command.pending": "§e/imyvm-market pending [confirm|release <transactionId>] §7- Review or resolve manual orders.",
   "imyvm_finance.commands.market.help.command.setup": "§e/imyvm-market setup §7- Check providers and complete initialization.",
   "imyvm_finance.commands.market.setup.required": "§eMarket data is not initialized; run §f/imyvm-market setup§e.",
+  "imyvm_finance.commands.market.setup.already": "§7Market data is already initialized; no repeated check is needed.",
+  "imyvm_finance.commands.market.setup.in_progress": "§eMarket data setup is already checking; please wait.",
   "imyvm_finance.commands.market.setup.checking": "§7Checking market providers and initializing...",
   "imyvm_finance.commands.market.setup.success": "§aMarket data initialized with §f{0}§a instruments.",
   "imyvm_finance.commands.market.setup.failed": "§cMarket initialization failed: {0}",

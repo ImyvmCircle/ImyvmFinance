@@ -34,10 +34,12 @@ import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class ImyvmFinance implements ModInitializer {
     public static final String MOD_ID = "imyvm_finance";
     private static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+    private static final AtomicBoolean SETUP_CHECKING = new AtomicBoolean();
     public static QuoteSnapshotStore QUOTE_STORE;
     public static FinanceConfig CONFIG = FinanceConfig.defaults();
     public static com.imyvm.finance.trading.TradingRules TRADING_RULES = CONFIG.tradingRules();
@@ -421,7 +423,20 @@ public final class ImyvmFinance implements ModInitializer {
     }
 
     public static CompletableFuture<QuoteSnapshot> checkMarketData() {
-        return new DirectMarketQuoteClient(CONFIG.quoteConnectTimeout(), CONFIG.quoteReadTimeout(), CONFIG.marketHolidays(), CONFIG.marketEnabled(), CONFIG.disabledProviders(), CONFIG.providerOrder()).fetch();
+        if (CONFIG.setupInitialized())
+            return CompletableFuture.failedFuture(new IllegalStateException("market data already initialized"));
+        if (!SETUP_CHECKING.compareAndSet(false, true))
+            return CompletableFuture.failedFuture(new IllegalStateException("market data setup check already in progress"));
+        return new DirectMarketQuoteClient(CONFIG.quoteConnectTimeout(), CONFIG.quoteReadTimeout(), CONFIG.marketHolidays(), CONFIG.marketEnabled(), CONFIG.disabledProviders(), CONFIG.providerOrder())
+            .fetch()
+            .whenComplete((snapshot, error) -> {
+                if (error != null)
+                    SETUP_CHECKING.set(false);
+            });
+    }
+
+    public static boolean setupCheckInProgress() {
+        return SETUP_CHECKING.get();
     }
 
     public static void configureQuoteSettings(long interval, long delay, long jitter, long seed, long briefingInterval, long briefingDelay, boolean briefingEnabled) throws java.io.IOException {
@@ -437,10 +452,14 @@ public final class ImyvmFinance implements ModInitializer {
     }
 
     public static void completeSetup() throws java.io.IOException {
-        if (CONFIG_PATH == null)
-            throw new IllegalStateException("finance config path is unavailable");
-        FinanceConfig.writeSetupInitialized(CONFIG_PATH, true);
-        CONFIG = CONFIG.withSetupInitialized(true);
+        try {
+            if (CONFIG_PATH == null)
+                throw new IllegalStateException("finance config path is unavailable");
+            FinanceConfig.writeSetupInitialized(CONFIG_PATH, true);
+            CONFIG = CONFIG.withSetupInitialized(true);
+        } finally {
+            SETUP_CHECKING.set(false);
+        }
     }
 
     private static void notifyQuoteAlert(String alert) {

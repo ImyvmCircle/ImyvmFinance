@@ -39,6 +39,8 @@
   "imyvm_finance.commands.market.help.command.pending": "§e/imyvm-market pending [confirm|release <事务ID>] §7- 查看或处理待人工核对订单。",
   "imyvm_finance.commands.market.help.command.setup": "§e/imyvm-market setup §7- 检查行情源并完成初始化。",
   "imyvm_finance.commands.market.setup.required": "§e行情服务尚未初始化，请执行 §f/imyvm-market setup§e。",
+  "imyvm_finance.commands.market.setup.already": "§7行情服务已经初始化，无需重复检查。",
+  "imyvm_finance.commands.market.setup.in_progress": "§e行情服务正在检查中，请稍候。",
   "imyvm_finance.commands.market.setup.checking": "§7正在检查行情源并完成初始化……",
   "imyvm_finance.commands.market.setup.success": "§a行情服务初始化完成，已读取 §f{0}§a 个标的。",
   "imyvm_finance.commands.market.setup.failed": "§c行情服务初始化失败：{0}",

@@ -249,6 +249,14 @@ public final class MarketCommands {
 
     private static int setup(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         CommandSourceStack source = context.getSource();
+        if (ImyvmFinance.CONFIG.setupInitialized()) {
+            source.sendFailure(Translator.tr("commands.market.setup.already"));
+            return 0;
+        }
+        if (ImyvmFinance.setupCheckInProgress()) {
+            source.sendFailure(Translator.tr("commands.market.setup.in_progress"));
+            return 0;
+        }
         source.sendSuccess(() -> Translator.tr("commands.market.setup.checking"), false);
         ImyvmFinance.checkMarketData().thenAccept(snapshot ->
             source.getServer().execute(() -> {
