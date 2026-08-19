@@ -43,7 +43,7 @@
   "imyvm_finance.commands.market.setup.success": "§a行情服务初始化完成，已读取 §f{0}§a 个标的。",
   "imyvm_finance.commands.market.setup.failed": "§c行情服务初始化失败：{0}",
   "imyvm_finance.commands.market.list.header": "§6§l=== 可交易标的 ===§r",
-  "imyvm_finance.commands.market.list.item": "  {0} §e{1}§r §7涨跌 §f{2}§r §8[{3} §8] §7来源 §b{4} §8@ {5}",
+  "imyvm_finance.commands.market.list.item": "  {0} §e{1}§r §7涨跌 §f{2}§r §8({3}) §7MA5 §b{4}",
   "imyvm_finance.commands.market.instrument.label": "§f§l{0}§r §7（{1}）",
   "imyvm_finance.instrument.cn_000001": "上证指数",
   "imyvm_finance.instrument.cn_399001": "深证成指",

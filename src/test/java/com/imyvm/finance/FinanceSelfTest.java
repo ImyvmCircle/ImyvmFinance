@@ -1,10 +1,13 @@
 package com.imyvm.finance;
 
 import com.imyvm.finance.market.Instrument;
+import com.imyvm.finance.market.MarketQuote;
+import com.imyvm.finance.market.QuoteSnapshot;
 import com.imyvm.finance.market.MarketCommands;
 import com.imyvm.finance.market.MarketStatus;
 import com.imyvm.finance.storage.StockTradingStore;
 import com.imyvm.finance.storage.StockTransactionStore;
+import com.imyvm.finance.storage.QuoteSnapshotStore;
 import com.imyvm.finance.storage.StoredOrder;
 import com.imyvm.finance.trading.StockOrderState;
 import com.imyvm.finance.trading.TradeEstimate;
@@ -21,6 +24,7 @@ import com.imyvm.finance.transaction.StockTransactionState;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.UUID;
@@ -95,14 +99,14 @@ public final class FinanceSelfTest {
             "command-form symbol without colon did not resolve");
         check(Instrument.fromSymbol("cn:000001") == Instrument.CN_000001,
             "display-form symbol did not resolve");
-        String rendered = Translator.tr("commands.market.list.item", "CN:000001", "上证指数", "3000", "1.25%", "开市", "direct", "08-19 10:00:00").getString();
-        check(rendered.contains("CN:000001") && rendered.contains("3000") && rendered.contains("上证指数"),
+        String rendered = Translator.tr("commands.market.list.item", "CN:000001", "3000", "1.25%", "37.50", "2990").getString();
+        check(rendered.contains("CN:000001") && rendered.contains("3000") && rendered.contains("1.25%") && rendered.contains("2990"),
             "zh_cn translation did not interpolate arguments: " + rendered);
         check(!rendered.contains("{0}") && !rendered.contains("imyvm_finance."),
             "zh_cn translation leaked placeholder or key: " + rendered);
         Translator.setLanguage("en_us");
-        String english = Translator.tr("commands.market.list.item", "CN:000001", "SSE", "3000", "1.25%", "OPEN", "direct", "08-19 10:00:00").getString();
-        check(english.contains("CN:000001") && english.contains("3000") && !english.contains("{0}"),
+        String english = Translator.tr("commands.market.list.item", "CN:000001", "3000", "1.25%", "37.50", "2990").getString();
+        check(english.contains("CN:000001") && english.contains("3000") && english.contains("2990") && !english.contains("{0}"),
             "en_us translation did not interpolate arguments: " + english);
     }
 
@@ -204,10 +208,18 @@ public final class FinanceSelfTest {
         Path directory = Files.createTempDirectory("imyvm-finance-storage-");
         StockTradingStore trading = null;
         StockTransactionStore transactions = null;
+        QuoteSnapshotStore quotes = null;
         try {
             Path database = directory.resolve("finance.db");
             trading = StockTradingStore.open(database);
             transactions = StockTransactionStore.open(database);
+            quotes = QuoteSnapshotStore.open(database);
+            for (int index = 0; index < 5; index++)
+                quotes.save(new QuoteSnapshot("ma5-" + index, "test", index + 1L, index + 1L,
+                    List.of(new MarketQuote(Instrument.CN_000001, "SSE", 10_000L + index * 100L, 0L, MarketStatus.OPEN)), List.of()));
+            var recentPrices = quotes.findRecentPrices(Instrument.CN_000001, 5);
+            checkEquals(5, recentPrices.size(), "MA5 history count");
+            checkEquals(10_400L, recentPrices.getFirst(), "MA5 newest price");
 
             check(trading.isGlobalTradingEnabled(), "global trading defaults enabled");
             check(trading.isTradingEnabled(Instrument.CN_000001), "instrument trading defaults enabled");
@@ -315,6 +327,8 @@ public final class FinanceSelfTest {
                 trading.close();
             if (transactions != null)
                 transactions.close();
+            if (quotes != null)
+                quotes.close();
             deleteTree(directory);
         }
     }

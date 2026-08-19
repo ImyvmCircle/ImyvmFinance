@@ -13,6 +13,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 public final class QuoteSnapshotStore implements AutoCloseable {
@@ -127,6 +129,28 @@ public final class QuoteSnapshotStore implements AutoCloseable {
                         result.getLong("change_bps"),
                         MarketStatus.parse(result.getString("market_status")))));
             }
+        }
+    }
+
+    public synchronized List<Long> findRecentPrices(Instrument instrument, int limit) throws SQLException {
+        if (limit <= 0)
+            return List.of();
+        try (PreparedStatement statement = connection.prepareStatement("""
+            SELECT q.price_scaled
+            FROM market_quotes q
+            JOIN market_snapshots s ON s.snapshot_id = q.snapshot_id
+            WHERE q.symbol = ?
+            ORDER BY s.fetched_at DESC
+            LIMIT ?
+            """)) {
+            statement.setString(1, instrument.symbol());
+            statement.setInt(2, limit);
+            List<Long> prices = new ArrayList<>();
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next())
+                    prices.add(result.getLong("price_scaled"));
+            }
+            return prices;
         }
     }
 

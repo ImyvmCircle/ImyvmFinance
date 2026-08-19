@@ -40,6 +40,7 @@ import net.minecraft.world.entity.player.Player;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.List;
 import java.util.Optional;
 import java.util.HashMap;
 import java.util.Map;
@@ -48,7 +49,6 @@ import java.time.Instant;
 import java.util.UUID;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 
 import java.util.function.Supplier;
 
@@ -1071,8 +1071,8 @@ public final class MarketCommands {
             boolean tradable = false;
             String price = "-";
             String change = "-";
-            String quoteSource = "-";
-            String fetchedAt = "-";
+            String changeAmount = "-";
+            String movingAverage = "-";
             if (ImyvmFinance.QUOTE_STORE != null) {
                 try {
                     Optional<StoredQuote> stored = ImyvmFinance.QUOTE_STORE.findLatest(instrument);
@@ -1086,16 +1086,16 @@ public final class MarketCommands {
                         status = marketStatus(value, enabled);
                         price = formatPrice(value.quote().priceScaled());
                         change = formatPercent(value.quote().changeBps());
-                        quoteSource = value.source();
-                        fetchedAt = Instant.ofEpochMilli(value.fetchedAtEpochMillis())
-                            .atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("MM-dd HH:mm:ss"));
+                        changeAmount = formatChangeAmount(value.quote());
+                        movingAverage = formatMovingAverage(
+                            ImyvmFinance.QUOTE_STORE.findRecentPrices(instrument, 5));
                     }
                 } catch (Exception exception) {
                     tradable = false;
                 }
             }
             Component item = Translator.tr(
-                "commands.market.list.item", instrumentLabel(instrument), price, change, status, quoteSource, fetchedAt).copy();
+                "commands.market.list.item", instrumentLabel(instrument), price, change, changeAmount, movingAverage).copy();
             if (tradable)
                 item = item.copy().withStyle(style -> style
                     .withClickEvent(new ClickEvent.RunCommand(
@@ -1583,5 +1583,25 @@ public final class MarketCommands {
         return BigDecimal.valueOf(changeBps, 2)
             .setScale(2, RoundingMode.UNNECESSARY)
             .toPlainString() + "%";
+    }
+
+    private static String formatChangeAmount(MarketQuote quote) {
+        BigDecimal current = BigDecimal.valueOf(quote.priceScaled(), 4);
+        BigDecimal rate = BigDecimal.valueOf(quote.changeBps(), 4);
+        if (rate.compareTo(BigDecimal.ONE.negate()) == 0)
+            return "-";
+        BigDecimal previous = current.divide(BigDecimal.ONE.add(rate), 8, RoundingMode.HALF_UP);
+        return current.subtract(previous).setScale(4, RoundingMode.HALF_UP)
+            .stripTrailingZeros().toPlainString();
+    }
+
+    private static String formatMovingAverage(List<Long> prices) {
+        if (prices.size() < 5)
+            return "-";
+        BigDecimal total = BigDecimal.ZERO;
+        for (long price : prices)
+            total = total.add(BigDecimal.valueOf(price, 4));
+        return total.divide(BigDecimal.valueOf(prices.size()), 4, RoundingMode.HALF_UP)
+            .stripTrailingZeros().toPlainString();
     }
 }
