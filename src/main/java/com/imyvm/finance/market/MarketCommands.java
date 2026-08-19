@@ -48,6 +48,7 @@ import java.time.Instant;
 import java.util.UUID;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 
 import java.util.function.Supplier;
 
@@ -1060,26 +1061,41 @@ public final class MarketCommands {
     private static int list(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         MutableComponent message = Component.empty()
             .append(Translator.tr("commands.market.list.header"));
+        String currentMarket = "";
         for (Instrument instrument : Instrument.values()) {
+            if (!currentMarket.equals(instrument.market())) {
+                currentMarket = instrument.market();
+                message.append("\n").append(Translator.tr("commands.market.list.market", marketLabel(currentMarket)));
+            }
             Component status = Translator.tr("commands.market.briefing.status.unavailable");
             boolean tradable = false;
+            String price = "-";
+            String change = "-";
+            String quoteSource = "-";
+            String fetchedAt = "-";
             if (ImyvmFinance.QUOTE_STORE != null) {
                 try {
                     Optional<StoredQuote> stored = ImyvmFinance.QUOTE_STORE.findLatest(instrument);
                     if (stored.isPresent()) {
-                        boolean enabled = stored.get().quote().status() == MarketStatus.OPEN;
+                        StoredQuote value = stored.get();
+                        boolean enabled = value.quote().status() == MarketStatus.OPEN;
                         if (enabled && ImyvmFinance.TRADING_STORE != null)
                             enabled = ImyvmFinance.TRADING_STORE.isGlobalTradingEnabled()
                                 && ImyvmFinance.TRADING_STORE.isTradingEnabled(instrument);
                         tradable = enabled;
-                        status = marketStatus(stored.get(), enabled);
+                        status = marketStatus(value, enabled);
+                        price = formatPrice(value.quote().priceScaled());
+                        change = formatPercent(value.quote().changeBps());
+                        quoteSource = value.source();
+                        fetchedAt = Instant.ofEpochMilli(value.fetchedAtEpochMillis())
+                            .atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("MM-dd HH:mm:ss"));
                     }
                 } catch (Exception exception) {
                     tradable = false;
                 }
             }
             Component item = Translator.tr(
-                "commands.market.list.item", instrumentLabel(instrument), instrument.market(), status).copy();
+                "commands.market.list.item", instrumentLabel(instrument), price, change, status, quoteSource, fetchedAt).copy();
             if (tradable)
                 item = item.copy().withStyle(style -> style
                     .withClickEvent(new ClickEvent.RunCommand(

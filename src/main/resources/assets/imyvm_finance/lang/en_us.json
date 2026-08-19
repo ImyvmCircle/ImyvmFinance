@@ -43,7 +43,7 @@
   "imyvm_finance.commands.market.setup.success": "§aMarket data initialized with §f{0}§a instruments.",
   "imyvm_finance.commands.market.setup.failed": "§cMarket initialization failed: {0}",
   "imyvm_finance.commands.market.list.header": "§6§l=== Tradable Instruments ===§r",
-  "imyvm_finance.commands.market.list.item": "{0} §7({1}) §8[ {2} §8]",
+  "imyvm_finance.commands.market.list.item": "  {0} §e{1}§r §7change §f{2}§r §8[{3} §8] §7source §b{4} §8@ {5}",
   "imyvm_finance.commands.market.instrument.label": "§f§l{0}§r §7({1})",
   "imyvm_finance.instrument.cn_000001": "SSE Composite",
   "imyvm_finance.instrument.cn_399001": "SZSE Component",
@@ -161,5 +161,6 @@
   "imyvm_finance.commands.market.source.status.market": "§6{0}§r §7last success: §f§l{1}§r §7order: §8{2}",
   "imyvm_finance.commands.market.source.status.provider": "  §f§l{0}§r §7requests §e{1}§7, failures §c{2} §7(§e{3}%§7); {4} §8last request {5}, success {6}, failure {7}",
   "imyvm_finance.commands.market.source.status.backoff": "§ebackoff, §f{0}§e seconds remaining",
-  "imyvm_finance.commands.market.source.status.ready": "§aavailable"
+  "imyvm_finance.commands.market.source.status.ready": "§aavailable",
+  "imyvm_finance.commands.market.list.market": "§6§l--- {0} ---§r"
 }
