@@ -99,8 +99,11 @@ public final class FinanceSelfTest {
             "Chinese BTC instrument name was not localized");
         check(MarketCommands.instrumentLabel(Instrument.CRYPTO_ETH).getString().contains("煤气罐"),
             "Chinese ETH instrument name was not localized");
-        check(Translator.tr("commands.market.disclaimer").getString().contains("游戏模拟"),
-            "Chinese disclaimer translation missing");
+        check(Translator.tr("commands.market.disclaimer").getString().contains("[提示]"),
+            "Chinese player notice translation missing");
+        String briefingHeader = Translator.tr("commands.market.briefing.header", "2026-08-19 20:00:00 +08:00 Asia/Taipei").getString();
+        check(briefingHeader.contains("2026-08-19 20:00:00") && !briefingHeader.contains("{0}"),
+            "briefing timestamp was not interpolated: " + briefingHeader);
         check(Instrument.fromSymbol("CN000001") == Instrument.CN_000001,
             "command-form symbol without colon did not resolve");
         check(Instrument.fromSymbol("cn:000001") == Instrument.CN_000001,

@@ -130,7 +130,11 @@ public final class DirectMarketQuoteClient {
         for (String provider : scheduledProviders("CN")) {
             if (disabledProviders.contains("CN:" + provider)) continue;
             String statsKey = "CN:" + provider;
-            if (isBackedOff(statsKey)) continue;
+            if (isBackedOff(statsKey)) {
+                LOGGER.info("Quote provider skipped: market=CN provider={} reason=backoff remainingSeconds={}",
+                    provider, backoffSecondsRemaining(statsKey));
+                continue;
+            }
             recordAttempt(statsKey);
             try {
                 Map<Instrument, MarketQuote> result = switch (provider) {
@@ -158,7 +162,11 @@ public final class DirectMarketQuoteClient {
         for (String provider : scheduledProviders("CRYPTO")) {
             if (disabledProviders.contains("CRYPTO:" + provider)) continue;
             String statsKey = "CRYPTO:" + provider;
-            if (isBackedOff(statsKey)) continue;
+            if (isBackedOff(statsKey)) {
+                LOGGER.info("Quote provider skipped: market=CRYPTO provider={} reason=backoff remainingSeconds={}",
+                    provider, backoffSecondsRemaining(statsKey));
+                continue;
+            }
             recordAttempt(statsKey);
             try {
                 var result = switch (provider) {

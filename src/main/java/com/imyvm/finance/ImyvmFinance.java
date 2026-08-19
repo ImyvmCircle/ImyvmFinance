@@ -33,6 +33,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -251,7 +252,8 @@ public final class ImyvmFinance implements ModInitializer {
             && quote.quote().status() == MarketStatus.OPEN);
         if (!hasOpenMarket)
             return;
-        MutableComponent briefing = Component.empty().append(Translator.tr("commands.market.briefing.header"));
+        MutableComponent briefing = Component.empty().append(Translator.tr("commands.market.briefing.header",
+            formatLocalTimestamp(now)));
         for (String market : new String[]{"CN", "CRYPTO"}) {
             MutableComponent line = Component.empty().append("\n").append(Translator.tr("commands.market.briefing.market", marketLabel(market)));
             for (int index = 0; index < instruments.length; index++) {
@@ -306,6 +308,11 @@ public final class ImyvmFinance implements ModInitializer {
         if (quote.quote().status() == MarketStatus.OPEN)
             return Translator.tr("commands.market.briefing.status.paused");
         return Translator.tr("commands.market.briefing.status." + quote.quote().status().name().toLowerCase());
+    }
+
+    private static String formatLocalTimestamp(long epochMillis) {
+        return ZonedDateTime.ofInstant(Instant.ofEpochMilli(epochMillis), ZoneId.systemDefault())
+            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss XXX z"));
     }
 
     private static String formatPrice(long priceScaled) {
