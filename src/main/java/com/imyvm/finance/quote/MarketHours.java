@@ -49,6 +49,18 @@ public final class MarketHours {
         return open ? MarketStatus.OPEN : MarketStatus.CLOSED;
     }
 
+    public static boolean withinCloseWindow(String market, Instant instant, Set<LocalDate> holidays, long minutes) {
+        if (!"CN".equals(market) || minutes <= 0)
+            return false;
+        ZonedDateTime local = instant.atZone(SHANGHAI);
+        if (holidays.contains(local.toLocalDate())
+            || local.getDayOfWeek() == DayOfWeek.SATURDAY || local.getDayOfWeek() == DayOfWeek.SUNDAY)
+            return false;
+        LocalTime close = LocalTime.of(15, 0);
+        LocalTime time = local.toLocalTime();
+        return !time.isBefore(close.minusMinutes(minutes)) && time.isBefore(close);
+    }
+
     private static boolean inSession(LocalTime time, LocalTime start, LocalTime end) {
         return !time.isBefore(start) && time.isBefore(end);
     }

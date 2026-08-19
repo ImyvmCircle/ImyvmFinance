@@ -328,6 +328,12 @@ public final class DirectMarketQuoteClient {
         return values.entrySet().stream().sorted(Map.Entry.comparingByKey()).map(entry -> "\"" + entry.getKey() + "\":" + entry.getValue().stream().map(value -> "\"" + value + "\"").collect(java.util.stream.Collectors.joining(",", "[", "]"))).collect(java.util.stream.Collectors.joining(",", "{", "}"));
     }
 
+    public synchronized void clearProviderBackoff() {
+        backoffUntil.clear();
+        consecutiveFailures.clear();
+        marketOutages.clear();
+    }
+
     public synchronized void setMarketEnabled(String market, boolean enabled) {
         if (enabled)
             closedMarkets.remove(market);

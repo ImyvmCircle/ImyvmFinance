@@ -54,6 +54,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 
 import java.util.function.Supplier;
+import java.util.function.IntSupplier;
 
 public final class MarketCommands {
     private static final long CONFIRMATION_TTL_MILLIS = 10L * 60 * 1000;
@@ -367,6 +368,32 @@ public final class MarketCommands {
         context.getSource().sendSuccess(() -> footer, false);
     }
 
+    private static int runAfterMarketRefresh(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        IntSupplier action
+    ) {
+        CommandSourceStack source = context.getSource();
+        if (!requireInitialized(source))
+            return 0;
+        CompletableFuture<Void> ready = ImyvmFinance.prepareMarketCommand(source);
+        if (ready.isDone()) {
+            try {
+                ready.join();
+                return action.getAsInt();
+            } catch (Exception exception) {
+                source.sendFailure(Translator.tr("commands.market.query.refresh_failed"));
+                return 0;
+            }
+        }
+        ready.whenComplete((ignored, error) -> source.getServer().execute(() -> {
+            if (error != null)
+                source.sendFailure(Translator.tr("commands.market.query.refresh_failed"));
+            else
+                action.getAsInt();
+        }));
+        return Command.SINGLE_SUCCESS;
+    }
+
     private static void sendPlayerDisclaimer(CommandSourceStack source) {
         if (source.isPlayer())
             source.sendSuccess(() -> Translator.tr("commands.market.disclaimer"), false);
@@ -386,6 +413,13 @@ public final class MarketCommands {
     }
 
     private static int positions(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        long page
+    ) {
+        return runAfterMarketRefresh(context, () -> positionsNow(context, page));
+    }
+
+    private static int positionsNow(
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
         long page
     ) {
@@ -874,8 +908,20 @@ public final class MarketCommands {
             source.sendSuccess(() -> Translator.tr("commands.market.source.status.since", value(root, "statsSince", "-")), false);
             String outages = root.has("marketOutages") ? root.get("marketOutages").toString().replace("\"", "").replace("[", "").replace("]", "") : "";
             source.sendSuccess(() -> Translator.tr("commands.market.source.status.outage", outages.isEmpty() ? "-" : outages), false);
+            JsonObject activity = root.getAsJsonObject("activity");
+            if (activity != null) {
+                source.sendSuccess(() -> Translator.tr("commands.market.source.status.activity",
+                    value(activity, "mode", "-"), value(activity, "onlinePlayers", "0"),
+                    value(activity, "lastMarketActivityAt", "-"), value(activity, "inactiveSeconds", "0"),
+                    value(activity, "uptimeSeconds", "0"), value(activity, "noPlayers", "false"),
+                    value(activity, "inactiveForHour", "false"), value(activity, "cnCloseWindow", "false"),
+                    value(activity, "secondsUntilIdle", "0"), value(activity, "idleEligible", "false")), false);
+            }
             JsonObject scheduler = root.getAsJsonObject("scheduler");
             if (scheduler != null) {
+                source.sendSuccess(() -> Translator.tr("commands.market.source.status.scheduler.mode",
+                    value(scheduler, "mode", "-"), value(scheduler, "modeReason", "-"),
+                    value(scheduler, "modeChangedAt", "-"), value(scheduler, "currentPollIntervalMinutes", "-")), false);
                 source.sendSuccess(() -> Translator.tr("commands.market.source.status.scheduler.config",
                     number(scheduler, "pollIntervalMinutes"), number(scheduler, "pollDelaySeconds"),
                     number(scheduler, "jitterSeconds"), number(scheduler, "randomSeed")), false);
@@ -1155,6 +1201,10 @@ public final class MarketCommands {
     }
 
     private static int list(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        return runAfterMarketRefresh(context, () -> listNow(context));
+    }
+
+    private static int listNow(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         if (!requireInitialized(context.getSource()))
             return 0;
         sendPlayerDisclaimer(context.getSource());
@@ -1211,6 +1261,10 @@ public final class MarketCommands {
     }
 
     private static int quote(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        return runAfterMarketRefresh(context, () -> quoteNow(context));
+    }
+
+    private static int quoteNow(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         if (!requireInitialized(context.getSource()))
             return 0;
         sendPlayerDisclaimer(context.getSource());
@@ -1268,6 +1322,10 @@ public final class MarketCommands {
     }
 
     private static int estimate(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        return runAfterMarketRefresh(context, () -> estimateNow(context));
+    }
+
+    private static int estimateNow(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         if (!requireInitialized(context.getSource()))
             return 0;
         sendPlayerDisclaimer(context.getSource());
@@ -1341,6 +1399,10 @@ public final class MarketCommands {
     }
 
     private static int confirm(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        return runAfterMarketRefresh(context, () -> confirmNow(context));
+    }
+
+    private static int confirmNow(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         if (!requireInitialized(context.getSource()))
             return 0;
         sendPlayerDisclaimer(context.getSource());
@@ -1376,6 +1438,10 @@ public final class MarketCommands {
     }
 
     private static int sell(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, boolean confirmed) {
+        return runAfterMarketRefresh(context, () -> sellNow(context, confirmed));
+    }
+
+    private static int sellNow(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, boolean confirmed) {
         if (!requireInitialized(context.getSource()))
             return 0;
         sendPlayerDisclaimer(context.getSource());

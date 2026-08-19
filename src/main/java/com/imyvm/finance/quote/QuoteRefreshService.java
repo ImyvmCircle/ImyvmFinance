@@ -13,9 +13,12 @@ import java.time.ZonedDateTime;
 import java.util.concurrent.TimeUnit;
 import java.util.SplittableRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.concurrent.CompletableFuture;
 
 public final class QuoteRefreshService implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger("imyvm_finance/quotes");
@@ -24,6 +27,14 @@ public final class QuoteRefreshService implements AutoCloseable {
     private final ScheduledExecutorService executor;
     private final AtomicBoolean refreshing = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
+    private final AtomicReference<CompletableFuture<com.imyvm.finance.market.QuoteSnapshot>> inFlight = new AtomicReference<>();
+    private final AtomicLong scheduleGeneration = new AtomicLong();
+    private final AtomicBoolean skipNextScheduledRefresh = new AtomicBoolean();
+    private volatile boolean started;
+    private volatile boolean idleMode;
+    private volatile long modeChangedAtEpochMillis;
+    private volatile String modeReason = "startup";
+    private static final long IDLE_POLL_INTERVAL_MINUTES = 12;
     private final long pollIntervalMinutes;
     private final long pollDelaySeconds;
     private final long jitterSeconds;
@@ -78,29 +89,68 @@ public final class QuoteRefreshService implements AutoCloseable {
     }
 
     public void start() {
-        refresh();
-        scheduleNext(nextPollDelay());
+        started = true;
+        modeChangedAtEpochMillis = System.currentTimeMillis();
+        refreshNow();
+        scheduleNext();
     }
 
     public void startAfterInitialSnapshot() {
-        scheduleNext(nextPollDelay());
+        started = true;
+        modeChangedAtEpochMillis = System.currentTimeMillis();
+        scheduleNext();
     }
 
-    private void scheduleNext(long delayMillis) {
+    public synchronized void setIdleMode(boolean idle, String reason) {
+        if (closed.get() || idleMode == idle)
+            return;
+        idleMode = idle;
+        modeReason = reason == null ? "unspecified" : reason;
+        modeChangedAtEpochMillis = System.currentTimeMillis();
+        nextNominalPollAtEpochMillis = 0;
+        scheduleGeneration.incrementAndGet();
+        if (!idle) {
+            client.clearProviderBackoff();
+            skipNextScheduledRefresh.set(true);
+        }
+        if (started)
+            scheduleNext();
+        LOGGER.info("Market quote scheduler mode changed: mode={} reason={}", idle ? "idle" : "active", modeReason);
+    }
+
+    public CompletableFuture<com.imyvm.finance.market.QuoteSnapshot> wakeAndRefresh(String reason) {
+        setIdleMode(false, reason);
+        return refreshNow();
+    }
+
+    public CompletableFuture<com.imyvm.finance.market.QuoteSnapshot> prepareForPlayerQuery(String reason) {
+        if (idleMode)
+            return wakeAndRefresh(reason);
+        CompletableFuture<com.imyvm.finance.market.QuoteSnapshot> current = inFlight.get();
+        return current == null ? CompletableFuture.completedFuture(null) : current;
+    }
+
+    private void scheduleNext() {
+        long generation = scheduleGeneration.get();
+        long delayMillis = nextPollDelay();
         executor.schedule(() -> {
-            refresh();
-            if (!closed.get())
-                scheduleNext(nextPollDelay());
+            if (closed.get() || generation != scheduleGeneration.get())
+                return;
+            if (!skipNextScheduledRefresh.compareAndSet(true, false))
+                refreshNow();
+            if (!closed.get() && generation == scheduleGeneration.get())
+                scheduleNext();
         }, delayMillis, TimeUnit.MILLISECONDS);
     }
 
     private long nextPollDelay() {
         long now = System.currentTimeMillis();
-        long intervalMillis = pollIntervalMinutes * 60_000L;
+        long intervalMinutes = idleMode ? IDLE_POLL_INTERVAL_MINUTES : pollIntervalMinutes;
+        long intervalMillis = intervalMinutes * 60_000L;
         if (nextNominalPollAtEpochMillis == 0) {
             nextNominalPollAtEpochMillis = now
                 + millisecondsUntilPollNode(Instant.ofEpochMilli(now), ZoneId.systemDefault(),
-                    pollIntervalMinutes, pollDelaySeconds);
+                    intervalMinutes, pollDelaySeconds);
         } else {
             while (nextNominalPollAtEpochMillis <= now)
                 nextNominalPollAtEpochMillis += intervalMillis;
@@ -116,9 +166,9 @@ public final class QuoteRefreshService implements AutoCloseable {
         lastJitterSeconds = jitterSecondsForNode;
         lastScheduledPollAtEpochMillis = scheduledPollAt;
         long delay = Math.max(1000L, scheduledPollAt - now);
-        LOGGER.info("Scheduled market quote refresh: nominalAt={} jitterSeconds={} scheduledAt={} delaySeconds={}",
-            Instant.ofEpochMilli(nominalPollAt), jitterSecondsForNode, Instant.ofEpochMilli(scheduledPollAt),
-            delay / 1000L);
+        LOGGER.info("Scheduled market quote refresh: mode={} intervalMinutes={} nominalAt={} jitterSeconds={} scheduledAt={} delaySeconds={}",
+            idleMode ? "idle" : "active", intervalMinutes, Instant.ofEpochMilli(nominalPollAt),
+            jitterSecondsForNode, Instant.ofEpochMilli(scheduledPollAt), delay / 1000L);
         return delay;
     }
 
@@ -135,7 +185,13 @@ public final class QuoteRefreshService implements AutoCloseable {
     }
 
     public String schedulerStatus() {
-        return "{\"pollIntervalMinutes\":" + pollIntervalMinutes
+        long intervalMinutes = idleMode ? IDLE_POLL_INTERVAL_MINUTES : pollIntervalMinutes;
+        return "{\"mode\":" + jsonString(idleMode ? "idle" : "active")
+            + ",\"modeReason\":" + jsonString(modeReason)
+            + ",\"modeChangedAt\":" + jsonTime(modeChangedAtEpochMillis)
+            + ",\"pollIntervalMinutes\":" + pollIntervalMinutes
+            + ",\"idlePollIntervalMinutes\":" + IDLE_POLL_INTERVAL_MINUTES
+            + ",\"currentPollIntervalMinutes\":" + intervalMinutes
             + ",\"pollDelaySeconds\":" + pollDelaySeconds
             + ",\"jitterSeconds\":" + jitterSeconds
             + ",\"randomSeed\":" + randomSeed
@@ -150,6 +206,14 @@ public final class QuoteRefreshService implements AutoCloseable {
             + ",\"lastSnapshotId\":" + jsonString(lastSnapshotId) + "}";
     }
 
+    public void clearProviderBackoff() {
+        client.clearProviderBackoff();
+    }
+
+    public boolean isIdleMode() {
+        return idleMode;
+    }
+
     public void setMarketEnabled(String market, boolean enabled) {
         client.setMarketEnabled(market, enabled);
     }
@@ -158,22 +222,31 @@ public final class QuoteRefreshService implements AutoCloseable {
         client.setProviderEnabled(market, provider, enabled);
     }
 
-    private void refresh() {
-        if (closed.get() || !refreshing.compareAndSet(false, true))
-            return;
+    private CompletableFuture<com.imyvm.finance.market.QuoteSnapshot> refreshNow() {
+        if (closed.get())
+            return CompletableFuture.failedFuture(new IllegalStateException("quote service closed"));
+        CompletableFuture<com.imyvm.finance.market.QuoteSnapshot> existing = inFlight.get();
+        if (existing != null)
+            return existing;
+        CompletableFuture<com.imyvm.finance.market.QuoteSnapshot> created = new CompletableFuture<>();
+        if (!inFlight.compareAndSet(null, created))
+            return inFlight.get();
         lastRefreshStartedAtEpochMillis = System.currentTimeMillis();
         lastRefreshStatus = "running";
         lastRefreshError = null;
-
         client.fetch().whenComplete((snapshot, error) -> {
             try {
-                if (closed.get())
+                if (closed.get()) {
+                    created.completeExceptionally(new IllegalStateException("quote service closed"));
                     return;
+                }
                 if (error != null) {
+                    Throwable cause = error.getCause() == null ? error : error.getCause();
                     lastRefreshStatus = "failed";
-                    lastRefreshError = error.getMessage();
-                    LOGGER.warn("Market quote refresh failed: {}", error.getMessage());
+                    lastRefreshError = cause.getMessage();
+                    LOGGER.warn("Market quote refresh failed: {}", cause.getMessage());
                     notifyMarketDataFailure();
+                    created.completeExceptionally(cause);
                     return;
                 }
 
@@ -186,17 +259,19 @@ public final class QuoteRefreshService implements AutoCloseable {
                 notifyMarketDataRecovery();
                 for (String alert : snapshot.alerts())
                     notifyAlert(alert);
-                LOGGER.info("Stored quote snapshot {} with {} quotes",
-                    snapshot.snapshotId(), snapshot.quotes().size());
+                LOGGER.info("Stored quote snapshot {} with {} quotes", snapshot.snapshotId(), snapshot.quotes().size());
+                created.complete(snapshot);
             } catch (Exception exception) {
                 lastRefreshStatus = "failed";
                 lastRefreshError = exception.getMessage();
                 LOGGER.error("Failed to store market quote snapshot", exception);
+                created.completeExceptionally(exception);
             } finally {
                 lastRefreshCompletedAtEpochMillis = System.currentTimeMillis();
-                refreshing.set(false);
+                inFlight.compareAndSet(created, null);
             }
         });
+        return created;
     }
 
     private synchronized void notifyMarketDataFailure() {

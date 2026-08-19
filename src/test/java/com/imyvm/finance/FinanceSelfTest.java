@@ -211,6 +211,15 @@ public final class FinanceSelfTest {
         check(!com.imyvm.finance.ImyvmFinance.isBriefingPollNode(
             java.time.Instant.parse("2026-08-19T10:16:33Z"), java.time.ZoneOffset.UTC, 17, 15, 15),
             "briefing node accepted time outside jitter");
+        check(com.imyvm.finance.quote.MarketHours.withinCloseWindow(
+            "CN", java.time.Instant.parse("2026-08-19T06:56:00Z"), java.util.Set.of(), 5),
+            "CN close window was not detected");
+        check(!com.imyvm.finance.quote.MarketHours.withinCloseWindow(
+            "CN", java.time.Instant.parse("2026-08-19T07:00:00Z"), java.util.Set.of(), 5),
+            "CN close window continued after close");
+        check(!com.imyvm.finance.quote.MarketHours.withinCloseWindow(
+            "CRYPTO", java.time.Instant.parse("2026-08-19T06:56:00Z"), java.util.Set.of(), 5),
+            "crypto market incorrectly used CN close window");
     }
 
     private static void storageChecks() throws Exception {

@@ -16,6 +16,7 @@ import net.minecraft.server.permissions.Permissions;
 import com.imyvm.finance.economy.StockEconomySettlement;
 import com.imyvm.finance.quote.QuoteRefreshService;
 import com.imyvm.finance.quote.DirectMarketQuoteClient;
+import com.imyvm.finance.quote.MarketHours;
 import com.imyvm.finance.market.QuoteSnapshot;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -59,6 +60,8 @@ public final class ImyvmFinance implements ModInitializer {
     private static final Map<String, MarketStatus> MARKET_STATUSES = new HashMap<>();
     private static final Map<String, Long> MARKET_EVENT_AT = new HashMap<>();
     private static volatile net.minecraft.server.MinecraftServer SERVER;
+    private static long serverStartedAt;
+    private static long lastMarketActivityAt;
     private static Path CONFIG_PATH;
 
     @Override
@@ -86,6 +89,8 @@ public final class ImyvmFinance implements ModInitializer {
         CommandRegistrationCallback.EVENT.register(MarketCommands::register);
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             SERVER = server;
+            serverStartedAt = System.currentTimeMillis();
+            lastMarketActivityAt = serverStartedAt;
             MARKET_STATUSES.clear();
             MARKET_EVENT_AT.clear();
             lastBriefingSentAt = 0;
@@ -100,6 +105,7 @@ public final class ImyvmFinance implements ModInitializer {
             }
         });
         ServerTickEvents.END_SERVER_TICK.register(server -> {
+            updateQuoteScheduler(server);
             pruneExpiredData();
             sendMarketBriefing(server);
         });
@@ -323,6 +329,56 @@ public final class ImyvmFinance implements ModInitializer {
         return java.math.BigDecimal.valueOf(changeBps, 2).setScale(2).toPlainString() + "%";
     }
 
+    private static void updateQuoteScheduler(net.minecraft.server.MinecraftServer server) {
+        if (!CONFIG.setupInitialized() || QUOTE_REFRESHER == null || serverStartedAt == 0)
+            return;
+        long now = System.currentTimeMillis();
+        boolean noPlayers = server.getPlayerList().getPlayers().isEmpty();
+        boolean inactiveForHour = now - lastMarketActivityAt >= Duration.ofHours(1).toMillis()
+            && now - serverStartedAt >= Duration.ofHours(1).toMillis();
+        boolean cnCloseWindow = MarketHours.withinCloseWindow("CN", Instant.ofEpochMilli(now),
+            CONFIG.marketHolidays().getOrDefault("CN", java.util.Set.of()), 5);
+        boolean idle = !cnCloseWindow && (noPlayers || inactiveForHour);
+        String reason = cnCloseWindow ? "CN close window"
+            : noPlayers ? "no players online"
+            : inactiveForHour ? "no market command for one hour" : "market active";
+        QUOTE_REFRESHER.setIdleMode(idle, reason);
+    }
+
+    public static CompletableFuture<Void> prepareMarketCommand(net.minecraft.commands.CommandSourceStack source) {
+        if (!CONFIG.setupInitialized())
+            return CompletableFuture.failedFuture(new IllegalStateException("market data is not initialized"));
+        lastMarketActivityAt = System.currentTimeMillis();
+        if (QUOTE_REFRESHER == null)
+            return CompletableFuture.failedFuture(new IllegalStateException("quote service unavailable"));
+        return QUOTE_REFRESHER.prepareForPlayerQuery("player market command")
+            .thenApply(ignored -> null);
+    }
+
+    private static String activityStatus() {
+        long now = System.currentTimeMillis();
+        long uptimeSeconds = serverStartedAt == 0 ? 0 : Math.max(0, (now - serverStartedAt) / 1000L);
+        long inactiveSeconds = lastMarketActivityAt == 0 ? 0 : Math.max(0, (now - lastMarketActivityAt) / 1000L);
+        boolean noPlayers = SERVER != null && SERVER.getPlayerList().getPlayers().isEmpty();
+        boolean inactiveForHour = uptimeSeconds >= 3600 && inactiveSeconds >= 3600;
+        long secondsUntilIdle = noPlayers ? 0 : Math.max(0, 3600 - inactiveSeconds);
+        boolean closeWindow = MarketHours.withinCloseWindow("CN", Instant.ofEpochMilli(now),
+            CONFIG.marketHolidays().getOrDefault("CN", java.util.Set.of()), 5);
+        String mode = QUOTE_REFRESHER != null && QUOTE_REFRESHER.isIdleMode() ? "idle" : "active";
+        return "{\"mode\":" + jsonString(mode)
+            + ",\"serverStartedAt\":" + jsonTime(serverStartedAt)
+            + ",\"lastMarketActivityAt\":" + jsonTime(lastMarketActivityAt)
+            + ",\"onlinePlayers\":" + (SERVER == null ? 0 : SERVER.getPlayerList().getPlayerCount())
+            + ",\"uptimeSeconds\":" + uptimeSeconds
+            + ",\"inactiveSeconds\":" + inactiveSeconds
+            + ",\"idleThresholdSeconds\":3600"
+            + ",\"noPlayers\":" + noPlayers
+            + ",\"inactiveForHour\":" + inactiveForHour
+            + ",\"secondsUntilIdle\":" + secondsUntilIdle
+            + ",\"idleEligible\":" + (noPlayers || inactiveForHour)
+            + ",\"cnCloseWindow\":" + closeWindow + "}";
+    }
+
     public static CompletableFuture<String> inspectMarketData(String path) {
         if (QUOTE_REFRESHER == null)
             return CompletableFuture.failedFuture(new IllegalStateException("quote service unavailable"));
@@ -330,6 +386,7 @@ public final class ImyvmFinance implements ModInitializer {
             JsonObject status = JsonParser.parseString(QUOTE_REFRESHER.providerStatus()).getAsJsonObject();
             status.add("scheduler", JsonParser.parseString(QUOTE_REFRESHER.schedulerStatus()));
             status.add("announcements", JsonParser.parseString(announcementStatus()));
+            status.add("activity", JsonParser.parseString(activityStatus()));
             return CompletableFuture.completedFuture(status.toString());
         } catch (Exception exception) {
             return CompletableFuture.failedFuture(exception);
