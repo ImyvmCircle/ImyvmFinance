@@ -1146,7 +1146,7 @@ public final class MarketCommands {
             if (tradable)
                 item = item.copy().withStyle(style -> style
                     .withClickEvent(new ClickEvent.RunCommand(
-                        "/imyvm-market estimate " + instrument.symbol() + " " + ImyvmFinance.TRADING_RULES.minUnits()))
+                        "/imyvm-market estimate " + instrument.commandForm() + " " + ImyvmFinance.TRADING_RULES.minUnits()))
                     .withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(
                         Translator.tr("commands.market.briefing.buy_hint")))
                     .withUnderlined(true));
