@@ -46,6 +46,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.time.Instant;
+import java.time.Duration;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -432,6 +435,8 @@ public final class MarketCommands {
                     position.positionValue(),
                     currentValue,
                     profitLoss,
+                    formatLocalTimestamp(position.boughtAtEpochMillis()),
+                    formatHoldingDuration(position.boughtAtEpochMillis(), System.currentTimeMillis()),
                     positionState(position.state())).copy();
                 if (availableUnits > 0) {
                     item.append(" ").append(Translator.tr("commands.market.positions.sell").copy()
@@ -1682,6 +1687,20 @@ public final class MarketCommands {
 
     private static Component tradeSide(TradeSide side) {
         return Translator.tr("commands.market.side." + side.name().toLowerCase());
+    }
+
+    private static String formatLocalTimestamp(long epochMillis) {
+        return ZonedDateTime.ofInstant(Instant.ofEpochMilli(epochMillis), ZoneId.systemDefault())
+            .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss XXX z"));
+    }
+
+    private static Component formatHoldingDuration(long boughtAtEpochMillis, long nowEpochMillis) {
+        long seconds = Math.max(0L, Duration.ofMillis(Math.max(0L, nowEpochMillis - boughtAtEpochMillis)).toSeconds());
+        long days = seconds / 86_400L;
+        long hours = (seconds % 86_400L) / 3_600L;
+        long minutes = (seconds % 3_600L) / 60L;
+        long remainder = seconds % 60L;
+        return Translator.tr("commands.market.positions.duration", days, hours, minutes, remainder);
     }
 
     private static String formatPrice(long priceScaled) {
