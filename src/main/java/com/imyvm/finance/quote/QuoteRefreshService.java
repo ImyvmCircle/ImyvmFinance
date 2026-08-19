@@ -7,6 +7,9 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.HashSet;
@@ -20,11 +23,13 @@ public final class QuoteRefreshService implements AutoCloseable {
     private final ScheduledExecutorService executor;
     private final AtomicBoolean refreshing = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
-    private final long refreshMinutes;
+    private final long pollIntervalMinutes;
+    private final long pollDelaySeconds;
     private final Consumer<String> alertConsumer;
     private final Consumer<com.imyvm.finance.market.QuoteSnapshot> snapshotConsumer;
     private final Set<String> unavailableInstruments = new HashSet<>();
     private boolean sidecarUnavailable;
+    private String lastSnapshotId;
 
     public QuoteRefreshService(QuoteSnapshotStore store) {
         this(store, FinanceConfig.defaults(), ignored -> { });
@@ -46,7 +51,8 @@ public final class QuoteRefreshService implements AutoCloseable {
             config.sidecarEndpoint(),
             config.sidecarConnectTimeout(),
             config.sidecarReadTimeout());
-        this.refreshMinutes = config.quoteRefreshMinutes();
+        this.pollIntervalMinutes = config.quotePollIntervalMinutes();
+        this.pollDelaySeconds = config.quotePollDelaySeconds();
         this.alertConsumer = alertConsumer;
         this.snapshotConsumer = snapshotConsumer;
         this.executor = Executors.newSingleThreadScheduledExecutor(task -> {
@@ -57,7 +63,23 @@ public final class QuoteRefreshService implements AutoCloseable {
     }
 
     public void start() {
-        executor.scheduleWithFixedDelay(this::refresh, 0, refreshMinutes, TimeUnit.MINUTES);
+        scheduleNext(pollDelaySeconds * 1000L);
+    }
+
+    private void scheduleNext(long delayMillis) {
+        executor.schedule(() -> {
+            refresh();
+            if (!closed.get())
+                scheduleNext(millisecondsUntilPollNode(Instant.now(), ZoneId.systemDefault(), pollIntervalMinutes, pollDelaySeconds));
+        }, delayMillis, TimeUnit.MILLISECONDS);
+    }
+
+    public static long millisecondsUntilPollNode(Instant instant, ZoneId zone, long intervalMinutes, long delaySeconds) {
+        ZonedDateTime now = instant.atZone(zone);
+        ZonedDateTime nominal = now.withMinute(1).withSecond((int) delaySeconds).withNano(0);
+        while (!nominal.isAfter(now))
+            nominal = nominal.plusMinutes(intervalMinutes);
+        return nominal.toInstant().toEpochMilli() - instant.toEpochMilli();
     }
 
     private void refresh() {
@@ -75,7 +97,10 @@ public final class QuoteRefreshService implements AutoCloseable {
                 }
 
                 store.save(snapshot);
-                snapshotConsumer.accept(snapshot);
+                if (!snapshot.snapshotId().equals(lastSnapshotId)) {
+                    lastSnapshotId = snapshot.snapshotId();
+                    snapshotConsumer.accept(snapshot);
+                }
                 notifySidecarRecovery();
                 for (String alert : snapshot.alerts())
                     notifyAlert(alert);

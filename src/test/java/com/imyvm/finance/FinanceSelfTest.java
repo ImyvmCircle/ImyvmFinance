@@ -37,6 +37,7 @@ public final class FinanceSelfTest {
         storageChecks();
         tradingValidationChecks();
         marketTimeChecks();
+        quoteScheduleChecks();
         System.out.println("FINANCE_SELF_TEST_OK");
     }
 
@@ -48,8 +49,9 @@ public final class FinanceSelfTest {
             check(Files.exists(config), "default config was not created");
             checkEquals("http://127.0.0.1:8765/quotes",
                 defaults.sidecarEndpoint().toString(), "default endpoint");
-            checkEquals(5L, defaults.quoteRefreshMinutes(), "default refresh");
+            checkEquals(5L, defaults.quotePollIntervalMinutes(), "default refresh");
             checkEquals(20L, defaults.briefingIntervalMinutes(), "default briefing interval");
+            checkEquals(20L, defaults.briefingDelaySeconds(), "default briefing delay");
             checkEquals("zh_cn", defaults.language(), "default language");
             check(defaults.briefingEnabled(), "default briefing enabled");
             checkEquals(15L * 60 * 1000, defaults.tradingRules().maxQuoteAgeMillis(), "default quote age");
@@ -58,8 +60,10 @@ public final class FinanceSelfTest {
             properties.setProperty("sidecar.endpoint", "http://127.0.0.1:9000/quotes");
             properties.setProperty("sidecar.connect-timeout-ms", "1500");
             properties.setProperty("sidecar.read-timeout-ms", "3500");
-            properties.setProperty("sidecar.refresh-minutes", "7");
+            properties.setProperty("sidecar.poll-interval-minutes", "7");
+            properties.setProperty("sidecar.poll-delay-seconds", "19");
             properties.setProperty("briefing.interval-minutes", "30");
+            properties.setProperty("briefing.delay-seconds", "22");
             properties.setProperty("trading.fee-bps", "25");
             properties.setProperty("trading.min-units", "2");
             try (var writer = Files.newBufferedWriter(config)) {
@@ -71,8 +75,10 @@ public final class FinanceSelfTest {
                 overridden.sidecarEndpoint().toString(), "custom endpoint");
             checkEquals(1500L, overridden.sidecarConnectTimeout().toMillis(), "connect timeout");
             checkEquals(3500L, overridden.sidecarReadTimeout().toMillis(), "read timeout");
-            checkEquals(7L, overridden.quoteRefreshMinutes(), "custom refresh");
+            checkEquals(7L, overridden.quotePollIntervalMinutes(), "custom poll interval");
+            checkEquals(19L, overridden.quotePollDelaySeconds(), "custom poll delay");
             checkEquals(30L, overridden.briefingIntervalMinutes(), "custom briefing interval");
+            checkEquals(22L, overridden.briefingDelaySeconds(), "custom briefing delay");
             checkEquals(25, overridden.tradingRules().feeBps(), "custom fee");
             checkEquals(2L, overridden.tradingRules().minUnits(), "custom minimum units");
         } finally {
@@ -164,6 +170,15 @@ public final class FinanceSelfTest {
         } catch (TradeValidationException expected) {
             checkEquals("commands.market.trade.quote_stale", expected.messageKey(), "market time freshness");
         }
+    }
+
+    private static void quoteScheduleChecks() {
+        long delay = com.imyvm.finance.quote.QuoteRefreshService.millisecondsUntilPollNode(
+            java.time.Instant.parse("2026-08-19T10:00:00Z"), java.time.ZoneOffset.UTC, 5, 17);
+        checkEquals(77_000L, delay, "poll delay before hourly anchor");
+        delay = com.imyvm.finance.quote.QuoteRefreshService.millisecondsUntilPollNode(
+            java.time.Instant.parse("2026-08-19T10:01:18Z"), java.time.ZoneOffset.UTC, 5, 17);
+        checkEquals(299_000L, delay, "poll delay after hourly anchor");
     }
 
     private static void storageChecks() throws Exception {

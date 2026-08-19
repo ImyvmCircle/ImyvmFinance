@@ -2,8 +2,10 @@
 sidecar.endpoint=http://127.0.0.1:8765/quotes
 sidecar.connect-timeout-ms=1000
 sidecar.read-timeout-ms=2000
-sidecar.refresh-minutes=5
+sidecar.poll-interval-minutes=5
+sidecar.poll-delay-seconds=17
 briefing.interval-minutes=20
+briefing.delay-seconds=20
 briefing.enabled=true
 language=zh_cn
 trading.max-quote-age-minutes=15

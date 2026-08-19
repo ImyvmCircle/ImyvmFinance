@@ -312,6 +312,9 @@ public final class ImyvmFinance implements ModInitializer {
     }
 
     private static boolean isBriefingSnapshot(com.imyvm.finance.market.QuoteSnapshot snapshot) {
+        long age = System.currentTimeMillis() - snapshot.fetchedAtEpochMillis();
+        if (age < 0 || age >= CONFIG.quotePollIntervalMinutes() * 60_000L)
+            return false;
         ZonedDateTime time = Instant.ofEpochMilli(snapshot.fetchedAtEpochMillis()).atZone(ZoneId.systemDefault());
         long seconds = time.getMinute() * 60L + time.getSecond();
         long interval = CONFIG.briefingIntervalMinutes() * 60L;
@@ -332,7 +335,7 @@ public final class ImyvmFinance implements ModInitializer {
         server.execute(() -> {
             if (isBriefingSnapshot(snapshot) && !snapshot.snapshotId().equals(lastBriefingSnapshotId)) {
                 lastBriefingSnapshotId = snapshot.snapshotId();
-                nextBriefingAt = snapshot.fetchedAtEpochMillis() + 20_000L;
+                nextBriefingAt = snapshot.fetchedAtEpochMillis() + CONFIG.briefingDelaySeconds() * 1000L;
             }
             updateMarketAnnouncements(server, snapshot);
         });

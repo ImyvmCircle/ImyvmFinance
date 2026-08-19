@@ -12,6 +12,7 @@ import hashlib
 import json
 import math
 import random
+import secrets
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -83,7 +84,9 @@ _market_providers = DEFAULT_MARKET_PROVIDERS
 _active_providers: dict[str, str] = {market: providers[0] for market, providers in DEFAULT_MARKET_PROVIDERS.items()}
 _disabled_providers: dict[str, set[str]] = {market: set() for market in MARKET_CALENDARS}
 _manual_closed_markets: set[str] = set()
-_open_delay_seconds = 60.0
+_read_interval_minutes = 5
+_read_jitter_seconds = 15.0
+_random = random.Random()
 _closed_poll_seconds = 30.0
 
 
@@ -439,11 +442,12 @@ def cached_snapshot() -> dict[str, Any]:
 def _seconds_until_read_node(now: datetime) -> float:
     nominal = now.replace(minute=1, second=0, microsecond=0)
     while nominal <= now:
-        nominal += timedelta(minutes=5)
-    return max(1.0, (nominal - now).total_seconds() + random.uniform(-15.0, 15.0))
+        nominal += timedelta(minutes=_read_interval_minutes)
+    return max(1.0, (nominal - now).total_seconds()
+        + _random.uniform(-_read_jitter_seconds, _read_jitter_seconds))
 
 
-def refresh_loop(refresh_seconds: float) -> None:
+def refresh_loop() -> None:
     global _cache
     first_active_read = True
     while True:
@@ -470,7 +474,6 @@ def refresh_loop(refresh_seconds: float) -> None:
 
 
 class Handler(BaseHTTPRequestHandler):
-    cache_seconds = 300.0
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -543,18 +546,22 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="ImyvmFinance quote sidecar")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--cache-seconds", type=float, default=300.0)
+    parser.add_argument("--read-interval-minutes", type=int, default=5)
+    parser.add_argument("--read-jitter-seconds", type=float, default=15.0)
+    parser.add_argument("--random-seed", type=int)
     parser.add_argument("--market-providers", default="CN=eastmoney,sina;HK=global,yahoo;US=global,yahoo;CRYPTO=binance,coinbase")
-    parser.add_argument("--open-delay-seconds", type=float, default=60.0)
     parser.add_argument("--closed-poll-seconds", type=float, default=30.0)
     args = parser.parse_args()
-    global _market_providers, _active_providers, _open_delay_seconds, _closed_poll_seconds
+    global _market_providers, _active_providers, _read_interval_minutes, _read_jitter_seconds, _random, _closed_poll_seconds
     _market_providers = _parse_market_providers(args.market_providers)
     _active_providers = {market: providers[0] for market, providers in _market_providers.items() if providers}
-    _open_delay_seconds = max(0.0, args.open_delay_seconds)
+    _read_interval_minutes = max(1, args.read_interval_minutes)
+    _read_jitter_seconds = max(0.0, args.read_jitter_seconds)
+    random_seed = args.random_seed if args.random_seed is not None else secrets.randbits(64)
+    _random = random.Random(random_seed)
     _closed_poll_seconds = max(5.0, args.closed_poll_seconds)
-    Handler.cache_seconds = max(0.0, args.cache_seconds)
-    threading.Thread(target=refresh_loop, args=(Handler.cache_seconds,), daemon=True).start()
+    print(f"[sidecar] random seed: {random_seed}")
+    threading.Thread(target=refresh_loop, daemon=True).start()
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"ImyvmFinance quote sidecar listening on http://{args.host}:{args.port}")
     try:

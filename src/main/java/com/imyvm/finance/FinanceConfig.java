@@ -15,8 +15,10 @@ public record FinanceConfig(
     URI sidecarEndpoint,
     Duration sidecarConnectTimeout,
     Duration sidecarReadTimeout,
-    long quoteRefreshMinutes,
+    long quotePollIntervalMinutes,
+    long quotePollDelaySeconds,
     long briefingIntervalMinutes,
+    long briefingDelaySeconds,
     boolean briefingEnabled,
     String language,
     TradingRules tradingRules
@@ -29,6 +31,8 @@ public record FinanceConfig(
             Duration.ofSeconds(1),
             Duration.ofSeconds(2),
             5,
+            17,
+            20,
             20,
             true,
             "zh_cn",
@@ -50,10 +54,14 @@ public record FinanceConfig(
                     Long.toString(defaults.sidecarConnectTimeout().toMillis()));
                 properties.setProperty("sidecar.read-timeout-ms",
                     Long.toString(defaults.sidecarReadTimeout().toMillis()));
-                properties.setProperty("sidecar.refresh-minutes",
-                    Long.toString(defaults.quoteRefreshMinutes()));
+                properties.setProperty("sidecar.poll-interval-minutes",
+                    Long.toString(defaults.quotePollIntervalMinutes()));
+                properties.setProperty("sidecar.poll-delay-seconds",
+                    Long.toString(defaults.quotePollDelaySeconds()));
                 properties.setProperty("briefing.interval-minutes",
                     Long.toString(defaults.briefingIntervalMinutes()));
+                properties.setProperty("briefing.delay-seconds",
+                    Long.toString(defaults.briefingDelaySeconds()));
                 properties.setProperty("briefing.enabled", Boolean.toString(defaults.briefingEnabled()));
                 properties.setProperty("language", defaults.language());
                 properties.setProperty("trading.max-quote-age-minutes", "15");
@@ -74,8 +82,10 @@ public record FinanceConfig(
                 defaults.sidecarConnectTimeout().toMillis()),
             positiveDuration(properties, "sidecar.read-timeout-ms",
                 defaults.sidecarReadTimeout().toMillis()),
-            positiveLong(properties, "sidecar.refresh-minutes", defaults.quoteRefreshMinutes()),
+            positiveLong(properties, "sidecar.poll-interval-minutes", defaults.quotePollIntervalMinutes()),
+            positiveLong(properties, "sidecar.poll-delay-seconds", defaults.quotePollDelaySeconds()),
             positiveLong(properties, "briefing.interval-minutes", defaults.briefingIntervalMinutes()),
+            positiveLong(properties, "briefing.delay-seconds", defaults.briefingDelaySeconds()),
             parseBoolean(properties, "briefing.enabled", defaults.briefingEnabled()),
             properties.getProperty("language", defaults.language()).trim(),
             new TradingRules(
