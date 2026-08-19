@@ -17,5 +17,5 @@ The default refresh interval is 300 seconds. External requests are made only for
 ```sh
 python server.py --cache-seconds 300 \
   --open-delay-seconds 60 \
-  --market-providers "CN=eastmoney,sina;HK=global,yahoo;US=global,yahoo;JP=global,yahoo;KR=global,yahoo"
+  --market-providers "CN=eastmoney,sina;HK=global,yahoo;US=global,yahoo;CRYPTO=binance,coinbase"
 ```

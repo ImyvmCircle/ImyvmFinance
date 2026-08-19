@@ -664,10 +664,10 @@ public final class MarketCommands {
         if (!context.getNodes().stream().anyMatch(node -> node.getNode() instanceof ArgumentCommandNode<?, ?>
             && "market".equals(node.getNode().getName())) ) {
             try {
-                for (String market : new String[]{"CN", "HK", "US", "JP", "KR"}) {
+                for (String market : new String[]{"CN", "HK", "US", "CRYPTO"}) {
                     boolean enabled = ImyvmFinance.TRADING_STORE != null
                         && ImyvmFinance.TRADING_STORE.isMarketTradingEnabled(market);
-                    source.sendSuccess(() -> Translator.tr("commands.market.market.status", market,
+                    source.sendSuccess(() -> Translator.tr("commands.market.market.status", marketLabel(market),
                         enabled ? "ENABLED" : "DISABLED"), false);
                 }
                 return Command.SINGLE_SUCCESS;
@@ -683,7 +683,7 @@ public final class MarketCommands {
         try {
             boolean enabled = ImyvmFinance.TRADING_STORE != null
                 && ImyvmFinance.TRADING_STORE.isMarketTradingEnabled(market);
-            source.sendSuccess(() -> Translator.tr("commands.market.market.status", market, enabled ? "ENABLED" : "DISABLED"), false);
+            source.sendSuccess(() -> Translator.tr("commands.market.market.status", marketLabel(market), enabled ? "ENABLED" : "DISABLED"), false);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) {
             return failUnexpected(source, "market control", exception);
@@ -705,7 +705,7 @@ public final class MarketCommands {
                 if (ImyvmFinance.TRADING_STORE == null)
                     throw new IllegalStateException("trading storage unavailable");
                 ImyvmFinance.TRADING_STORE.setMarketTradingEnabled(market, enabled);
-                source.sendSuccess(() -> Translator.tr("commands.market.market." + (enabled ? "enabled" : "disabled"), market), true);
+                source.sendSuccess(() -> Translator.tr("commands.market.market." + (enabled ? "enabled" : "disabled"), marketLabel(market)), true);
             } catch (Exception exception) {
                 source.sendFailure(Translator.tr("commands.market.control.failed"));
             }
@@ -715,6 +715,10 @@ public final class MarketCommands {
         });
         source.sendSuccess(() -> Translator.tr("commands.market.control.requested"), false);
         return Command.SINGLE_SUCCESS;
+    }
+
+    private static Component marketLabel(String market) {
+        return Translator.tr("commands.market.market.name." + market.toLowerCase());
     }
 
     private static boolean knownMarket(String market) {

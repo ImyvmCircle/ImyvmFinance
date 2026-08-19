@@ -14,8 +14,8 @@ public enum Instrument {
     US_DJI("US:DJI", "US"),
     US_SPX("US:SPX", "US"),
     US_NDX("US:NDX", "US"),
-    JP_N225("JP:N225", "JP"),
-    KR_KOSPI("KR:KOSPI", "KR");
+    CRYPTO_BTC("CRYPTO:BTCUSDT", "CRYPTO"),
+    CRYPTO_ETH("CRYPTO:ETHUSDT", "CRYPTO");
 
     private final String symbol;
     private final String market;

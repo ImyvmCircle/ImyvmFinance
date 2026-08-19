@@ -227,8 +227,8 @@ public final class ImyvmFinance implements ModInitializer {
         if (!hasOpenMarket)
             return;
         MutableComponent briefing = Component.empty().append(Translator.tr("commands.market.briefing.header"));
-        for (String market : new String[]{"CN", "HK", "US", "JP", "KR"}) {
-            MutableComponent line = Component.empty().append("\n").append(Translator.tr("commands.market.briefing.market", market));
+        for (String market : new String[]{"CN", "HK", "US", "CRYPTO"}) {
+            MutableComponent line = Component.empty().append("\n").append(Translator.tr("commands.market.briefing.market", marketLabel(market)));
             for (int index = 0; index < instruments.length; index++) {
                 Instrument instrument = instruments[index];
                 if (!instrument.market().equals(market))
@@ -356,9 +356,13 @@ public final class ImyvmFinance implements ModInitializer {
         }
     }
 
+    private static Component marketLabel(String market) {
+        return Translator.tr("commands.market.market.name." + market.toLowerCase());
+    }
+
     private static void sendMarketEvent(net.minecraft.server.MinecraftServer server,
                                         String key, String market) {
-        Component message = Translator.tr(key, market);
+        Component message = Translator.tr(key, marketLabel(market));
         for (var player : server.getPlayerList().getPlayers())
             player.sendSystemMessage(message);
     }

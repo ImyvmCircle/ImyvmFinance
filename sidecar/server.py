@@ -32,8 +32,8 @@ INSTRUMENTS = (
     "US:DJI",
     "US:SPX",
     "US:NDX",
-    "JP:N225",
-    "KR:KOSPI",
+    "CRYPTO:BTCUSDT",
+    "CRYPTO:ETHUSDT",
 )
 
 CHINA_CATEGORIES = ("沪深重要指数", "上证系列指数", "深证系列指数", "中证系列指数")
@@ -43,16 +43,13 @@ GLOBAL_ALIASES = {
     "US:DJI": {"DJI", "DJIA", "道琼斯", "DOW JONES"},
     "US:SPX": {"SPX", "GSPC", "标普500", "S&P 500"},
     "US:NDX": {"NDX", "NASDAQ 100", "纳斯达克100"},
-    "JP:N225": {"N225", "日经225", "NIKKEI 225"},
-    "KR:KOSPI": {"KOSPI", "韩国综合指数"},
 }
 
 MARKET_CALENDARS = {
     "CN": "XSHG",
     "HK": "XHKG",
     "US": "XNYS",
-    "JP": "XTKS",
-    "KR": "XKRX",
+    "CRYPTO": None,
 }
 
 YAHOO_SYMBOLS = {
@@ -61,16 +58,13 @@ YAHOO_SYMBOLS = {
     "US:DJI": "^DJI",
     "US:SPX": "^GSPC",
     "US:NDX": "^NDX",
-    "JP:N225": "^N225",
-    "KR:KOSPI": "^KS11",
 }
 
 DEFAULT_MARKET_PROVIDERS = {
     "CN": ("eastmoney", "sina"),
     "HK": ("global", "yahoo"),
     "US": ("global", "yahoo"),
-    "JP": ("global", "yahoo"),
-    "KR": ("global", "yahoo"),
+    "CRYPTO": ("binance", "coinbase"),
 }
 
 _calendar_lock = threading.Lock()
@@ -116,6 +110,8 @@ def _number(value: Any) -> float | None:
 
 def _market_status(symbol: str, now: datetime) -> str:
     market = symbol.split(":", 1)[0]
+    if market == "CRYPTO":
+        return "OPEN"
     try:
         with _calendar_lock:
             calendar = _calendars.get(market)
@@ -271,13 +267,52 @@ def _fetch_yahoo(symbol: str, now: datetime) -> dict[str, str] | None:
         (price - previous) * 100 / previous, now)
 
 
+def _json_request(url: str) -> Any:
+    request = Request(url, headers={"User-Agent": "ImyvmFinance/1.0"})
+    with urlopen(request, timeout=3) as response:
+        return json.load(response)
+
+
+def _fetch_binance(now: datetime) -> dict[str, dict[str, str]]:
+    symbols = ["BTCUSDT", "ETHUSDT"]
+    encoded = quote(json.dumps(symbols, separators=(",", ":")), safe="")
+    rows = _json_request("https://data-api.binance.vision/api/v3/ticker/24hr?symbols=" + encoded)
+    wanted = {symbol: "CRYPTO:" + symbol for symbol in symbols}
+    result: dict[str, dict[str, str]] = {}
+    for row in rows:
+        symbol = wanted.get(_text(row.get("symbol")).upper())
+        if symbol is None:
+            continue
+        result[symbol] = _quote(symbol, symbol.split(":", 1)[1], row.get("lastPrice"),
+            row.get("priceChangePercent"), now)
+    return result
+
+
+def _fetch_coinbase(now: datetime) -> dict[str, dict[str, str]]:
+    result: dict[str, dict[str, str]] = {}
+    for asset in ("BTC", "ETH"):
+        stats = _json_request("https://api.exchange.coinbase.com/products/" + asset + "-USD/stats")
+        last = _number(stats.get("last"))
+        opening = _number(stats.get("open"))
+        if last is None or opening is None or opening <= 0:
+            continue
+        symbol = "CRYPTO:" + asset + "USDT"
+        result[symbol] = _quote(symbol, asset + "/USD", last,
+            (last - opening) * 100 / opening, now)
+    return result
+
+
 def _provider_quotes(provider: str, ak: Any, now: datetime, active: set[str]) -> dict[str, dict[str, str]]:
     if provider == "eastmoney" and "CN" in active:
         return _fetch_china_eastmoney(ak, now)
     if provider == "sina" and "CN" in active:
         return _fetch_china_sina(ak, now)
-    if provider == "global" and active & {"HK", "US", "JP", "KR"}:
+    if provider == "global" and active & {"HK", "US"}:
         return _fetch_global(ak, now)
+    if provider == "binance" and "CRYPTO" in active:
+        return _fetch_binance(now)
+    if provider == "coinbase" and "CRYPTO" in active:
+        return _fetch_coinbase(now)
     return {}
 
 
@@ -304,7 +339,7 @@ def _fetch_market_quotes(active: set[str], now: datetime) -> tuple[dict[str, dic
                         if fallback is not None:
                             candidate[symbol] = fallback
                 else:
-                    if ak is None:
+                    if provider in {"eastmoney", "sina", "global"} and ak is None:
                         ak = _akshare()
                     if provider not in provider_cache:
                         provider_cache[provider] = _provider_quotes(provider, ak, now, active)
@@ -503,7 +538,7 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--cache-seconds", type=float, default=300.0)
-    parser.add_argument("--market-providers", default="CN=eastmoney,sina;HK=global,yahoo;US=global,yahoo;JP=global,yahoo;KR=global,yahoo")
+    parser.add_argument("--market-providers", default="CN=eastmoney,sina;HK=global,yahoo;US=global,yahoo;CRYPTO=binance,coinbase")
     parser.add_argument("--open-delay-seconds", type=float, default=60.0)
     parser.add_argument("--closed-poll-seconds", type=float, default=30.0)
     args = parser.parse_args()
