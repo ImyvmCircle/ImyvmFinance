@@ -1375,7 +1375,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                 dailyBuyUsed,
                 ImyvmFinance.TRADING_STORE.positionValue(player.getUUID()),
                 ImyvmFinance.TRADING_RULES);
-            long balance = com.imyvm.economy.api.DatabaseApi.getInstance().getPlayer(player).getMoney();
+            long balance = com.imyvm.economy.api.DatabaseApi.getInstance().getPlayer(player).getMoney() / 100L;
             long dailyBuyRemaining =
                 ImyvmFinance.TRADING_RULES.dailyBuyLimit() - dailyBuyUsed - estimate.settlementAmount();
             context.getSource().sendSuccess(

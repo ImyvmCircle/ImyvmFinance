@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import java.util.UUID;
 
 public final class StockEconomySettlement {
+    private static final long ECONOMY_MINOR_UNITS_PER_DISPLAY_UNIT = 100L;
     private static final Logger LOGGER = LoggerFactory.getLogger("imyvm_finance/economy");
 
     private final StockTransactionStore transactionStore;
@@ -40,7 +41,7 @@ public final class StockEconomySettlement {
                                           StockTransaction transaction) {
         try {
             PlayerWallet wallet = DatabaseApi.getInstance().getPlayer(player);
-            if (!wallet.takeMoney(transaction.amount())) {
+            if (!wallet.takeMoney(toEconomyAmount(transaction.amount()))) {
                 StockTransactionState state = transition(
                     transaction,
                     StockTransactionState.CANCELLED,
@@ -61,7 +62,7 @@ public final class StockEconomySettlement {
     private EconomySettlementResult credit(Player player,
                                            StockTransaction transaction) {
         try {
-            DatabaseApi.getInstance().getPlayer(player).addMoney(transaction.amount());
+            DatabaseApi.getInstance().getPlayer(player).addMoney(toEconomyAmount(transaction.amount()));
             StockTransactionState state = transition(
                 transaction,
                 StockTransactionState.ECONOMY_CONFIRMED,
@@ -106,6 +107,10 @@ public final class StockEconomySettlement {
                 StockTransactionState.PENDING_MANUAL,
                 transaction.amount());
         }
+    }
+
+public static long toEconomyAmount(long displayAmount) {
+        return Math.multiplyExact(displayAmount, ECONOMY_MINOR_UNITS_PER_DISPLAY_UNIT);
     }
 
     public static Player offlinePlayer(ServerLevel level, GameProfile profile) {

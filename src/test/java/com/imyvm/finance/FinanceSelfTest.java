@@ -41,6 +41,7 @@ public final class FinanceSelfTest {
         marketHoursChecks();
         storageChecks();
         tradingValidationChecks();
+        economyAmountChecks();
         marketTimeChecks();
         quoteScheduleChecks();
         System.out.println("FINANCE_SELF_TEST_OK");
@@ -165,6 +166,10 @@ public final class FinanceSelfTest {
             com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-24T03:00:00Z"),
                 java.util.Set.of(java.time.LocalDate.of(2026, 8, 24))),
             "China configured holiday hours");
+    }
+
+    private static void economyAmountChecks() {
+        checkEquals(12300L, com.imyvm.finance.economy.StockEconomySettlement.toEconomyAmount(123L), "economy minor-unit conversion");
     }
 
     private static void tradingValidationChecks() throws Exception {
