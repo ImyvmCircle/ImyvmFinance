@@ -22,6 +22,7 @@ public record FinanceConfig(
     long quotePollIntervalMinutes,
     long quotePollDelaySeconds,
     long quoteJitterSeconds,
+    long quoteProviderBackoffMinutes,
     long quoteRandomSeed,
     long briefingIntervalMinutes,
     long briefingDelaySeconds,
@@ -41,6 +42,7 @@ public record FinanceConfig(
             Duration.ofSeconds(2),
             3,
             17,
+            15,
             15,
             0,
             15,
@@ -75,6 +77,8 @@ public record FinanceConfig(
                     Long.toString(defaults.quotePollDelaySeconds()));
                 properties.setProperty("quote.jitter-seconds",
                     Long.toString(defaults.quoteJitterSeconds()));
+                properties.setProperty("quote.provider-backoff-minutes",
+                    Long.toString(defaults.quoteProviderBackoffMinutes()));
                 properties.setProperty("quote.random-seed",
                     Long.toString(defaults.quoteRandomSeed()));
                 properties.setProperty("briefing.interval-minutes",
@@ -104,6 +108,7 @@ public record FinanceConfig(
             positiveLong(properties, "quote.poll-interval-minutes", defaults.quotePollIntervalMinutes()),
             positiveLong(properties, "quote.poll-delay-seconds", defaults.quotePollDelaySeconds()),
             nonNegativeLong(properties, "quote.jitter-seconds", defaults.quoteJitterSeconds()),
+            positiveLong(properties, "quote.provider-backoff-minutes", defaults.quoteProviderBackoffMinutes()),
             parseLong(properties, "quote.random-seed", defaults.quoteRandomSeed()),
             positiveLong(properties, "briefing.interval-minutes", defaults.briefingIntervalMinutes()),
             positiveLong(properties, "briefing.delay-seconds", defaults.briefingDelaySeconds()),
@@ -127,7 +132,7 @@ public record FinanceConfig(
 
     public FinanceConfig withSetupInitialized(boolean initialized) {
         return new FinanceConfig(quoteConnectTimeout, quoteReadTimeout,
-            quotePollIntervalMinutes, quotePollDelaySeconds, quoteJitterSeconds, quoteRandomSeed, briefingIntervalMinutes, briefingDelaySeconds,
+            quotePollIntervalMinutes, quotePollDelaySeconds, quoteJitterSeconds, quoteProviderBackoffMinutes, quoteRandomSeed, briefingIntervalMinutes, briefingDelaySeconds,
             briefingEnabled, initialized, marketHolidays, marketEnabled, disabledProviders, providerOrder, language, tradingRules);
     }
 

@@ -43,6 +43,7 @@ public final class DirectMarketQuoteClient {
         "000905", Instrument.CN_000905);
     private final HttpClient httpClient;
     private final Duration requestTimeout;
+    private final long providerBackoffMillis;
     private final CryptoQuoteClient cryptoClient;
     private final Map<String, Set<java.time.LocalDate>> marketHolidays;
     private final Map<String, List<String>> providerOrder;
@@ -52,6 +53,8 @@ public final class DirectMarketQuoteClient {
     private final Map<String, AtomicLong> lastAttemptAt = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> lastSuccessAt = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> lastFailureAt = new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> consecutiveFailures = new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> backoffUntil = new ConcurrentHashMap<>();
     private final Map<String, String> lastErrors = new ConcurrentHashMap<>();
     private final EnumMap<Instrument, MarketQuote> lastQuotes = new EnumMap<>(Instrument.class);
     private final Set<String> disabledProviders = ConcurrentHashMap.newKeySet();
@@ -63,11 +66,16 @@ public final class DirectMarketQuoteClient {
     }
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays) {
-        this(connectTimeout, requestTimeout, marketHolidays, Map.of("CN", true, "CRYPTO", true), Set.of(), Map.of("CN", List.of("eastmoney", "sina", "tencent"), "CRYPTO", List.of("binance", "coinbase", "kraken", "okx", "bybit", "bitstamp")));
+        this(connectTimeout, requestTimeout, marketHolidays, Map.of("CN", true, "CRYPTO", true), Set.of(), Map.of("CN", List.of("eastmoney", "sina", "tencent"), "CRYPTO", List.of("binance", "coinbase", "kraken", "okx", "bybit", "bitstamp")), 15);
     }
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays, Map<String, Boolean> marketEnabled, Set<String> disabledProviders, Map<String, List<String>> providerOrder) {
+        this(connectTimeout, requestTimeout, marketHolidays, marketEnabled, disabledProviders, providerOrder, 15);
+    }
+
+    public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays, Map<String, Boolean> marketEnabled, Set<String> disabledProviders, Map<String, List<String>> providerOrder, long providerBackoffMinutes) {
         this.marketHolidays = Map.copyOf(marketHolidays);
+        this.providerBackoffMillis = providerBackoffMinutes * 60_000L;
         this.marketEnabled = Map.copyOf(marketEnabled);
         this.providerOrder = Map.copyOf(providerOrder);
         this.disabledProviders.addAll(disabledProviders);
@@ -118,6 +126,7 @@ public final class DirectMarketQuoteClient {
         for (String provider : providerOrder.getOrDefault("CN", List.of("eastmoney", "sina"))) {
             if (disabledProviders.contains("CN:" + provider)) continue;
             String statsKey = "CN:" + provider;
+            if (isBackedOff(statsKey)) continue;
             recordAttempt(statsKey);
             try {
                 Map<Instrument, MarketQuote> result = switch (provider) {
@@ -139,6 +148,7 @@ public final class DirectMarketQuoteClient {
         for (String provider : providerOrder.getOrDefault("CRYPTO", List.of("binance", "coinbase", "kraken", "okx", "bybit", "bitstamp"))) {
             if (disabledProviders.contains("CRYPTO:" + provider)) continue;
             String statsKey = "CRYPTO:" + provider;
+            if (isBackedOff(statsKey)) continue;
             recordAttempt(statsKey);
             try {
                 var result = switch (provider) {
@@ -174,12 +184,23 @@ public final class DirectMarketQuoteClient {
 
     private void recordSuccess(String provider) {
         lastSuccessAt.computeIfAbsent(provider, ignored -> new AtomicLong()).set(System.currentTimeMillis());
+        consecutiveFailures.computeIfAbsent(provider, ignored -> new AtomicLong()).set(0);
+        backoffUntil.remove(provider);
     }
 
     private void recordFailure(String provider, Exception exception) {
         failureCounts.computeIfAbsent(provider, ignored -> new AtomicLong()).incrementAndGet();
         lastFailureAt.computeIfAbsent(provider, ignored -> new AtomicLong()).set(System.currentTimeMillis());
+        long failures = consecutiveFailures.computeIfAbsent(provider, ignored -> new AtomicLong()).incrementAndGet();
+        long multiplier = 1L << Math.min(failures - 1, 2);
+        long cooldown = Math.min(providerBackoffMillis * multiplier, providerBackoffMillis * 4);
+        backoffUntil.computeIfAbsent(provider, ignored -> new AtomicLong()).set(System.currentTimeMillis() + cooldown);
         lastErrors.put(provider, exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage());
+    }
+
+    private boolean isBackedOff(String provider) {
+        AtomicLong until = backoffUntil.get(provider);
+        return until != null && until.get() > System.currentTimeMillis();
     }
 
     private String jsonStats() {
@@ -192,8 +213,17 @@ public final class DirectMarketQuoteClient {
                 + ",\"lastAttemptAt\":" + jsonTime(lastAttemptAt.get(provider))
                 + ",\"lastSuccessAt\":" + jsonTime(lastSuccessAt.get(provider))
                 + ",\"lastFailureAt\":" + jsonTime(lastFailureAt.get(provider))
+                + ",\"consecutiveFailures\":" + consecutiveFailures.getOrDefault(provider, new AtomicLong()).get()
+                + ",\"backoffUntil\":" + jsonTime(backoffUntil.get(provider))
+                + ",\"backoffSecondsRemaining\":" + backoffSecondsRemaining(provider)
                 + ",\"lastError\":" + jsonString(lastErrors.get(provider)) + "}";
         }).collect(java.util.stream.Collectors.joining(",", "{", "}"));
+    }
+
+    private long backoffSecondsRemaining(String provider) {
+        AtomicLong until = backoffUntil.get(provider);
+        if (until == null) return 0;
+        return Math.max(0, (until.get() - System.currentTimeMillis() + 999) / 1000);
     }
 
     private static String jsonTime(AtomicLong time) {

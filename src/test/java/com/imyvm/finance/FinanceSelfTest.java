@@ -52,6 +52,7 @@ public final class FinanceSelfTest {
             checkEquals(3L, defaults.quotePollIntervalMinutes(), "default refresh");
             checkEquals(15L, defaults.briefingIntervalMinutes(), "default briefing interval");
             checkEquals(20L, defaults.briefingDelaySeconds(), "default briefing delay");
+            checkEquals(15L, defaults.quoteProviderBackoffMinutes(), "default provider backoff");
             check(!defaults.setupInitialized(), "setup defaults incomplete");
             checkEquals("zh_cn", defaults.language(), "default language");
             check(defaults.briefingEnabled(), "default briefing enabled");
