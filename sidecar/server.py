@@ -129,7 +129,8 @@ def _market_status(symbol: str, now: datetime) -> str:
 
 def _market_statuses(now: datetime) -> dict[str, str]:
     return {
-        market: "OPEN" if any(_market_status(symbol, now) == "OPEN"
+        market: "OPEN" if market not in _manual_closed_markets and any(
+            _market_status(symbol, now) == "OPEN"
             for symbol in INSTRUMENTS if symbol.startswith(market + ":")) else "CLOSED"
         for market in MARKET_CALENDARS
     }

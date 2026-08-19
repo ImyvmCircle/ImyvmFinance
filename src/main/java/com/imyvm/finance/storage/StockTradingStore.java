@@ -166,7 +166,15 @@ public final class StockTradingStore implements AutoCloseable {
     }
 
     public synchronized boolean isTradingEnabled(Instrument instrument) throws SQLException {
-        return !isTradingHalted(instrument.symbol());
+        return !isTradingHalted(instrument.symbol()) && isMarketTradingEnabled(instrument.market());
+    }
+
+    public synchronized boolean isMarketTradingEnabled(String market) throws SQLException {
+        return !isTradingHalted("MARKET:" + market);
+    }
+
+    public synchronized void setMarketTradingEnabled(String market, boolean enabled) throws SQLException {
+        setTradingEnabled("MARKET:" + market, enabled);
     }
 
     public synchronized void setGlobalTradingEnabled(boolean enabled) throws SQLException {

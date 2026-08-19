@@ -19,6 +19,7 @@ import com.imyvm.finance.trading.StockPositionView;
 import com.imyvm.finance.trading.TradingRules;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.tree.ArgumentCommandNode;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.suggestion.Suggestions;
@@ -113,6 +114,17 @@ public final class MarketCommands {
             .then(Commands.literal("disable")
                 .then(sourceMarket.then(sourceProvider.executes(context -> setSource(context, false)))));
 
+        var marketName = Commands.argument("market", StringArgumentType.word());
+        var marketControl = Commands.literal("market")
+            .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
+            .then(Commands.literal("status")
+                .executes(MarketCommands::marketStatus)
+                .then(marketName.executes(MarketCommands::marketStatus)))
+            .then(Commands.literal("enable")
+                .then(marketName.executes(context -> setMarket(context, true))))
+            .then(Commands.literal("disable")
+                .then(marketName.executes(context -> setMarket(context, false))));
+
         var rules = Commands.literal("rules")
             .requires(CommandSourceStack::isPlayer)
             .executes(MarketCommands::rules);
@@ -163,6 +175,7 @@ public final class MarketCommands {
             .then(confirm)
             .then(trading)
             .then(sourceControl)
+            .then(marketControl)
             .then(rules)
             .then(briefing)
             .then(positions)
@@ -484,9 +497,74 @@ public final class MarketCommands {
         return builder.buildFuture();
     }
 
+    private static int marketStatus(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        if (!context.getNodes().stream().anyMatch(node -> node.getNode() instanceof ArgumentCommandNode<?, ?>
+            && "market".equals(node.getNode().getName())) ) {
+            try {
+                for (String market : new String[]{"CN", "HK", "US", "JP", "KR"}) {
+                    boolean enabled = ImyvmFinance.TRADING_STORE != null
+                        && ImyvmFinance.TRADING_STORE.isMarketTradingEnabled(market);
+                    source.sendSuccess(() -> Translator.tr("commands.market.market.status", market,
+                        enabled ? "ENABLED" : "DISABLED"), false);
+                }
+                return Command.SINGLE_SUCCESS;
+            } catch (Exception exception) {
+                return failUnexpected(source, "market control", exception);
+            }
+        }
+        String market = StringArgumentType.getString(context, "market").toUpperCase();
+        if (!knownMarket(market)) {
+            source.sendFailure(Translator.tr("commands.market.error"));
+            return 0;
+        }
+        try {
+            boolean enabled = ImyvmFinance.TRADING_STORE != null
+                && ImyvmFinance.TRADING_STORE.isMarketTradingEnabled(market);
+            source.sendSuccess(() -> Translator.tr("commands.market.market.status", market, enabled ? "ENABLED" : "DISABLED"), false);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) {
+            return failUnexpected(source, "market control", exception);
+        }
+    }
+
+    private static int setMarket(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, boolean enabled
+    ) {
+        CommandSourceStack source = context.getSource();
+        String market = StringArgumentType.getString(context, "market").toUpperCase();
+        if (!knownMarket(market)) {
+            source.sendFailure(Translator.tr("commands.market.error"));
+            return 0;
+        }
+        String path = "/control/market?market=" + market + "&enabled=" + enabled;
+        ImyvmFinance.controlSidecar(path).thenAccept(ignored -> source.getServer().execute(() -> {
+            try {
+                if (ImyvmFinance.TRADING_STORE == null)
+                    throw new IllegalStateException("trading storage unavailable");
+                ImyvmFinance.TRADING_STORE.setMarketTradingEnabled(market, enabled);
+                source.sendSuccess(() -> Translator.tr("commands.market.market." + (enabled ? "enabled" : "disabled"), market), true);
+            } catch (Exception exception) {
+                source.sendFailure(Translator.tr("commands.market.control.failed"));
+            }
+        })).exceptionally(error -> {
+            source.getServer().execute(() -> source.sendFailure(Translator.tr("commands.market.control.failed")));
+            return null;
+        });
+        source.sendSuccess(() -> Translator.tr("commands.market.control.requested"), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
+    private static boolean knownMarket(String market) {
+        for (Instrument instrument : Instrument.values())
+            if (instrument.market().equals(market))
+                return true;
+        return false;
+    }
+
     private static int sourceStatus(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         CommandSourceStack source = context.getSource();
-        ImyvmFinance.controlSidecar("/control/status").thenAccept(body ->
+        ImyvmFinance.inspectSidecar("/control/status").thenAccept(body ->
             source.getServer().execute(() -> source.sendSuccess(() -> Component.literal(body), false)))
             .exceptionally(error -> {
                 source.getServer().execute(() -> source.sendFailure(Translator.tr("commands.market.control.failed")));

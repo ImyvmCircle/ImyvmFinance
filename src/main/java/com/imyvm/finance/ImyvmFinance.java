@@ -290,6 +290,11 @@ public final class ImyvmFinance implements ModInitializer {
         return java.math.BigDecimal.valueOf(changeBps, 2).setScale(2).toPlainString() + "%";
     }
 
+    public static CompletableFuture<String> inspectSidecar(String path) {
+        return new SidecarClient(CONFIG.sidecarEndpoint(), CONFIG.sidecarConnectTimeout(), CONFIG.sidecarReadTimeout())
+            .inspect(path);
+    }
+
     public static CompletableFuture<String> controlSidecar(String path) {
         return new SidecarClient(CONFIG.sidecarEndpoint(), CONFIG.sidecarConnectTimeout(), CONFIG.sidecarReadTimeout())
             .control(path);
