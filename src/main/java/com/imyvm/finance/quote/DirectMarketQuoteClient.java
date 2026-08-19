@@ -60,7 +60,7 @@ public final class DirectMarketQuoteClient {
     }
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays) {
-        this(connectTimeout, requestTimeout, marketHolidays, Map.of("CN", true, "HK", true, "US", true, "CRYPTO", true), Set.of(), Map.of("CN", List.of("eastmoney", "sina"), "HK", List.of("yahoo"), "US", List.of("yahoo"), "CRYPTO", List.of("binance", "coinbase")));
+        this(connectTimeout, requestTimeout, marketHolidays, Map.of("CN", true, "HK", true, "US", true, "CRYPTO", true), Set.of(), Map.of("CN", List.of("eastmoney", "sina"), "HK", List.of("yahoo"), "US", List.of("yahoo"), "CRYPTO", List.of("binance", "coinbase", "kraken", "okx")));
     }
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays, Map<String, Boolean> marketEnabled, Set<String> disabledProviders, Map<String, List<String>> providerOrder) {
@@ -141,12 +141,14 @@ public final class DirectMarketQuoteClient {
 
     private com.imyvm.finance.market.QuoteSnapshot fetchCrypto() throws Exception {
         Exception failure = null;
-        for (String provider : providerOrder.getOrDefault("CRYPTO", List.of("binance", "coinbase"))) {
+        for (String provider : providerOrder.getOrDefault("CRYPTO", List.of("binance", "coinbase", "kraken", "okx"))) {
             if (disabledProviders.contains("CRYPTO:" + provider)) continue;
             try {
                 var result = switch (provider) {
                     case "binance" -> cryptoClient.fetchBinance().join();
                     case "coinbase" -> cryptoClient.fetchCoinbase().join();
+                    case "kraken" -> cryptoClient.fetchKraken().join();
+                    case "okx" -> cryptoClient.fetchOkx().join();
                     default -> throw new IllegalArgumentException("unknown crypto provider: " + provider);
                 };
                 activeProviders.put("CRYPTO", provider);

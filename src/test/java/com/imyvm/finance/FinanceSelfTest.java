@@ -113,6 +113,10 @@ public final class FinanceSelfTest {
         checkEquals(com.imyvm.finance.market.Instrument.CRYPTO_BTC, snapshot.quotes().getFirst().instrument(), "crypto BTC instrument");
         checkEquals(600_000_000L, snapshot.quotes().getFirst().priceScaled(), "crypto BTC price");
         checkEquals(150L, snapshot.quotes().getFirst().changeBps(), "crypto BTC change");
+        var kraken = com.imyvm.finance.quote.CryptoQuoteClient.parseKraken("{\"result\":{\"XXBTZUSD\":{\"c\":[\"60000\"],\"o\":\"59000\"},\"XETHZUSD\":{\"c\":[\"3000\"],\"o\":\"2900\"}}}", java.time.Instant.ofEpochMilli(1000));
+        checkEquals(2, kraken.quotes().size(), "Kraken quote count");
+        var okx = com.imyvm.finance.quote.CryptoQuoteClient.parseOkx("{\"data\":[{\"instId\":\"BTC-USDT\",\"last\":\"60000\",\"open24h\":\"59000\"}]}", "{\"data\":[{\"instId\":\"ETH-USDT\",\"last\":\"3000\",\"open24h\":\"2900\"}]}", java.time.Instant.ofEpochMilli(1000));
+        checkEquals(2, okx.quotes().size(), "OKX quote count");
     }
 
     private static void directMarketQuoteChecks() {
