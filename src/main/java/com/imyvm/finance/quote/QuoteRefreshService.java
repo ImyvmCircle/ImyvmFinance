@@ -28,6 +28,7 @@ public final class QuoteRefreshService implements AutoCloseable {
     private final long pollDelaySeconds;
     private final long jitterSeconds;
     private final SplittableRandom random;
+    private long nextNominalPollAtEpochMillis;
     private final Consumer<String> alertConsumer;
     private final Consumer<com.imyvm.finance.market.QuoteSnapshot> snapshotConsumer;
     private final Set<String> unavailableInstruments = new HashSet<>();
@@ -85,11 +86,28 @@ public final class QuoteRefreshService implements AutoCloseable {
     }
 
     private long nextPollDelay() {
-        long base = millisecondsUntilPollNode(Instant.now(), ZoneId.systemDefault(), pollIntervalMinutes, pollDelaySeconds);
-        if (jitterSeconds == 0)
-            return base;
-        long jitter = random.nextLong(-jitterSeconds, jitterSeconds + 1) * 1000L;
-        return Math.max(1000L, base + jitter);
+        long now = System.currentTimeMillis();
+        long intervalMillis = pollIntervalMinutes * 60_000L;
+        if (nextNominalPollAtEpochMillis == 0) {
+            nextNominalPollAtEpochMillis = now
+                + millisecondsUntilPollNode(Instant.ofEpochMilli(now), ZoneId.systemDefault(),
+                    pollIntervalMinutes, pollDelaySeconds);
+        } else {
+            while (nextNominalPollAtEpochMillis <= now)
+                nextNominalPollAtEpochMillis += intervalMillis;
+        }
+
+        long nominalPollAt = nextNominalPollAtEpochMillis;
+        nextNominalPollAtEpochMillis += intervalMillis;
+        long jitterSecondsForNode = jitterSeconds == 0
+            ? 0
+            : random.nextLong(-jitterSeconds, jitterSeconds + 1);
+        long scheduledPollAt = nominalPollAt + jitterSecondsForNode * 1000L;
+        long delay = Math.max(1000L, scheduledPollAt - now);
+        LOGGER.info("Scheduled market quote refresh: nominalAt={} jitterSeconds={} scheduledAt={} delaySeconds={}",
+            Instant.ofEpochMilli(nominalPollAt), jitterSecondsForNode, Instant.ofEpochMilli(scheduledPollAt),
+            delay / 1000L);
+        return delay;
     }
 
     public static long millisecondsUntilPollNode(Instant instant, ZoneId zone, long intervalMinutes, long delaySeconds) {
