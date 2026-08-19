@@ -189,6 +189,10 @@ public final class MarketCommands {
                     .then(Commands.argument("delay", LongArgumentType.longArg(0))
                         .then(Commands.argument("enabled", StringArgumentType.word())
                             .executes(MarketCommands::configureBriefing)))))
+            .then(Commands.literal("providers")
+                .then(Commands.argument("market", StringArgumentType.word())
+                    .then(Commands.argument("order", StringArgumentType.greedyString())
+                        .executes(MarketCommands::configureProviders))))
             .then(Commands.literal("holiday")
                 .then(Commands.argument("market", StringArgumentType.word())
                     .then(Commands.argument("dates", StringArgumentType.greedyString())
@@ -273,6 +277,13 @@ public final class MarketCommands {
             context.getSource().sendSuccess(() -> Component.literal("briefing settings saved; restart required"), true);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "briefing configuration", exception); }
+    }
+
+    private static int configureProviders(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        String market = StringArgumentType.getString(context, "market").toUpperCase();
+        if (!knownMarket(market)) return 0;
+        try { ImyvmFinance.configureProviderOrder(market, StringArgumentType.getString(context, "order")); context.getSource().sendSuccess(() -> Component.literal("provider order saved; restart required"), true); return Command.SINGLE_SUCCESS; }
+        catch (Exception exception) { return failUnexpected(context.getSource(), "provider configuration", exception); }
     }
 
     private static int configureHoliday(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {

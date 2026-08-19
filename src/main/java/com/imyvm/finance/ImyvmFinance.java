@@ -421,6 +421,10 @@ public final class ImyvmFinance implements ModInitializer {
         FinanceConfig.writeQuoteSettings(CONFIG_PATH, interval, delay, jitter, seed, briefingInterval, briefingDelay, briefingEnabled);
     }
 
+    public static void configureProviderOrder(String market, String providers) throws java.io.IOException {
+        FinanceConfig.writeProviderOrder(CONFIG_PATH, market, providers);
+    }
+
     public static void configureHolidays(String market, String dates) throws java.io.IOException {
         FinanceConfig.writeHolidays(CONFIG_PATH, market, dates);
     }

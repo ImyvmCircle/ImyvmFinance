@@ -198,6 +198,12 @@ public record FinanceConfig(
         writeProperties(path, properties);
     }
 
+    public static void writeProviderOrder(Path path, String market, String providers) throws IOException {
+        Properties properties = readProperties(path);
+        properties.setProperty("market.providers." + market, providers);
+        writeProperties(path, properties);
+    }
+
     public static void writeHolidays(Path path, String market, String dates) throws IOException {
         Properties properties = readProperties(path);
         properties.setProperty("market.holidays." + market, dates);
