@@ -1153,6 +1153,7 @@ public final class MarketCommands {
         if (!requireInitialized(context.getSource()))
             return 0;
         sendPlayerDisclaimer(context.getSource());
+        context.getSource().sendSuccess(() -> Translator.tr("commands.market.list.notice"), false);
         MutableComponent message = Component.empty()
             .append(Translator.tr("commands.market.list.header"));
         String currentMarket = "";
