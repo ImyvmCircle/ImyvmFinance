@@ -567,8 +567,8 @@ public final class ImyvmFinance implements ModInitializer {
         return SETUP_CHECKING.get();
     }
 
-    public static void configureQuoteSettings(long interval, long delay, long jitter, long seed, long briefingInterval, long briefingDelay, boolean briefingEnabled) throws java.io.IOException {
-        FinanceConfig.writeQuoteSettings(CONFIG_PATH, interval, delay, jitter, seed, briefingInterval, briefingDelay, briefingEnabled);
+    public static void configureQuoteSettings(long interval, long idleInterval, long delay, long jitter, long seed, long briefingInterval, long briefingDelay, boolean briefingEnabled) throws java.io.IOException {
+        FinanceConfig.writeQuoteSettings(CONFIG_PATH, interval, idleInterval, delay, jitter, seed, briefingInterval, briefingDelay, briefingEnabled);
     }
 
     public static void configureProviderOrder(String market, String providers) throws java.io.IOException {

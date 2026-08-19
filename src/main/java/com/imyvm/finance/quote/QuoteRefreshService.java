@@ -34,8 +34,8 @@ public final class QuoteRefreshService implements AutoCloseable {
     private volatile boolean idleMode;
     private volatile long modeChangedAtEpochMillis;
     private volatile String modeReason = "startup";
-    private static final long IDLE_POLL_INTERVAL_MINUTES = 12;
     private final long pollIntervalMinutes;
+    private final long idlePollIntervalMinutes;
     private final long pollDelaySeconds;
     private final long jitterSeconds;
     private final SplittableRandom random;
@@ -75,6 +75,7 @@ public final class QuoteRefreshService implements AutoCloseable {
             config.quoteReadTimeout(),
             config.marketHolidays(), config.marketEnabled(), config.disabledProviders(), config.providerOrder(), config.quoteProviderBackoffMinutes());
         this.pollIntervalMinutes = config.quotePollIntervalMinutes();
+        this.idlePollIntervalMinutes = config.quoteIdlePollIntervalMinutes();
         this.pollDelaySeconds = config.quotePollDelaySeconds();
         this.jitterSeconds = config.quoteJitterSeconds();
         this.randomSeed = config.quoteRandomSeed();
@@ -145,7 +146,7 @@ public final class QuoteRefreshService implements AutoCloseable {
 
     private long nextPollDelay() {
         long now = System.currentTimeMillis();
-        long intervalMinutes = idleMode ? IDLE_POLL_INTERVAL_MINUTES : pollIntervalMinutes;
+        long intervalMinutes = idleMode ? idlePollIntervalMinutes : pollIntervalMinutes;
         long intervalMillis = intervalMinutes * 60_000L;
         if (nextNominalPollAtEpochMillis == 0) {
             nextNominalPollAtEpochMillis = now
@@ -185,12 +186,12 @@ public final class QuoteRefreshService implements AutoCloseable {
     }
 
     public String schedulerStatus() {
-        long intervalMinutes = idleMode ? IDLE_POLL_INTERVAL_MINUTES : pollIntervalMinutes;
+        long intervalMinutes = idleMode ? idlePollIntervalMinutes : pollIntervalMinutes;
         return "{\"mode\":" + jsonString(idleMode ? "idle" : "active")
             + ",\"modeReason\":" + jsonString(modeReason)
             + ",\"modeChangedAt\":" + jsonTime(modeChangedAtEpochMillis)
             + ",\"pollIntervalMinutes\":" + pollIntervalMinutes
-            + ",\"idlePollIntervalMinutes\":" + IDLE_POLL_INTERVAL_MINUTES
+            + ",\"idlePollIntervalMinutes\":" + idlePollIntervalMinutes
             + ",\"currentPollIntervalMinutes\":" + intervalMinutes
             + ",\"pollDelaySeconds\":" + pollDelaySeconds
             + ",\"jitterSeconds\":" + jitterSeconds

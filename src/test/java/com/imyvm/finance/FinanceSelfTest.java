@@ -54,6 +54,7 @@ public final class FinanceSelfTest {
             check(Files.exists(config), "default config was not created");
             checkEquals(1000L, defaults.quoteConnectTimeout().toMillis(), "connect timeout");
             checkEquals(3L, defaults.quotePollIntervalMinutes(), "default refresh");
+            checkEquals(12L, defaults.quoteIdlePollIntervalMinutes(), "default idle refresh");
             checkEquals(15L, defaults.briefingIntervalMinutes(), "default briefing interval");
             checkEquals(20L, defaults.briefingDelaySeconds(), "default briefing delay");
             checkEquals(15L, defaults.quoteProviderBackoffMinutes(), "default provider backoff");
@@ -67,6 +68,7 @@ public final class FinanceSelfTest {
             properties.setProperty("market.read-timeout-ms", "3500");
             properties.setProperty("market.holidays.CN", "2026-08-24,invalid");
             properties.setProperty("quote.poll-interval-minutes", "7");
+            properties.setProperty("quote.idle-poll-interval-minutes", "11");
             properties.setProperty("quote.poll-delay-seconds", "19");
             properties.setProperty("briefing.interval-minutes", "30");
             properties.setProperty("briefing.delay-seconds", "22");
@@ -80,6 +82,7 @@ public final class FinanceSelfTest {
             checkEquals(1500L, overridden.quoteConnectTimeout().toMillis(), "connect timeout");
             checkEquals(3500L, overridden.quoteReadTimeout().toMillis(), "read timeout");
             checkEquals(7L, overridden.quotePollIntervalMinutes(), "custom poll interval");
+            checkEquals(11L, overridden.quoteIdlePollIntervalMinutes(), "custom idle poll interval");
             checkEquals(19L, overridden.quotePollDelaySeconds(), "custom poll delay");
             checkEquals(30L, overridden.briefingIntervalMinutes(), "custom briefing interval");
             checkEquals(22L, overridden.briefingDelaySeconds(), "custom briefing delay");
@@ -108,13 +111,13 @@ public final class FinanceSelfTest {
             "command-form symbol without colon did not resolve");
         check(Instrument.fromSymbol("cn:000001") == Instrument.CN_000001,
             "display-form symbol did not resolve");
-        String rendered = Translator.tr("commands.market.list.item", "CN:000001", "3000", "1.25%", "37.50", "2990").getString();
+        String rendered = Translator.tr("commands.market.list.item", "CN:000001", "3000", "1.25%", "37.50", "2990", "日内").getString();
         check(rendered.contains("CN:000001") && rendered.contains("3000") && rendered.contains("1.25%") && rendered.contains("2990"),
             "zh_cn translation did not interpolate arguments: " + rendered);
         check(!rendered.contains("{0}") && !rendered.contains("imyvm_finance."),
             "zh_cn translation leaked placeholder or key: " + rendered);
         Translator.setLanguage("en_us");
-        String english = Translator.tr("commands.market.list.item", "CN:000001", "3000", "1.25%", "37.50", "2990").getString();
+        String english = Translator.tr("commands.market.list.item", "CN:000001", "3000", "1.25%", "37.50", "2990", "intraday").getString();
         check(english.contains("CN:000001") && english.contains("3000") && english.contains("2990") && !english.contains("{0}"),
             "en_us translation did not interpolate arguments: " + english);
     }

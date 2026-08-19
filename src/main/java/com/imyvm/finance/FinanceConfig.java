@@ -20,6 +20,7 @@ public record FinanceConfig(
     Duration quoteConnectTimeout,
     Duration quoteReadTimeout,
     long quotePollIntervalMinutes,
+    long quoteIdlePollIntervalMinutes,
     long quotePollDelaySeconds,
     long quoteJitterSeconds,
     long quoteProviderBackoffMinutes,
@@ -41,6 +42,7 @@ public record FinanceConfig(
                 Duration.ofSeconds(1),
             Duration.ofSeconds(2),
             3,
+            12,
             17,
             15,
             15,
@@ -73,6 +75,8 @@ public record FinanceConfig(
                     Long.toString(defaults.quoteReadTimeout().toMillis()));
                 properties.setProperty("quote.poll-interval-minutes",
                     Long.toString(defaults.quotePollIntervalMinutes()));
+                properties.setProperty("quote.idle-poll-interval-minutes",
+                    Long.toString(defaults.quoteIdlePollIntervalMinutes()));
                 properties.setProperty("quote.poll-delay-seconds",
                     Long.toString(defaults.quotePollDelaySeconds()));
                 properties.setProperty("quote.jitter-seconds",
@@ -106,6 +110,7 @@ public record FinanceConfig(
             positiveDuration(properties, "market.read-timeout-ms",
                 defaults.quoteReadTimeout().toMillis()),
             positiveLong(properties, "quote.poll-interval-minutes", defaults.quotePollIntervalMinutes()),
+            positiveLong(properties, "quote.idle-poll-interval-minutes", defaults.quoteIdlePollIntervalMinutes()),
             positiveLong(properties, "quote.poll-delay-seconds", defaults.quotePollDelaySeconds()),
             nonNegativeLong(properties, "quote.jitter-seconds", defaults.quoteJitterSeconds()),
             positiveLong(properties, "quote.provider-backoff-minutes", defaults.quoteProviderBackoffMinutes()),
@@ -132,7 +137,7 @@ public record FinanceConfig(
 
     public FinanceConfig withSetupInitialized(boolean initialized) {
         return new FinanceConfig(quoteConnectTimeout, quoteReadTimeout,
-            quotePollIntervalMinutes, quotePollDelaySeconds, quoteJitterSeconds, quoteProviderBackoffMinutes, quoteRandomSeed, briefingIntervalMinutes, briefingDelaySeconds,
+            quotePollIntervalMinutes, quoteIdlePollIntervalMinutes, quotePollDelaySeconds, quoteJitterSeconds, quoteProviderBackoffMinutes, quoteRandomSeed, briefingIntervalMinutes, briefingDelaySeconds,
             briefingEnabled, initialized, marketHolidays, marketEnabled, disabledProviders, providerOrder, language, tradingRules);
     }
 
@@ -189,9 +194,10 @@ public record FinanceConfig(
         return Set.copyOf(result);
     }
 
-    public static void writeQuoteSettings(Path path, long interval, long delay, long jitter, long seed, long briefingInterval, long briefingDelay, boolean briefingEnabled) throws IOException {
+    public static void writeQuoteSettings(Path path, long interval, long idleInterval, long delay, long jitter, long seed, long briefingInterval, long briefingDelay, boolean briefingEnabled) throws IOException {
         Properties properties = readProperties(path);
         properties.setProperty("quote.poll-interval-minutes", Long.toString(interval));
+        properties.setProperty("quote.idle-poll-interval-minutes", Long.toString(idleInterval));
         properties.setProperty("quote.poll-delay-seconds", Long.toString(delay));
         properties.setProperty("quote.jitter-seconds", Long.toString(jitter));
         properties.setProperty("quote.random-seed", Long.toString(seed));

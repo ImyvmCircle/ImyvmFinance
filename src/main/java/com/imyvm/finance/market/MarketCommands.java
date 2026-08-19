@@ -191,6 +191,9 @@ public final class MarketCommands {
                         .then(Commands.argument("jitter", LongArgumentType.longArg(0))
                             .then(Commands.argument("seed", LongArgumentType.longArg())
                                 .executes(MarketCommands::configurePoll))))))
+            .then(Commands.literal("idle")
+                .then(Commands.argument("interval", LongArgumentType.longArg(1))
+                    .executes(MarketCommands::configureIdlePoll)))
             .then(Commands.literal("briefing")
                 .then(Commands.argument("interval", LongArgumentType.longArg(1))
                     .then(Commands.argument("delay", LongArgumentType.longArg(0))
@@ -281,15 +284,23 @@ public final class MarketCommands {
 
     private static int configurePoll(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         try {
-            ImyvmFinance.configureQuoteSettings(LongArgumentType.getLong(context, "interval"), LongArgumentType.getLong(context, "delay"), LongArgumentType.getLong(context, "jitter"), LongArgumentType.getLong(context, "seed"), ImyvmFinance.CONFIG.briefingIntervalMinutes(), ImyvmFinance.CONFIG.briefingDelaySeconds(), ImyvmFinance.CONFIG.briefingEnabled());
+            ImyvmFinance.configureQuoteSettings(LongArgumentType.getLong(context, "interval"), ImyvmFinance.CONFIG.quoteIdlePollIntervalMinutes(), LongArgumentType.getLong(context, "delay"), LongArgumentType.getLong(context, "jitter"), LongArgumentType.getLong(context, "seed"), ImyvmFinance.CONFIG.briefingIntervalMinutes(), ImyvmFinance.CONFIG.briefingDelaySeconds(), ImyvmFinance.CONFIG.briefingEnabled());
             context.getSource().sendSuccess(() -> Component.literal("quote settings saved; restart required"), true);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "quote configuration", exception); }
     }
 
-    private static int configureBriefing(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+    private static int configureIdlePoll(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         try {
-            ImyvmFinance.configureQuoteSettings(ImyvmFinance.CONFIG.quotePollIntervalMinutes(), ImyvmFinance.CONFIG.quotePollDelaySeconds(), ImyvmFinance.CONFIG.quoteJitterSeconds(), ImyvmFinance.CONFIG.quoteRandomSeed(), LongArgumentType.getLong(context, "interval"), LongArgumentType.getLong(context, "delay"), Boolean.parseBoolean(StringArgumentType.getString(context, "enabled")));
+            ImyvmFinance.configureQuoteSettings(ImyvmFinance.CONFIG.quotePollIntervalMinutes(), LongArgumentType.getLong(context, "interval"), ImyvmFinance.CONFIG.quotePollDelaySeconds(), ImyvmFinance.CONFIG.quoteJitterSeconds(), ImyvmFinance.CONFIG.quoteRandomSeed(), ImyvmFinance.CONFIG.briefingIntervalMinutes(), ImyvmFinance.CONFIG.briefingDelaySeconds(), ImyvmFinance.CONFIG.briefingEnabled());
+            context.getSource().sendSuccess(() -> Component.literal("idle quote settings saved; restart required"), true);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) { return failUnexpected(context.getSource(), "idle quote configuration", exception); }
+    }
+
+private static int configureBriefing(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        try {
+            ImyvmFinance.configureQuoteSettings(ImyvmFinance.CONFIG.quotePollIntervalMinutes(), ImyvmFinance.CONFIG.quoteIdlePollIntervalMinutes(), ImyvmFinance.CONFIG.quotePollDelaySeconds(), ImyvmFinance.CONFIG.quoteJitterSeconds(), ImyvmFinance.CONFIG.quoteRandomSeed(), LongArgumentType.getLong(context, "interval"), LongArgumentType.getLong(context, "delay"), Boolean.parseBoolean(StringArgumentType.getString(context, "enabled")));
             context.getSource().sendSuccess(() -> Component.literal("briefing settings saved; restart required"), true);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "briefing configuration", exception); }
@@ -1223,6 +1234,7 @@ public final class MarketCommands {
             String change = "-";
             String changeAmount = "-";
             String movingAverage = "-";
+            String changeReference = Translator.tr("commands.market.list.reference." + ("CRYPTO".equals(instrument.market()) ? "crypto" : "cn")).getString();
             if (ImyvmFinance.QUOTE_STORE != null) {
                 try {
                     Optional<StoredQuote> stored = ImyvmFinance.QUOTE_STORE.findLatest(instrument);
@@ -1235,8 +1247,8 @@ public final class MarketCommands {
                         tradable = enabled;
                         status = marketStatus(value, enabled);
                         price = formatPrice(value.quote().priceScaled());
-                        change = formatPercent(value.quote().changeBps());
-                        changeAmount = formatChangeAmount(value.quote());
+                        change = formatColoredPercent(value.quote().changeBps());
+                        changeAmount = formatColoredChangeAmount(value.quote());
                         movingAverage = formatMovingAverage(
                             ImyvmFinance.QUOTE_STORE.findRecentPrices(instrument, 5));
                     }
@@ -1245,7 +1257,7 @@ public final class MarketCommands {
                 }
             }
             Component item = Translator.tr(
-                "commands.market.list.item", instrumentLabel(instrument), price, change, changeAmount, movingAverage).copy();
+                "commands.market.list.item", instrumentLabel(instrument), price, change, changeAmount, movingAverage, changeReference).copy();
             if (tradable)
                 item = item.copy().withStyle(style -> style
                     .withClickEvent(new ClickEvent.RunCommand(
@@ -1773,7 +1785,11 @@ public final class MarketCommands {
         return BigDecimal.valueOf(priceScaled, 4).stripTrailingZeros().toPlainString();
     }
 
-    private static String formatPercent(long changeBps) {
+    private static String formatColoredPercent(long changeBps) {
+        return colorForChange(changeBps) + formatPercent(changeBps) + "§r";
+    }
+
+private static String formatPercent(long changeBps) {
         return BigDecimal.valueOf(changeBps, 2)
             .setScale(2, RoundingMode.UNNECESSARY)
             .toPlainString() + "%";
@@ -1789,7 +1805,15 @@ public final class MarketCommands {
             .stripTrailingZeros().toPlainString();
     }
 
-    private static String formatMovingAverage(List<Long> prices) {
+    private static String formatColoredChangeAmount(MarketQuote quote) {
+        return colorForChange(quote.changeBps()) + formatChangeAmount(quote) + "§r";
+    }
+
+    private static String colorForChange(long changeBps) {
+        return changeBps > 0 ? "§c" : changeBps < 0 ? "§a" : "§7";
+    }
+
+private static String formatMovingAverage(List<Long> prices) {
         if (prices.size() < 5)
             return "-";
         BigDecimal total = BigDecimal.ZERO;
