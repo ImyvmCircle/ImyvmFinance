@@ -124,6 +124,8 @@ public final class FinanceSelfTest {
             "{\"chart\":{\"result\":[{\"meta\":{\"regularMarketPrice\":\"3000\",\"previousClose\":\"3010\"}}]}}",
             com.imyvm.finance.market.Instrument.US_SPX);
         checkEquals(30_000_000L, quote.priceScaled(), "direct Yahoo price");
+        var tencent = com.imyvm.finance.quote.DirectMarketQuoteClient.parseTencent(("v_s_sh000001=\"1~SSE~000001~3000~10~1.25~\";\nv_s_sz399001=\"1~SZ~399001~3000~10~1.25~\";\nv_s_sz399006=\"1~CY~399006~3000~10~1.25~\";\nv_s_sh000300=\"1~CSI~000300~3000~10~1.25~\";\nv_s_sh000905=\"1~CSI500~000905~3000~10~1.25~\";").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        checkEquals(5, tencent.size(), "Tencent quote count");
         checkEquals(-33L, quote.changeBps(), "direct Yahoo change");
     }
 

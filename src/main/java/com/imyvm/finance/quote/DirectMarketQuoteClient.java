@@ -30,6 +30,7 @@ public final class DirectMarketQuoteClient {
     private static final URI CHINA_EASTMONEY = URI.create(
         "https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2&fields=f12,f14,f2,f3"
             + "&secids=1.000001,0.399001,0.399006,1.000300,1.000905");
+    private static final URI CHINA_TENCENT = URI.create("https://qt.gtimg.cn/q=s_sh000001,s_sz399001,s_sz399006,s_sh000300,s_sh000905");
     private static final URI CHINA_SINA = URI.create(
         "https://hq.sinajs.cn/list=s_sh000001,s_sz399001,s_sz399006,s_sh000300,s_sh000905");
     private static final Map<Instrument, String> YAHOO_SYMBOLS = Map.of(
@@ -130,6 +131,7 @@ public final class DirectMarketQuoteClient {
                 Map<Instrument, MarketQuote> result = switch (provider) {
                     case "eastmoney" -> parseEastmoney(requestBytes(CHINA_EASTMONEY), Instant.now());
                     case "sina" -> parseSina(requestBytes(CHINA_SINA), Instant.now());
+                    case "tencent" -> parseTencent(requestBytes(CHINA_TENCENT));
                     default -> throw new IllegalArgumentException("unknown CN provider: " + provider);
                 };
                 activeProviders.put("CN", provider);
@@ -219,6 +221,22 @@ public final class DirectMarketQuoteClient {
         }
         if (result.size() != CHINA_CODES.size())
             throw new IllegalArgumentException("Eastmoney returned incomplete China quotes");
+        return result;
+    }
+
+    public static Map<Instrument, MarketQuote> parseTencent(byte[] body) {
+        String text = new String(body, Charset.forName("GB18030"));
+        EnumMap<Instrument, MarketQuote> result = new EnumMap<>(Instrument.class);
+        for (String line : text.split("\\n")) {
+            int start = line.indexOf("=\"");
+            if (start < 0) continue;
+            String[] fields = line.substring(start + 2).replace("\";", "").split("~", -1);
+            if (fields.length < 6) continue;
+            Instrument instrument = CHINA_CODES.get(fields[2]);
+            if (instrument != null) result.put(instrument, quote(instrument, fields[3], fields[5]));
+        }
+        if (result.size() != CHINA_CODES.size())
+            throw new IllegalArgumentException("Tencent returned incomplete China quotes");
         return result;
     }
 
