@@ -6,7 +6,10 @@ import com.imyvm.finance.storage.StockTransactionStore;
 import com.imyvm.finance.transaction.StockOperation;
 import com.imyvm.finance.transaction.StockTransaction;
 import com.imyvm.finance.transaction.StockTransactionState;
-import net.minecraft.server.level.ServerPlayer;
+import com.mojang.authlib.GameProfile;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.GameType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,7 +24,7 @@ public final class StockEconomySettlement {
         this.transactionStore = transactionStore;
     }
 
-    public EconomySettlementResult settle(ServerPlayer player,
+    public EconomySettlementResult settle(Player player,
                                           StockTransaction transaction) {
         requirePlayer(transaction, player);
         if (transaction.state() != StockTransactionState.PREPARED)
@@ -33,7 +36,7 @@ public final class StockEconomySettlement {
         };
     }
 
-    private EconomySettlementResult debit(ServerPlayer player,
+    private EconomySettlementResult debit(Player player,
                                           StockTransaction transaction) {
         try {
             PlayerWallet wallet = DatabaseApi.getInstance().getPlayer(player);
@@ -55,7 +58,7 @@ public final class StockEconomySettlement {
         }
     }
 
-    private EconomySettlementResult credit(ServerPlayer player,
+    private EconomySettlementResult credit(Player player,
                                            StockTransaction transaction) {
         try {
             DatabaseApi.getInstance().getPlayer(player).addMoney(transaction.amount());
@@ -105,8 +108,17 @@ public final class StockEconomySettlement {
         }
     }
 
+    public static Player offlinePlayer(ServerLevel level, GameProfile profile) {
+        return new Player(level, profile) {
+
+            public GameType gameMode() {
+                return GameType.SURVIVAL;
+            }
+        };
+    }
+
     private static void requirePlayer(StockTransaction transaction,
-                                      ServerPlayer player) {
+                                      Player player) {
         if (player == null)
             throw new IllegalArgumentException("stock settlement requires an online player");
         UUID playerId = player.getUUID();

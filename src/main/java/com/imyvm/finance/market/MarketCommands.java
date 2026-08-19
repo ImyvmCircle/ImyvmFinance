@@ -7,6 +7,7 @@ import com.imyvm.finance.storage.StoredOrder;
 import com.imyvm.finance.storage.StoredTrade;
 import com.imyvm.finance.storage.StoredPosition;
 import com.imyvm.finance.economy.EconomySettlementResult;
+import com.imyvm.finance.economy.StockEconomySettlement;
 import com.imyvm.finance.transaction.StockOperation;
 import com.imyvm.finance.transaction.StockTransaction;
 import com.imyvm.finance.transaction.StockTransactionState;
@@ -18,6 +19,7 @@ import com.imyvm.finance.trading.TradeValidator;
 import com.imyvm.finance.trading.StockPositionView;
 import com.imyvm.finance.trading.TradingRules;
 import com.mojang.brigadier.Command;
+import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.tree.ArgumentCommandNode;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -32,6 +34,7 @@ import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.permissions.Permissions;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -125,6 +128,18 @@ public final class MarketCommands {
             .then(Commands.literal("disable")
                 .then(marketName.executes(context -> setMarket(context, false))));
 
+        var adminPlayer = Commands.argument("player", StringArgumentType.word());
+        var adminSymbol = Commands.argument("symbol", StringArgumentType.word())
+            .suggests(MarketCommands::suggestInstruments);
+        var adminSnapshot = Commands.argument("snapshotId", StringArgumentType.word());
+        var adminUnits = Commands.argument("units", LongArgumentType.longArg(1));
+        var admin = Commands.literal("admin")
+            .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
+            .then(Commands.literal("position")
+                .then(adminPlayer.then(adminSymbol.then(adminSnapshot.executes(MarketCommands::adminPosition)))))
+            .then(Commands.literal("settle")
+                .then(adminPlayer.then(adminSymbol.then(adminUnits.then(adminSnapshot.executes(MarketCommands::adminSettle))))));
+
         var rules = Commands.literal("rules")
             .requires(CommandSourceStack::isPlayer)
             .executes(MarketCommands::rules);
@@ -176,6 +191,7 @@ public final class MarketCommands {
             .then(trading)
             .then(sourceControl)
             .then(marketControl)
+            .then(admin)
             .then(rules)
             .then(briefing)
             .then(positions)
@@ -495,6 +511,152 @@ public final class MarketCommands {
             return builder.buildFuture();
         }
         return builder.buildFuture();
+    }
+
+    private static int adminPosition(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        try {
+            GameProfile profile = resolveAdminProfile(context).orElseThrow();
+            Instrument instrument = Instrument.fromSymbol(StringArgumentType.getString(context, "symbol"));
+            String snapshotId = StringArgumentType.getString(context, "snapshotId");
+            if (instrument == null || ImyvmFinance.QUOTE_STORE == null || ImyvmFinance.TRADING_STORE == null)
+                throw new IllegalArgumentException();
+            StoredQuote quote = ImyvmFinance.QUOTE_STORE.find(instrument, snapshotId).orElseThrow();
+            var positions = ImyvmFinance.TRADING_STORE.findPositions(profile.id()).stream()
+                .filter(position -> position.instrument() == instrument)
+                .toList();
+            long available = positions.stream()
+                .mapToLong(position -> position.remainingUnits() - position.frozenUnits())
+                .sum();
+            long frozen = positions.stream().mapToLong(StoredPosition::frozenUnits).sum();
+            long value = forceGrossAmount(quote, available);
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.admin.position",
+                profile.name(), instrumentLabel(instrument), available, frozen,
+                snapshotId, formatPrice(quote.quote().priceScaled()), value), false);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) {
+            context.getSource().sendFailure(Translator.tr("commands.market.admin.invalid"));
+            return 0;
+        }
+    }
+
+    private static int adminSettle(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        try {
+            GameProfile profile = resolveAdminProfile(context).orElseThrow();
+            Instrument instrument = Instrument.fromSymbol(StringArgumentType.getString(context, "symbol"));
+            long units = LongArgumentType.getLong(context, "units");
+            String snapshotId = StringArgumentType.getString(context, "snapshotId");
+            if (instrument == null || ImyvmFinance.QUOTE_STORE == null
+                || ImyvmFinance.TRANSACTION_STORE == null || ImyvmFinance.TRADING_STORE == null
+                || ImyvmFinance.ECONOMY_SETTLEMENT == null)
+                throw new IllegalArgumentException();
+            StoredQuote quote = ImyvmFinance.QUOTE_STORE.find(instrument, snapshotId).orElseThrow();
+            var positions = ImyvmFinance.TRADING_STORE.findPositions(profile.id()).stream()
+                .filter(position -> position.instrument() == instrument
+                    && position.remainingUnits() - position.frozenUnits() > 0)
+                .toList();
+            long available = positions.stream()
+                .mapToLong(position -> position.remainingUnits() - position.frozenUnits()).sum();
+            if (units > available)
+                throw new IllegalArgumentException();
+
+            Player proxy = StockEconomySettlement.offlinePlayer(
+                source.getServer().overworld(), profile);
+            long settledUnits = 0;
+            long settledAmount = 0;
+            for (StoredPosition position : positions) {
+                if (settledUnits == units)
+                    break;
+                long part = Math.min(units - settledUnits,
+                    position.remainingUnits() - position.frozenUnits());
+                TradeEstimate estimate = forceEstimate(quote, part);
+                UUID orderId = UUID.randomUUID();
+                UUID transactionId = UUID.randomUUID();
+                StockTransaction transaction = new StockTransaction(
+                    transactionId, profile.id(), StockOperation.SELL,
+                    "admin_force:" + snapshotId + ":" + orderId, instrument,
+                    estimate.settlementAmount(), StockTransactionState.PREPARED, null,
+                    System.currentTimeMillis(), System.currentTimeMillis());
+                ImyvmFinance.TRANSACTION_STORE.createPrepared(transaction);
+                try {
+                    ImyvmFinance.TRADING_STORE.createPendingSell(
+                        orderId, UUID.randomUUID(), position.positionId(), transaction, estimate,
+                        System.currentTimeMillis());
+                } catch (Exception exception) {
+                    ImyvmFinance.TRANSACTION_STORE.transition(transactionId,
+                        StockTransactionState.CANCELLED, "admin_force_prepare_failed", System.currentTimeMillis());
+                    throw exception;
+                }
+                EconomySettlementResult settlement = ImyvmFinance.ECONOMY_SETTLEMENT.settle(proxy, transaction);
+                if (settlement.state() != StockTransactionState.ECONOMY_CONFIRMED) {
+                    ImyvmFinance.TRADING_STORE.markSellPendingManual(transactionId, position.positionId());
+                    break;
+                }
+                try {
+                    ImyvmFinance.TRADING_STORE.activateSell(transactionId, position.positionId(), part);
+                    ImyvmFinance.TRANSACTION_STORE.transition(
+                        transactionId, StockTransactionState.FINANCE_CONFIRMED,
+                        "admin_force_settled", System.currentTimeMillis());
+                } catch (Exception exception) {
+                    try {
+                        ImyvmFinance.TRADING_STORE.markSellPendingManual(transactionId, position.positionId());
+                    } catch (Exception ignored) {
+                    }
+                    break;
+                }
+                settledUnits += part;
+                settledAmount += estimate.settlementAmount();
+            }
+            if (settledUnits > 0) {
+                try {
+                    com.imyvm.economy.EconomyMod.data.save();
+                } catch (Exception exception) {
+                    LOGGER.error("Failed to persist forced settlement balance", exception);
+                }
+            }
+            if (settledUnits != units) {
+                source.sendFailure(Translator.tr("commands.market.admin.partial", settledUnits));
+                return 0;
+            }
+            long finalSettledUnits = settledUnits;
+            long finalSettledAmount = settledAmount;
+            source.sendSuccess(() -> Translator.tr("commands.market.admin.settled",
+                profile.name(), instrumentLabel(instrument), finalSettledUnits, finalSettledAmount, snapshotId), true);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) {
+            source.sendFailure(Translator.tr("commands.market.admin.invalid"));
+            return 0;
+        }
+    }
+
+    private static Optional<GameProfile> resolveAdminProfile(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context
+    ) {
+        String name = StringArgumentType.getString(context, "player");
+        var server = context.getSource().getServer();
+        ServerPlayer online = server.getPlayerList().getPlayerByName(name);
+        if (online != null)
+            return Optional.of(online.getGameProfile());
+        try {
+            return Optional.of(new GameProfile(UUID.fromString(name), name));
+        } catch (IllegalArgumentException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private static TradeEstimate forceEstimate(StoredQuote quote, long units) {
+        long amount = forceGrossAmount(quote, units);
+        if (amount <= 0)
+            throw new IllegalArgumentException();
+        return new TradeEstimate(TradeSide.SELL, quote.quote().instrument(), units,
+            quote.snapshotId(), quote.quote().priceScaled(), amount, 0, amount, 0, 0);
+    }
+
+    private static long forceGrossAmount(StoredQuote quote, long units) {
+        return BigDecimal.valueOf(quote.quote().priceScaled(), 4)
+            .multiply(BigDecimal.valueOf(units))
+            .divide(BigDecimal.TEN, 0, RoundingMode.FLOOR)
+            .longValueExact();
     }
 
     private static int marketStatus(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
