@@ -19,6 +19,8 @@ import com.imyvm.finance.trading.TradeValidator;
 import com.imyvm.finance.trading.StockPositionView;
 import com.imyvm.finance.trading.TradingRules;
 import com.mojang.brigadier.Command;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.tree.ArgumentCommandNode;
@@ -804,13 +806,57 @@ public final class MarketCommands {
     private static int sourceStatus(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         CommandSourceStack source = context.getSource();
         ImyvmFinance.inspectMarketData("/control/status").thenAccept(body ->
-            source.getServer().execute(() -> source.sendSuccess(() -> Component.literal(body), false)))
+            source.getServer().execute(() -> renderSourceStatus(source, body)))
             .exceptionally(error -> {
                 source.getServer().execute(() -> source.sendFailure(Translator.tr("commands.market.control.failed")));
                 return null;
             });
-        source.sendSuccess(() -> Translator.tr("commands.market.control.requested"), false);
         return Command.SINGLE_SUCCESS;
+    }
+
+    private static void renderSourceStatus(CommandSourceStack source, String body) {
+        try {
+            JsonObject root = JsonParser.parseString(body).getAsJsonObject();
+            source.sendSuccess(() -> Translator.tr("commands.market.source.status.header"), false);
+            source.sendSuccess(() -> Translator.tr("commands.market.source.status.since", value(root, "statsSince", "-")), false);
+            JsonObject orders = root.getAsJsonObject("providerOrder");
+            JsonObject active = root.getAsJsonObject("lastSuccessfulProviders");
+            if (orders != null) {
+                for (String market : new String[]{"CN", "CRYPTO"}) {
+                    if (!orders.has(market)) continue;
+                    String order = orders.getAsJsonArray(market).toString().replace("\"", "").replace("[", "").replace("]", "");
+                    source.sendSuccess(() -> Translator.tr("commands.market.source.status.market",
+                        marketLabel(market), value(active, market, "-"), order), false);
+                }
+            }
+            JsonObject stats = root.getAsJsonObject("providerStats");
+            if (stats != null) {
+                for (String key : stats.keySet()) {
+                    JsonObject item = stats.getAsJsonObject(key);
+                    long requests = number(item, "requests");
+                    long failures = number(item, "failures");
+                    Component state = number(item, "backoffSecondsRemaining") > 0
+                        ? Translator.tr("commands.market.source.status.backoff", number(item, "backoffSecondsRemaining"))
+                        : Translator.tr("commands.market.source.status.ready");
+                    source.sendSuccess(() -> Translator.tr("commands.market.source.status.provider",
+                        key, requests, failures, value(item, "failureRatePercent", "0.00"), state,
+                        value(item, "lastAttemptAt", "-"), value(item, "lastSuccessAt", "-"),
+                        value(item, "lastFailureAt", "-")), false);
+                }
+            }
+        } catch (Exception exception) {
+            source.sendFailure(Translator.tr("commands.market.control.failed"));
+        }
+    }
+
+    private static String value(JsonObject object, String key, String fallback) {
+        if (object == null || !object.has(key) || object.get(key).isJsonNull()) return fallback;
+        return object.get(key).getAsString();
+    }
+
+    private static long number(JsonObject object, String key) {
+        try { return object == null ? 0 : object.get(key).getAsLong(); }
+        catch (Exception ignored) { return 0; }
     }
 
     private static int setSource(
