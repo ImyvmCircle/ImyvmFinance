@@ -47,6 +47,7 @@ public final class DirectMarketQuoteClient {
     private final HttpClient httpClient;
     private final Duration requestTimeout;
     private final CryptoQuoteClient cryptoClient;
+    private final EnumMap<Instrument, MarketQuote> lastQuotes = new EnumMap<>(Instrument.class);
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout) {
         this.httpClient = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
@@ -62,15 +63,20 @@ public final class DirectMarketQuoteClient {
         Instant fetchedAt = Instant.now();
         EnumMap<Instrument, MarketQuote> quotes = new EnumMap<>(Instrument.class);
         List<String> alerts = new ArrayList<>();
-        try {
-            quotes.putAll(fetchChina());
-        } catch (Exception exception) {
-            alerts.add("failed:market:CN");
+        if (MarketHours.status("CN", fetchedAt) == MarketStatus.OPEN) {
+            try {
+                quotes.putAll(fetchChina());
+            } catch (Exception exception) {
+                alerts.add("failed:market:CN");
+            }
         }
-        try {
-            quotes.putAll(fetchGlobal());
-        } catch (Exception exception) {
-            alerts.add("failed:market:HK_US");
+        if (MarketHours.status("HK", fetchedAt) == MarketStatus.OPEN
+            || MarketHours.status("US", fetchedAt) == MarketStatus.OPEN) {
+            try {
+                quotes.putAll(fetchGlobal());
+            } catch (Exception exception) {
+                alerts.add("failed:market:HK_US");
+            }
         }
         try {
             quotes.putAll(cryptoClient.fetch().join().quotes().stream()
@@ -78,11 +84,19 @@ public final class DirectMarketQuoteClient {
         } catch (Exception exception) {
             alerts.add("failed:market:CRYPTO");
         }
-        if (quotes.isEmpty())
+        lastQuotes.putAll(quotes);
+        for (Instrument instrument : Instrument.values()) {
+            MarketQuote quote = lastQuotes.get(instrument);
+            if (quote == null)
+                continue;
+            lastQuotes.put(instrument, new MarketQuote(instrument, quote.name(), quote.priceScaled(),
+                quote.changeBps(), MarketHours.status(instrument.market(), fetchedAt)));
+        }
+        if (lastQuotes.isEmpty())
             throw new IllegalStateException("all direct market providers failed");
         long timestamp = fetchedAt.toEpochMilli();
         return new QuoteSnapshot("direct-" + timestamp, "direct", timestamp, timestamp,
-            new ArrayList<>(quotes.values()), alerts);
+            new ArrayList<>(lastQuotes.values()), alerts);
     }
 
     private Map<Instrument, MarketQuote> fetchChina() throws Exception {
@@ -95,8 +109,11 @@ public final class DirectMarketQuoteClient {
 
     private Map<Instrument, MarketQuote> fetchGlobal() throws Exception {
         EnumMap<Instrument, MarketQuote> result = new EnumMap<>(Instrument.class);
-        for (Map.Entry<Instrument, String> entry : YAHOO_SYMBOLS.entrySet())
-            result.put(entry.getKey(), parseYahoo(requestText(yahooUri(entry.getValue())), entry.getKey()));
+        Instant now = Instant.now();
+        for (Map.Entry<Instrument, String> entry : YAHOO_SYMBOLS.entrySet()) {
+            if (MarketHours.status(entry.getKey().market(), now) == MarketStatus.OPEN)
+                result.put(entry.getKey(), parseYahoo(requestText(yahooUri(entry.getValue())), entry.getKey()));
+        }
         return result;
     }
 

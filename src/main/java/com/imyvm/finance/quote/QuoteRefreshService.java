@@ -19,7 +19,7 @@ import java.util.function.Consumer;
 public final class QuoteRefreshService implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger("imyvm_finance/quotes");
         private final QuoteSnapshotStore store;
-    private final SidecarClient client;
+    private final DirectMarketQuoteClient client;
     private final ScheduledExecutorService executor;
     private final AtomicBoolean refreshing = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -47,8 +47,7 @@ public final class QuoteRefreshService implements AutoCloseable {
                                Consumer<String> alertConsumer,
                                Consumer<com.imyvm.finance.market.QuoteSnapshot> snapshotConsumer) {
         this.store = store;
-        this.client = new SidecarClient(
-            config.sidecarEndpoint(),
+        this.client = new DirectMarketQuoteClient(
             config.sidecarConnectTimeout(),
             config.sidecarReadTimeout());
         this.pollIntervalMinutes = config.quotePollIntervalMinutes();

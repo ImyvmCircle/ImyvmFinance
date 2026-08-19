@@ -36,6 +36,7 @@ public final class FinanceSelfTest {
         sidecarChecks();
         cryptoQuoteChecks();
         directMarketQuoteChecks();
+        marketHoursChecks();
         storageChecks();
         tradingValidationChecks();
         marketTimeChecks();
@@ -159,6 +160,15 @@ public final class FinanceSelfTest {
             com.imyvm.finance.market.Instrument.US_SPX);
         checkEquals(30_000_000L, quote.priceScaled(), "direct Yahoo price");
         checkEquals(-33L, quote.changeBps(), "direct Yahoo change");
+    }
+
+    private static void marketHoursChecks() {
+        checkEquals(com.imyvm.finance.market.MarketStatus.OPEN,
+            com.imyvm.finance.quote.MarketHours.status("CRYPTO", java.time.Instant.parse("2026-08-23T00:00:00Z")),
+            "crypto market hours");
+        checkEquals(com.imyvm.finance.market.MarketStatus.CLOSED,
+            com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-23T03:00:00Z")),
+            "China weekend market hours");
     }
 
     private static void tradingValidationChecks() throws Exception {
