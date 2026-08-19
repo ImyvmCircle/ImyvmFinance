@@ -11,9 +11,10 @@ import argparse
 import hashlib
 import json
 import math
+import random
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import parse_qs, quote, urlparse
@@ -435,32 +436,37 @@ def cached_snapshot() -> dict[str, Any]:
         return _cache[1]
 
 
+def _seconds_until_read_node(now: datetime) -> float:
+    nominal = now.replace(minute=1, second=0, microsecond=0)
+    while nominal <= now:
+        nominal += timedelta(minutes=5)
+    return max(1.0, (nominal - now).total_seconds() + random.uniform(-15.0, 15.0))
+
+
 def refresh_loop(refresh_seconds: float) -> None:
     global _cache
-    was_active = False
+    first_active_read = True
     while True:
         active = _active_markets(datetime.now(timezone.utc))
         if not active:
-            was_active = False
+            first_active_read = True
             if _last_quotes:
                 with _cache_lock:
                     _cache = (time.monotonic(), fetch_snapshot())
             time.sleep(max(5.0, _closed_poll_seconds))
             continue
-        if not was_active and _open_delay_seconds > 0:
-            time.sleep(_open_delay_seconds)
+        if not first_active_read:
+            time.sleep(_seconds_until_read_node(datetime.now().astimezone()))
             active = _active_markets(datetime.now(timezone.utc))
             if not active:
-                was_active = False
                 continue
-        was_active = True
+        first_active_read = False
         try:
             snapshot = fetch_snapshot()
             with _cache_lock:
                 _cache = (time.monotonic(), snapshot)
         except Exception as exc:
             print(f"[sidecar] quote refresh failed: {exc}")
-        time.sleep(max(1.0, refresh_seconds))
 
 
 class Handler(BaseHTTPRequestHandler):

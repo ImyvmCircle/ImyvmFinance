@@ -46,7 +46,8 @@ public final class ImyvmFinance implements ModInitializer {
     public static QuoteRefreshService QUOTE_REFRESHER;
     private static final long RETENTION_MILLIS = Duration.ofDays(30).toMillis();
     private static long nextRetentionCleanupAt;
-    private static long nextBriefingAt;
+    private static long nextBriefingAt = Long.MAX_VALUE;
+    private static String lastBriefingSnapshotId;
     private static final Map<String, MarketStatus> MARKET_STATUSES = new HashMap<>();
     private static volatile net.minecraft.server.MinecraftServer SERVER;
 
@@ -77,7 +78,8 @@ public final class ImyvmFinance implements ModInitializer {
             MARKET_STATUSES.clear();
             recoverInterruptedTransactions();
             pruneExpiredData();
-            nextBriefingAt = nextBriefingAt(System.currentTimeMillis());
+            nextBriefingAt = Long.MAX_VALUE;
+            lastBriefingSnapshotId = null;
             sendStartupAnnouncement(server);
             startQuoteRefresh();
         });
@@ -197,7 +199,7 @@ public final class ImyvmFinance implements ModInitializer {
         long now = System.currentTimeMillis();
         if (now < nextBriefingAt || QUOTE_STORE == null || TRADING_STORE == null)
             return;
-        nextBriefingAt = nextBriefingAt(now);
+        nextBriefingAt = Long.MAX_VALUE;
         if (!CONFIG.briefingEnabled())
             return;
         Instrument[] instruments = Instrument.values();
@@ -309,13 +311,12 @@ public final class ImyvmFinance implements ModInitializer {
         QUOTE_REFRESHER.start();
     }
 
-    private static long nextBriefingAt(long now) {
-        ZoneId zone = ZoneId.systemDefault();
-        ZonedDateTime next = Instant.ofEpochMilli(now).atZone(zone)
-            .withMinute(1).withSecond(0).withNano(0);
-        if (next.toInstant().toEpochMilli() <= now)
-            next = next.plusHours(1);
-        return next.toInstant().toEpochMilli();
+    private static boolean isBriefingSnapshot(com.imyvm.finance.market.QuoteSnapshot snapshot) {
+        ZonedDateTime time = Instant.ofEpochMilli(snapshot.fetchedAtEpochMillis()).atZone(ZoneId.systemDefault());
+        long seconds = time.getMinute() * 60L + time.getSecond();
+        long interval = CONFIG.briefingIntervalMinutes() * 60L;
+        long distance = Math.floorMod(seconds - 60L, interval);
+        return Math.min(distance, interval - distance) <= 15L;
     }
 
     private static void sendStartupAnnouncement(net.minecraft.server.MinecraftServer server) {
@@ -328,7 +329,13 @@ public final class ImyvmFinance implements ModInitializer {
         net.minecraft.server.MinecraftServer server = SERVER;
         if (server == null)
             return;
-        server.execute(() -> updateMarketAnnouncements(server, snapshot));
+        server.execute(() -> {
+            if (isBriefingSnapshot(snapshot) && !snapshot.snapshotId().equals(lastBriefingSnapshotId)) {
+                lastBriefingSnapshotId = snapshot.snapshotId();
+                nextBriefingAt = snapshot.fetchedAtEpochMillis() + 20_000L;
+            }
+            updateMarketAnnouncements(server, snapshot);
+        });
     }
 
     private static void updateMarketAnnouncements(
