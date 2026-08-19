@@ -123,15 +123,20 @@ public final class DirectMarketQuoteClient {
     }
 
     private Map<Instrument, MarketQuote> fetchChina() throws Exception {
-        try {
-            if (disabledProviders.contains("CN:eastmoney"))
-                throw new IllegalStateException("Eastmoney disabled");
-            return parseEastmoney(requestBytes(CHINA_EASTMONEY), Instant.now());
-        } catch (Exception primary) {
-            if (disabledProviders.contains("CN:sina"))
-                throw primary;
-            return parseSina(requestBytes(CHINA_SINA), Instant.now());
+        Exception failure = null;
+        for (String provider : providerOrder.getOrDefault("CN", List.of("eastmoney", "sina"))) {
+            if (disabledProviders.contains("CN:" + provider)) continue;
+            try {
+                Map<Instrument, MarketQuote> result = switch (provider) {
+                    case "eastmoney" -> parseEastmoney(requestBytes(CHINA_EASTMONEY), Instant.now());
+                    case "sina" -> parseSina(requestBytes(CHINA_SINA), Instant.now());
+                    default -> throw new IllegalArgumentException("unknown CN provider: " + provider);
+                };
+                activeProviders.put("CN", provider);
+                return result;
+            } catch (Exception exception) { failure = exception; }
         }
+        throw failure == null ? new IllegalStateException("no CN providers enabled") : failure;
     }
 
     private com.imyvm.finance.market.QuoteSnapshot fetchCrypto() throws Exception {
@@ -166,7 +171,19 @@ public final class DirectMarketQuoteClient {
     }
 
     public synchronized String controlStatus() {
-        return "{\"closedMarkets\":" + closedMarkets + ",\"disabledProviders\":" + disabledProviders + "}";
+        return "{\"closedMarkets\":" + jsonArray(closedMarkets) + ",\"disabledProviders\":" + jsonArray(disabledProviders) + ",\"activeProviders\":" + jsonMap(activeProviders) + ",\"providerOrder\":" + jsonMapList(providerOrder) + "}";
+    }
+
+    private static String jsonArray(Set<String> values) {
+        return values.stream().sorted().map(value -> "\"" + value + "\"").collect(java.util.stream.Collectors.joining(",", "[", "]"));
+    }
+
+    private static String jsonMap(Map<String, String> values) {
+        return values.entrySet().stream().sorted(Map.Entry.comparingByKey()).map(entry -> "\"" + entry.getKey() + "\":\"" + entry.getValue() + "\"").collect(java.util.stream.Collectors.joining(",", "{", "}"));
+    }
+
+    private static String jsonMapList(Map<String, List<String>> values) {
+        return values.entrySet().stream().sorted(Map.Entry.comparingByKey()).map(entry -> "\"" + entry.getKey() + "\":" + entry.getValue().stream().map(value -> "\"" + value + "\"").collect(java.util.stream.Collectors.joining(",", "[", "]"))).collect(java.util.stream.Collectors.joining(",", "{", "}"));
     }
 
     public synchronized void setMarketEnabled(String market, boolean enabled) {
