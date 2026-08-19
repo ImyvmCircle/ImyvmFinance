@@ -150,7 +150,7 @@ public final class QuoteRefreshService implements AutoCloseable {
         long intervalMillis = intervalMinutes * 60_000L;
         if (nextNominalPollAtEpochMillis == 0) {
             nextNominalPollAtEpochMillis = now
-                + millisecondsUntilPollNode(Instant.ofEpochMilli(now), ZoneId.systemDefault(),
+                + millisecondsUntilPollNode(Instant.ofEpochMilli(now), MarketHours.CHINA_ZONE,
                     intervalMinutes, pollDelaySeconds);
         } else {
             while (nextNominalPollAtEpochMillis <= now)

@@ -11,7 +11,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 
 public final class MarketHours {
-    private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
+    public static final ZoneId CHINA_ZONE = ZoneId.of("Asia/Shanghai");
     private static final ZoneId HONG_KONG = ZoneId.of("Asia/Hong_Kong");
     private static final ZoneId NEW_YORK = ZoneId.of("America/New_York");
 
@@ -26,7 +26,7 @@ public final class MarketHours {
         if ("CRYPTO".equals(market))
             return MarketStatus.OPEN;
         ZoneId zone = switch (market) {
-            case "CN" -> SHANGHAI;
+            case "CN" -> CHINA_ZONE;
             case "HK" -> HONG_KONG;
             case "US" -> NEW_YORK;
             default -> null;
@@ -52,7 +52,7 @@ public final class MarketHours {
     public static boolean withinCloseWindow(String market, Instant instant, Set<LocalDate> holidays, long minutes) {
         if (!"CN".equals(market) || minutes <= 0)
             return false;
-        ZonedDateTime local = instant.atZone(SHANGHAI);
+        ZonedDateTime local = instant.atZone(CHINA_ZONE);
         if (holidays.contains(local.toLocalDate())
             || local.getDayOfWeek() == DayOfWeek.SATURDAY || local.getDayOfWeek() == DayOfWeek.SUNDAY)
             return false;

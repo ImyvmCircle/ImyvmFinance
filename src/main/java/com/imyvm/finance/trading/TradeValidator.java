@@ -1,5 +1,7 @@
 package com.imyvm.finance.trading;
 
+import com.imyvm.finance.quote.MarketHours;
+
 public final class TradeValidator {
     private TradeValidator() {
     }
@@ -34,7 +36,7 @@ public final class TradeValidator {
             throw new TradeValidationException(
                 "commands.market.trade.sell_cooldown",
                 java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-                    .withZone(java.time.ZoneId.systemDefault())
+                    .withZone(MarketHours.CHINA_ZONE)
                     .format(java.time.Instant.ofEpochMilli(position.earliestSellAtEpochMillis())));
         if (quoteFetchedAtEpochMillis <= position.boughtAtEpochMillis())
             throw new TradeValidationException("commands.market.trade.same_snapshot");

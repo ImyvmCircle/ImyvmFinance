@@ -167,6 +167,18 @@ public final class FinanceSelfTest {
             com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-24T03:00:00Z"),
                 java.util.Set.of(java.time.LocalDate.of(2026, 8, 24))),
             "China configured holiday hours");
+        checkEquals(com.imyvm.finance.market.MarketStatus.OPEN,
+            com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-19T01:30:00Z")),
+            "China morning opening boundary");
+        checkEquals(com.imyvm.finance.market.MarketStatus.CLOSED,
+            com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-19T04:00:00Z")),
+            "China lunch break");
+        checkEquals(com.imyvm.finance.market.MarketStatus.OPEN,
+            com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-19T05:00:00Z")),
+            "China afternoon opening boundary");
+        checkEquals(com.imyvm.finance.market.MarketStatus.CLOSED,
+            com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-19T07:00:00Z")),
+            "China closing boundary");
     }
 
     private static boolean idleRelationChecks() {
@@ -236,6 +248,15 @@ public final class FinanceSelfTest {
         check(!com.imyvm.finance.quote.MarketHours.withinCloseWindow(
             "CN", java.time.Instant.parse("2026-08-19T07:00:00Z"), java.util.Set.of(), 5),
             "CN close window continued after close");
+        check(!com.imyvm.finance.quote.MarketHours.withinCloseWindow(
+            "CN", java.time.Instant.parse("2026-08-19T06:54:59Z"), java.util.Set.of(), 5),
+            "CN close window started too early");
+        check(com.imyvm.finance.quote.MarketHours.withinCloseWindow(
+            "CN", java.time.Instant.parse("2026-08-19T06:55:00Z"), java.util.Set.of(), 5),
+            "CN close window start boundary");
+        check(com.imyvm.finance.quote.MarketHours.withinCloseWindow(
+            "CN", java.time.Instant.parse("2026-08-19T06:59:59Z"), java.util.Set.of(), 5),
+            "CN close window end boundary");
         check(!com.imyvm.finance.quote.MarketHours.withinCloseWindow(
             "CRYPTO", java.time.Instant.parse("2026-08-19T06:56:00Z"), java.util.Set.of(), 5),
             "crypto market incorrectly used CN close window");

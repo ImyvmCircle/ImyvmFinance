@@ -8,6 +8,7 @@ import com.imyvm.finance.storage.StoredTrade;
 import com.imyvm.finance.storage.StoredPosition;
 import com.imyvm.finance.economy.EconomySettlementResult;
 import com.imyvm.finance.economy.StockEconomySettlement;
+import com.imyvm.finance.quote.MarketHours;
 import com.imyvm.finance.transaction.StockOperation;
 import com.imyvm.finance.transaction.StockTransaction;
 import com.imyvm.finance.transaction.StockTransactionState;
@@ -1365,7 +1366,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
             TradeEstimate estimate = TradeCalculator.estimate(
                 TradeSide.BUY, storedQuote.get(), units, now, ImyvmFinance.TRADING_RULES);
             ServerPlayer player = context.getSource().getPlayer();
-            ZoneId zone = ZoneId.systemDefault();
+            ZoneId zone = MarketHours.CHINA_ZONE;
             LocalDate date = LocalDate.now(zone);
             long dailyBuyUsed = ImyvmFinance.TRADING_STORE.dailyBuyAmount(
                 player.getUUID(),
@@ -1613,7 +1614,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
     }
 
     private static long dailySellAmount(UUID playerId, long nowEpochMillis) throws Exception {
-        ZoneId zone = ZoneId.systemDefault();
+        ZoneId zone = MarketHours.CHINA_ZONE;
         LocalDate date = LocalDate.now(zone);
         return ImyvmFinance.TRADING_STORE.dailySellAmount(
             playerId,
@@ -1653,7 +1654,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
             }
             TradeEstimate estimate = TradeCalculator.estimate(
                 TradeSide.BUY, storedQuote.get(), units, now, ImyvmFinance.TRADING_RULES);
-            ZoneId zone = ZoneId.systemDefault();
+            ZoneId zone = MarketHours.CHINA_ZONE;
             LocalDate date = LocalDate.now(zone);
             long dayStart = date.atStartOfDay(zone).toInstant().toEpochMilli();
             long dayEnd = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli();
@@ -1769,7 +1770,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
     }
 
     private static String formatLocalTimestamp(long epochMillis) {
-        return ZonedDateTime.ofInstant(Instant.ofEpochMilli(epochMillis), ZoneId.systemDefault())
+        return ZonedDateTime.ofInstant(Instant.ofEpochMilli(epochMillis), MarketHours.CHINA_ZONE)
             .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss XXX z"));
     }
 
