@@ -166,7 +166,7 @@
   "imyvm_finance.commands.market.confirmation.expired": "§cThis confirmation has expired or was already used.",
   "imyvm_finance.commands.market.source.status.header": "§6§l=== Quote Source Status ===§r",
   "imyvm_finance.commands.market.source.status.since": "§7Statistics since: §8{0}",
-  "imyvm_finance.commands.market.source.status.activity": "§6activity: §f{0} §7| online §e{1} §7| last market command §8{2} §7| quiet §e{3}§7s | uptime §e{4}§7s | no players §f{5} §7| quiet one hour §f{6} §7| CN close window §f{7} §7| idle in §e{8}§7s | idle eligible §f{9}",
+  "imyvm_finance.commands.market.source.status.activity": "§6activity: §f{0} §7| online §e{1} §7| last market command §8{2} §7| quiet §e{3}§7s | uptime §e{4}§7s | no players §f{5} §7| quiet one hour §f{6} §7| outside CN close window §f{7} §7| idle logic: outside close window AND (no players OR quiet one hour) = §f{8} §7| idle in §e{9}§7s | currently idle eligible §f{10}",
   "imyvm_finance.commands.market.source.status.outage": "§eMarkets in recovery probe: §f{0}",
   "imyvm_finance.commands.market.source.status.market": "§6{0}§r §7last success: §f§l{1}§r §7order: §8{2}",
   "imyvm_finance.commands.market.source.status.provider": "  §f§l{0}§r §7requests §e{1}§7, failures §c{2} §7(§e{3}%§7); {4} §8last request {5}, success {6}, failure {7}",

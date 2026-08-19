@@ -89,6 +89,7 @@ public final class FinanceSelfTest {
             checkEquals(22L, overridden.briefingDelaySeconds(), "custom briefing delay");
             checkEquals(25, overridden.tradingRules().feeBps(), "custom fee");
             checkEquals(2L, overridden.tradingRules().minUnits(), "custom minimum units");
+            check(idleRelationChecks(), "idle relation checks");
         } finally {
             deleteTree(directory);
         }
@@ -166,6 +167,13 @@ public final class FinanceSelfTest {
             com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-24T03:00:00Z"),
                 java.util.Set.of(java.time.LocalDate.of(2026, 8, 24))),
             "China configured holiday hours");
+    }
+
+    private static boolean idleRelationChecks() {
+        return ImyvmFinance.isQuoteIdleEligible(true, false, false)
+            && ImyvmFinance.isQuoteIdleEligible(false, true, false)
+            && !ImyvmFinance.isQuoteIdleEligible(true, false, true)
+            && !ImyvmFinance.isQuoteIdleEligible(false, false, false);
     }
 
     private static void economyAmountChecks() {

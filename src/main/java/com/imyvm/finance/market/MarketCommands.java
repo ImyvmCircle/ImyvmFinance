@@ -925,8 +925,9 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                     value(activity, "mode", "-"), value(activity, "onlinePlayers", "0"),
                     value(activity, "lastMarketActivityAt", "-"), value(activity, "inactiveSeconds", "0"),
                     value(activity, "uptimeSeconds", "0"), value(activity, "noPlayers", "false"),
-                    value(activity, "inactiveForHour", "false"), value(activity, "cnCloseWindow", "false"),
-                    value(activity, "secondsUntilIdle", "0"), value(activity, "idleEligible", "false")), false);
+                    value(activity, "inactiveForHour", "false"), value(activity, "outsideCnCloseWindow", "false"),
+                    value(activity, "idleEligible", "false"), value(activity, "secondsUntilIdle", "0"),
+                    value(activity, "idleEligible", "false")), false);
             }
             JsonObject scheduler = root.getAsJsonObject("scheduler");
             if (scheduler != null) {

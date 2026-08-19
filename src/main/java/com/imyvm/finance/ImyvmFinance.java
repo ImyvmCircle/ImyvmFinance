@@ -338,11 +338,15 @@ public final class ImyvmFinance implements ModInitializer {
             && now - serverStartedAt >= Duration.ofHours(1).toMillis();
         boolean cnCloseWindow = MarketHours.withinCloseWindow("CN", Instant.ofEpochMilli(now),
             CONFIG.marketHolidays().getOrDefault("CN", java.util.Set.of()), 5);
-        boolean idle = !cnCloseWindow && (noPlayers || inactiveForHour);
+        boolean idle = isQuoteIdleEligible(noPlayers, inactiveForHour, cnCloseWindow);
         String reason = cnCloseWindow ? "CN close window"
             : noPlayers ? "no players online"
             : inactiveForHour ? "no market command for one hour" : "market active";
         QUOTE_REFRESHER.setIdleMode(idle, reason);
+    }
+
+    static boolean isQuoteIdleEligible(boolean noPlayers, boolean inactiveForHour, boolean cnCloseWindow) {
+        return !cnCloseWindow && (noPlayers || inactiveForHour);
     }
 
     public static CompletableFuture<Void> prepareMarketCommand(net.minecraft.commands.CommandSourceStack source) {
@@ -375,7 +379,8 @@ public final class ImyvmFinance implements ModInitializer {
             + ",\"noPlayers\":" + noPlayers
             + ",\"inactiveForHour\":" + inactiveForHour
             + ",\"secondsUntilIdle\":" + secondsUntilIdle
-            + ",\"idleEligible\":" + (noPlayers || inactiveForHour)
+            + ",\"outsideCnCloseWindow\":" + !closeWindow
+            + ",\"idleEligible\":" + isQuoteIdleEligible(noPlayers, inactiveForHour, closeWindow)
             + ",\"cnCloseWindow\":" + closeWindow + "}";
     }
 

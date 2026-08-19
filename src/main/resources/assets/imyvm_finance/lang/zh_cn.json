@@ -166,7 +166,7 @@
   "imyvm_finance.commands.market.confirmation.expired": "§c该确认已过期或已使用。",
   "imyvm_finance.commands.market.source.status.header": "§6§l=== 行情源状态 ===§r",
   "imyvm_finance.commands.market.source.status.since": "§7统计起点：§8{0}",
-  "imyvm_finance.commands.market.source.status.activity": "§6活跃状态：§f{0} §7| 在线 §e{1} §7| 最近行情命令 §8{2} §7| 静默 §e{3}§7 秒 | 运行 §e{4}§7 秒 | 无玩家 §f{5} §7| 一小时静默 §f{6} §7| A股收市窗口 §f{7} §7| 距空闲 §e{8}§7 秒 | 可进入空闲 §f{9}",
+  "imyvm_finance.commands.market.source.status.activity": "§6活跃状态：§f{0} §7| 在线 §e{1} §7| 最近行情命令 §8{2} §7| 静默 §e{3}§7 秒 | 运行 §e{4}§7 秒 | 无玩家 §f{5} §7| 一小时静默 §f{6} §7| 非A股收市窗口 §f{7} §7| 空闲逻辑：非收市窗口 AND（无玩家 OR 一小时静默）= §f{8} §7| 距空闲 §e{9}§7 秒 | 当前可进入空闲 §f{10}",
   "imyvm_finance.commands.market.source.status.outage": "§e故障探测市场：§f{0}",
   "imyvm_finance.commands.market.source.status.market": "§6{0}§r §7上次成功：§f§l{1}§r §7调度顺序：§8{2}",
   "imyvm_finance.commands.market.source.status.provider": "  §f§l{0}§r §7请求 §e{1} §7次，失败 §c{2} §7次（§e{3}%§7）；{4} §8最近请求 {5}，成功 {6}，异常 {7}",
