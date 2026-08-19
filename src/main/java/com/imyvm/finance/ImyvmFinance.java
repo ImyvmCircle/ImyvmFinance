@@ -349,11 +349,18 @@ public final class ImyvmFinance implements ModInitializer {
         long age = System.currentTimeMillis() - snapshot.fetchedAtEpochMillis();
         if (age < 0 || age >= CONFIG.quotePollIntervalMinutes() * 60_000L)
             return false;
-        ZonedDateTime time = Instant.ofEpochMilli(snapshot.fetchedAtEpochMillis()).atZone(ZoneId.systemDefault());
+        return isBriefingPollNode(Instant.ofEpochMilli(snapshot.fetchedAtEpochMillis()), ZoneId.systemDefault(),
+            CONFIG.quotePollDelaySeconds(), CONFIG.quoteJitterSeconds(), CONFIG.briefingIntervalMinutes());
+    }
+
+    static boolean isBriefingPollNode(Instant instant, ZoneId zone, long pollDelaySeconds, long jitterSeconds, long briefingIntervalMinutes) {
+        ZonedDateTime time = instant.atZone(zone);
         long seconds = time.getMinute() * 60L + time.getSecond();
-        long interval = CONFIG.briefingIntervalMinutes() * 60L;
-        long distance = Math.floorMod(seconds - 60L, interval);
-        return Math.min(distance, interval - distance) <= 15L;
+        long anchor = 60L + pollDelaySeconds;
+        long interval = briefingIntervalMinutes * 60L;
+        long distance = Math.floorMod(seconds - anchor, interval);
+        long tolerance = Math.max(1L, jitterSeconds);
+        return Math.min(distance, interval - distance) <= tolerance;
     }
 
     private static void sendStartupAnnouncement(net.minecraft.server.MinecraftServer server) {

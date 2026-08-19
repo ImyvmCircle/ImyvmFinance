@@ -39,11 +39,11 @@ public record FinanceConfig(
         return new FinanceConfig(
                 Duration.ofSeconds(1),
             Duration.ofSeconds(2),
-            5,
+            3,
             17,
             15,
             0,
-            20,
+            15,
             20,
             true,
             false,

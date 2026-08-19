@@ -49,8 +49,8 @@ public final class FinanceSelfTest {
             FinanceConfig defaults = FinanceConfig.load(config);
             check(Files.exists(config), "default config was not created");
             checkEquals(1000L, defaults.quoteConnectTimeout().toMillis(), "connect timeout");
-            checkEquals(5L, defaults.quotePollIntervalMinutes(), "default refresh");
-            checkEquals(20L, defaults.briefingIntervalMinutes(), "default briefing interval");
+            checkEquals(3L, defaults.quotePollIntervalMinutes(), "default refresh");
+            checkEquals(15L, defaults.briefingIntervalMinutes(), "default briefing interval");
             checkEquals(20L, defaults.briefingDelaySeconds(), "default briefing delay");
             check(!defaults.setupInitialized(), "setup defaults incomplete");
             checkEquals("zh_cn", defaults.language(), "default language");
@@ -188,6 +188,15 @@ public final class FinanceSelfTest {
         delay = com.imyvm.finance.quote.QuoteRefreshService.millisecondsUntilPollNode(
             java.time.Instant.parse("2026-08-19T10:01:18Z"), java.time.ZoneOffset.UTC, 5, 17);
         checkEquals(299_000L, delay, "poll delay after hourly anchor");
+        check(com.imyvm.finance.ImyvmFinance.isBriefingPollNode(
+            java.time.Instant.parse("2026-08-19T10:16:17Z"), java.time.ZoneOffset.UTC, 17, 15, 15),
+            "briefing node did not align with delayed poll");
+        check(com.imyvm.finance.ImyvmFinance.isBriefingPollNode(
+            java.time.Instant.parse("2026-08-19T10:16:32Z"), java.time.ZoneOffset.UTC, 17, 15, 15),
+            "briefing node rejected positive jitter");
+        check(!com.imyvm.finance.ImyvmFinance.isBriefingPollNode(
+            java.time.Instant.parse("2026-08-19T10:16:33Z"), java.time.ZoneOffset.UTC, 17, 15, 15),
+            "briefing node accepted time outside jitter");
     }
 
     private static void storageChecks() throws Exception {
