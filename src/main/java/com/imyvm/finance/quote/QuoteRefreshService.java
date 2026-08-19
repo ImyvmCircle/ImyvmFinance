@@ -62,7 +62,8 @@ public final class QuoteRefreshService implements AutoCloseable {
     }
 
     public void start() {
-        scheduleNext(pollDelaySeconds * 1000L);
+        refresh();
+        scheduleNext(millisecondsUntilPollNode(Instant.now(), ZoneId.systemDefault(), pollIntervalMinutes, pollDelaySeconds));
     }
 
     private void scheduleNext(long delayMillis) {
