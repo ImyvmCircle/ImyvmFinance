@@ -1,6 +1,9 @@
 # Copy to the server config directory as imyvm_finance.properties.
 market.connect-timeout-ms=1000
 market.read-timeout-ms=2000
+market.holidays.CN=
+market.holidays.HK=
+market.holidays.US=
 quote.poll-interval-minutes=5
 quote.poll-delay-seconds=17
 briefing.interval-minutes=20

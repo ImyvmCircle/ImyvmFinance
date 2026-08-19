@@ -47,11 +47,17 @@ public final class DirectMarketQuoteClient {
     private final HttpClient httpClient;
     private final Duration requestTimeout;
     private final CryptoQuoteClient cryptoClient;
+    private final Map<String, Set<java.time.LocalDate>> marketHolidays;
     private final EnumMap<Instrument, MarketQuote> lastQuotes = new EnumMap<>(Instrument.class);
     private final Set<String> disabledProviders = ConcurrentHashMap.newKeySet();
     private final Set<String> closedMarkets = ConcurrentHashMap.newKeySet();
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout) {
+        this(connectTimeout, requestTimeout, Map.of());
+    }
+
+    public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays) {
+        this.marketHolidays = Map.copyOf(marketHolidays);
         this.httpClient = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
         this.requestTimeout = requestTimeout;
         this.cryptoClient = new CryptoQuoteClient(connectTimeout, requestTimeout);
@@ -65,15 +71,15 @@ public final class DirectMarketQuoteClient {
         Instant fetchedAt = Instant.now();
         EnumMap<Instrument, MarketQuote> quotes = new EnumMap<>(Instrument.class);
         List<String> alerts = new ArrayList<>();
-        if (!closedMarkets.contains("CN") && MarketHours.status("CN", fetchedAt) == MarketStatus.OPEN) {
+        if (!closedMarkets.contains("CN") && MarketHours.status("CN", fetchedAt, marketHolidays.getOrDefault("CN", Set.of())) == MarketStatus.OPEN) {
             try {
                 quotes.putAll(fetchChina());
             } catch (Exception exception) {
                 alerts.add("failed:market:CN");
             }
         }
-        if ((!closedMarkets.contains("HK") && MarketHours.status("HK", fetchedAt) == MarketStatus.OPEN)
-            || (!closedMarkets.contains("US") && MarketHours.status("US", fetchedAt) == MarketStatus.OPEN)) {
+        if ((!closedMarkets.contains("HK") && MarketHours.status("HK", fetchedAt, marketHolidays.getOrDefault("HK", Set.of())) == MarketStatus.OPEN)
+            || (!closedMarkets.contains("US") && MarketHours.status("US", fetchedAt, marketHolidays.getOrDefault("US", Set.of())) == MarketStatus.OPEN)) {
             try {
                 quotes.putAll(fetchGlobal());
             } catch (Exception exception) {
@@ -97,7 +103,7 @@ public final class DirectMarketQuoteClient {
             if (quote == null)
                 continue;
             lastQuotes.put(instrument, new MarketQuote(instrument, quote.name(), quote.priceScaled(),
-                quote.changeBps(), MarketHours.status(instrument.market(), fetchedAt)));
+                quote.changeBps(), MarketHours.status(instrument.market(), fetchedAt, marketHolidays.getOrDefault(instrument.market(), Set.of()))));
         }
         if (lastQuotes.isEmpty())
             throw new IllegalStateException("all direct market providers failed");
@@ -125,7 +131,7 @@ public final class DirectMarketQuoteClient {
         Instant now = Instant.now();
         for (Map.Entry<Instrument, String> entry : YAHOO_SYMBOLS.entrySet()) {
             if (!closedMarkets.contains(entry.getKey().market())
-                && MarketHours.status(entry.getKey().market(), now) == MarketStatus.OPEN)
+                && MarketHours.status(entry.getKey().market(), now, marketHolidays.getOrDefault(entry.getKey().market(), Set.of())) == MarketStatus.OPEN)
                 result.put(entry.getKey(), parseYahoo(requestText(yahooUri(entry.getValue())), entry.getKey()));
         }
         return result;

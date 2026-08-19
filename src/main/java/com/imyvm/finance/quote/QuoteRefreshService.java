@@ -49,7 +49,8 @@ public final class QuoteRefreshService implements AutoCloseable {
         this.store = store;
         this.client = new DirectMarketQuoteClient(
             config.quoteConnectTimeout(),
-            config.quoteReadTimeout());
+            config.quoteReadTimeout(),
+            config.marketHolidays());
         this.pollIntervalMinutes = config.quotePollIntervalMinutes();
         this.pollDelaySeconds = config.quotePollDelaySeconds();
         this.alertConsumer = alertConsumer;

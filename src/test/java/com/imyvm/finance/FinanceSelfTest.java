@@ -60,6 +60,7 @@ public final class FinanceSelfTest {
             Properties properties = new Properties();
             properties.setProperty("market.connect-timeout-ms", "1500");
             properties.setProperty("market.read-timeout-ms", "3500");
+            properties.setProperty("market.holidays.CN", "2026-08-24,invalid");
             properties.setProperty("quote.poll-interval-minutes", "7");
             properties.setProperty("quote.poll-delay-seconds", "19");
             properties.setProperty("briefing.interval-minutes", "30");
@@ -129,6 +130,10 @@ public final class FinanceSelfTest {
         checkEquals(com.imyvm.finance.market.MarketStatus.CLOSED,
             com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-23T03:00:00Z")),
             "China weekend market hours");
+        checkEquals(com.imyvm.finance.market.MarketStatus.CLOSED,
+            com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-24T03:00:00Z"),
+                java.util.Set.of(java.time.LocalDate.of(2026, 8, 24))),
+            "China configured holiday hours");
     }
 
     private static void tradingValidationChecks() throws Exception {

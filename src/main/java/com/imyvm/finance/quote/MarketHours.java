@@ -5,6 +5,8 @@ import com.imyvm.finance.market.MarketStatus;
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalTime;
+import java.time.LocalDate;
+import java.util.Set;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 
@@ -17,6 +19,10 @@ public final class MarketHours {
     }
 
     public static MarketStatus status(String market, Instant instant) {
+        return status(market, instant, Set.of());
+    }
+
+    public static MarketStatus status(String market, Instant instant, Set<LocalDate> holidays) {
         if ("CRYPTO".equals(market))
             return MarketStatus.OPEN;
         ZoneId zone = switch (market) {
@@ -28,7 +34,8 @@ public final class MarketHours {
         if (zone == null)
             return MarketStatus.UNAVAILABLE;
         ZonedDateTime local = instant.atZone(zone);
-        if (local.getDayOfWeek() == DayOfWeek.SATURDAY || local.getDayOfWeek() == DayOfWeek.SUNDAY)
+        if (holidays.contains(local.toLocalDate())
+            || local.getDayOfWeek() == DayOfWeek.SATURDAY || local.getDayOfWeek() == DayOfWeek.SUNDAY)
             return MarketStatus.CLOSED;
         LocalTime time = local.toLocalTime();
         boolean open = switch (market) {

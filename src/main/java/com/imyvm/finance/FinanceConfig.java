@@ -8,6 +8,11 @@ import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.util.Map;
+import java.util.Set;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Properties;
 
 public record FinanceConfig(
@@ -19,6 +24,7 @@ public record FinanceConfig(
     long briefingDelaySeconds,
     boolean briefingEnabled,
     boolean setupInitialized,
+    Map<String, Set<LocalDate>> marketHolidays,
     String language,
     TradingRules tradingRules
 ) {
@@ -33,6 +39,7 @@ public record FinanceConfig(
             20,
             true,
             false,
+            Map.of(),
             "zh_cn",
             TradingRules.DEFAULT);
     }
@@ -85,6 +92,7 @@ public record FinanceConfig(
             positiveLong(properties, "briefing.delay-seconds", defaults.briefingDelaySeconds()),
             parseBoolean(properties, "briefing.enabled", defaults.briefingEnabled()),
             parseBoolean(properties, "setup.initialized", defaults.setupInitialized()),
+            parseHolidays(properties),
             properties.getProperty("language", defaults.language()).trim(),
             new TradingRules(
                 positiveLong(properties, "trading.max-quote-age-minutes", 15) * 60 * 1000,
@@ -100,7 +108,7 @@ public record FinanceConfig(
     public FinanceConfig withSetupInitialized(boolean initialized) {
         return new FinanceConfig(quoteConnectTimeout, quoteReadTimeout,
             quotePollIntervalMinutes, quotePollDelaySeconds, briefingIntervalMinutes, briefingDelaySeconds,
-            briefingEnabled, initialized, language, tradingRules);
+            briefingEnabled, initialized, marketHolidays, language, tradingRules);
     }
 
     public static void writeSetupInitialized(Path path, boolean initialized) throws IOException {
@@ -114,6 +122,23 @@ public record FinanceConfig(
         try (Writer writer = Files.newBufferedWriter(path)) {
             properties.store(writer, "ImyvmFinance settings");
         }
+    }
+
+    private static Map<String, Set<LocalDate>> parseHolidays(Properties properties) {
+        Map<String, Set<LocalDate>> holidays = new HashMap<>();
+        for (String market : new String[] {"CN", "HK", "US"}) {
+            Set<LocalDate> dates = new HashSet<>();
+            for (String value : properties.getProperty("market.holidays." + market, "").split(",")) {
+                try {
+                    if (!value.trim().isEmpty())
+                        dates.add(LocalDate.parse(value.trim()));
+                } catch (RuntimeException ignored) {
+                }
+            }
+            if (!dates.isEmpty())
+                holidays.put(market, Set.copyOf(dates));
+        }
+        return Map.copyOf(holidays);
     }
 
     private static boolean parseBoolean(Properties properties, String key, boolean fallback) {
