@@ -16,7 +16,6 @@ import net.minecraft.server.permissions.Permissions;
 import com.imyvm.finance.economy.StockEconomySettlement;
 import com.imyvm.finance.quote.QuoteRefreshService;
 import com.imyvm.finance.quote.DirectMarketQuoteClient;
-import com.imyvm.finance.quote.SidecarClient;
 import com.imyvm.finance.market.QuoteSnapshot;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -302,14 +301,35 @@ public final class ImyvmFinance implements ModInitializer {
         return java.math.BigDecimal.valueOf(changeBps, 2).setScale(2).toPlainString() + "%";
     }
 
-    public static CompletableFuture<String> inspectSidecar(String path) {
-        return new SidecarClient(CONFIG.sidecarEndpoint(), CONFIG.sidecarConnectTimeout(), CONFIG.sidecarReadTimeout())
-            .inspect(path);
+    public static CompletableFuture<String> inspectMarketData(String path) {
+        if (QUOTE_REFRESHER == null)
+            return CompletableFuture.failedFuture(new IllegalStateException("quote service unavailable"));
+        return CompletableFuture.completedFuture(QUOTE_REFRESHER.providerStatus());
     }
 
-    public static CompletableFuture<String> controlSidecar(String path) {
-        return new SidecarClient(CONFIG.sidecarEndpoint(), CONFIG.sidecarConnectTimeout(), CONFIG.sidecarReadTimeout())
-            .control(path);
+    public static CompletableFuture<String> controlMarketData(String path) {
+        try {
+            if (QUOTE_REFRESHER == null)
+                throw new IllegalStateException("quote service unavailable");
+            String query = path.substring(path.indexOf("?") + 1);
+            Map<String, String> values = new HashMap<>();
+            for (String item : query.split("&")) {
+                String[] pair = item.split("=", 2);
+                if (pair.length == 2)
+                    values.put(pair[0], pair[1]);
+            }
+            String market = values.get("market");
+            boolean enabled = Boolean.parseBoolean(values.get("enabled"));
+            if (path.startsWith("/control/market"))
+                QUOTE_REFRESHER.setMarketEnabled(market, enabled);
+            else if (path.startsWith("/control/provider"))
+                QUOTE_REFRESHER.setProviderEnabled(market, values.get("provider"), enabled);
+            else
+                throw new IllegalArgumentException("unknown control path");
+            return CompletableFuture.completedFuture("{}");
+        } catch (Exception exception) {
+            return CompletableFuture.failedFuture(exception);
+        }
     }
 
     private static void startQuoteRefresh() {
@@ -390,7 +410,7 @@ public final class ImyvmFinance implements ModInitializer {
     }
 
     public static CompletableFuture<QuoteSnapshot> checkMarketData() {
-        return new DirectMarketQuoteClient(CONFIG.sidecarConnectTimeout(), CONFIG.sidecarReadTimeout()).fetch();
+        return new DirectMarketQuoteClient(CONFIG.quoteConnectTimeout(), CONFIG.quoteReadTimeout()).fetch();
     }
 
     public static void completeSetup() throws java.io.IOException {

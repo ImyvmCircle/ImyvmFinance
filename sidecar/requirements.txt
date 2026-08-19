@@ -1,3 +1,0 @@
-akshare>=1.18.40,<2
-
-exchange_calendars>=4.11,<5

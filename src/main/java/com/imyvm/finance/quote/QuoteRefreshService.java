@@ -28,7 +28,7 @@ public final class QuoteRefreshService implements AutoCloseable {
     private final Consumer<String> alertConsumer;
     private final Consumer<com.imyvm.finance.market.QuoteSnapshot> snapshotConsumer;
     private final Set<String> unavailableInstruments = new HashSet<>();
-    private boolean sidecarUnavailable;
+    private boolean marketDataUnavailable;
     private String lastSnapshotId;
 
     public QuoteRefreshService(QuoteSnapshotStore store) {
@@ -48,8 +48,8 @@ public final class QuoteRefreshService implements AutoCloseable {
                                Consumer<com.imyvm.finance.market.QuoteSnapshot> snapshotConsumer) {
         this.store = store;
         this.client = new DirectMarketQuoteClient(
-            config.sidecarConnectTimeout(),
-            config.sidecarReadTimeout());
+            config.quoteConnectTimeout(),
+            config.quoteReadTimeout());
         this.pollIntervalMinutes = config.quotePollIntervalMinutes();
         this.pollDelaySeconds = config.quotePollDelaySeconds();
         this.alertConsumer = alertConsumer;
@@ -81,6 +81,18 @@ public final class QuoteRefreshService implements AutoCloseable {
         return nominal.toInstant().toEpochMilli() - instant.toEpochMilli();
     }
 
+    public String providerStatus() {
+        return client.controlStatus();
+    }
+
+    public void setMarketEnabled(String market, boolean enabled) {
+        client.setMarketEnabled(market, enabled);
+    }
+
+    public void setProviderEnabled(String market, String provider, boolean enabled) {
+        client.setProviderEnabled(market, provider, enabled);
+    }
+
     private void refresh() {
         if (closed.get() || !refreshing.compareAndSet(false, true))
             return;
@@ -90,39 +102,39 @@ public final class QuoteRefreshService implements AutoCloseable {
                 if (closed.get())
                     return;
                 if (error != null) {
-                    LOGGER.warn("Sidecar quote refresh failed: {}", error.getMessage());
-                    notifySidecarFailure();
+                    LOGGER.warn("Market quote refresh failed: {}", error.getMessage());
+                    notifyMarketDataFailure();
                     return;
                 }
 
                 store.save(snapshot);
-                if (!snapshot.snapshotId().equals(lastSnapshotId)) {
+                if (snapshot.alerts().isEmpty() && !snapshot.snapshotId().equals(lastSnapshotId)) {
                     lastSnapshotId = snapshot.snapshotId();
                     snapshotConsumer.accept(snapshot);
                 }
-                notifySidecarRecovery();
+                notifyMarketDataRecovery();
                 for (String alert : snapshot.alerts())
                     notifyAlert(alert);
                 LOGGER.info("Stored quote snapshot {} with {} quotes",
                     snapshot.snapshotId(), snapshot.quotes().size());
             } catch (Exception exception) {
-                LOGGER.error("Failed to store sidecar quote snapshot", exception);
+                LOGGER.error("Failed to store market quote snapshot", exception);
             } finally {
                 refreshing.set(false);
             }
         });
     }
 
-    private synchronized void notifySidecarFailure() {
-        if (!sidecarUnavailable) {
-            sidecarUnavailable = true;
+    private synchronized void notifyMarketDataFailure() {
+        if (!marketDataUnavailable) {
+            marketDataUnavailable = true;
             alertConsumer.accept("failed:all");
         }
     }
 
-    private synchronized void notifySidecarRecovery() {
-        if (sidecarUnavailable) {
-            sidecarUnavailable = false;
+    private synchronized void notifyMarketDataRecovery() {
+        if (marketDataUnavailable) {
+            marketDataUnavailable = false;
             alertConsumer.accept("recovered:all");
         }
     }

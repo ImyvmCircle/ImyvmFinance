@@ -3,7 +3,6 @@ package com.imyvm.finance;
 import com.imyvm.finance.market.Instrument;
 import com.imyvm.finance.market.MarketCommands;
 import com.imyvm.finance.market.MarketStatus;
-import com.imyvm.finance.quote.SidecarClient;
 import com.imyvm.finance.storage.StockTradingStore;
 import com.imyvm.finance.storage.StockTransactionStore;
 import com.imyvm.finance.storage.StoredOrder;
@@ -33,7 +32,6 @@ public final class FinanceSelfTest {
     public static void main(String[] args) throws Exception {
         configChecks();
         translationChecks();
-        sidecarChecks();
         cryptoQuoteChecks();
         directMarketQuoteChecks();
         marketHoursChecks();
@@ -50,8 +48,7 @@ public final class FinanceSelfTest {
             Path config = directory.resolve("imyvm_finance.properties");
             FinanceConfig defaults = FinanceConfig.load(config);
             check(Files.exists(config), "default config was not created");
-            checkEquals("http://127.0.0.1:8765/quotes",
-                defaults.sidecarEndpoint().toString(), "default endpoint");
+            checkEquals(1000L, defaults.quoteConnectTimeout().toMillis(), "connect timeout");
             checkEquals(5L, defaults.quotePollIntervalMinutes(), "default refresh");
             checkEquals(20L, defaults.briefingIntervalMinutes(), "default briefing interval");
             checkEquals(20L, defaults.briefingDelaySeconds(), "default briefing delay");
@@ -61,11 +58,10 @@ public final class FinanceSelfTest {
             checkEquals(15L * 60 * 1000, defaults.tradingRules().maxQuoteAgeMillis(), "default quote age");
 
             Properties properties = new Properties();
-            properties.setProperty("sidecar.endpoint", "http://127.0.0.1:9000/quotes");
-            properties.setProperty("sidecar.connect-timeout-ms", "1500");
-            properties.setProperty("sidecar.read-timeout-ms", "3500");
-            properties.setProperty("sidecar.poll-interval-minutes", "7");
-            properties.setProperty("sidecar.poll-delay-seconds", "19");
+            properties.setProperty("market.connect-timeout-ms", "1500");
+            properties.setProperty("market.read-timeout-ms", "3500");
+            properties.setProperty("quote.poll-interval-minutes", "7");
+            properties.setProperty("quote.poll-delay-seconds", "19");
             properties.setProperty("briefing.interval-minutes", "30");
             properties.setProperty("briefing.delay-seconds", "22");
             properties.setProperty("trading.fee-bps", "25");
@@ -75,10 +71,8 @@ public final class FinanceSelfTest {
             }
 
             FinanceConfig overridden = FinanceConfig.load(config);
-            checkEquals("http://127.0.0.1:9000/quotes",
-                overridden.sidecarEndpoint().toString(), "custom endpoint");
-            checkEquals(1500L, overridden.sidecarConnectTimeout().toMillis(), "connect timeout");
-            checkEquals(3500L, overridden.sidecarReadTimeout().toMillis(), "read timeout");
+            checkEquals(1500L, overridden.quoteConnectTimeout().toMillis(), "connect timeout");
+            checkEquals(3500L, overridden.quoteReadTimeout().toMillis(), "read timeout");
             checkEquals(7L, overridden.quotePollIntervalMinutes(), "custom poll interval");
             checkEquals(19L, overridden.quotePollDelaySeconds(), "custom poll delay");
             checkEquals(30L, overridden.briefingIntervalMinutes(), "custom briefing interval");
@@ -108,41 +102,6 @@ public final class FinanceSelfTest {
         String english = Translator.tr("commands.market.list.item", "CN:000001", "SSE", "OPEN").getString();
         check(english.contains("CN:000001") && !english.contains("{0}"),
             "en_us translation did not interpolate arguments: " + english);
-    }
-
-    private static void sidecarChecks() {
-        String body = """
-            {
-              "snapshotId": "snapshot-test",
-              "source": "test",
-              "fetchedAt": "1",
-              "marketTime": "2",
-              "alerts": ["failed:US:SPX"],
-              "quotes": [
-                {
-                  "symbol": "CN:000001",
-                  "name": "SSE",
-                  "price": "3000.1234",
-                  "changePercent": "1.25",
-                  "marketStatus": "OPEN"
-                },
-                {
-                  "symbol": "UNKNOWN",
-                  "name": "unknown",
-                  "price": "1",
-                  "changePercent": "0",
-                  "marketStatus": "OPEN"
-                }
-              ]
-            }
-            """;
-        var snapshot = SidecarClient.parse(body);
-        checkEquals(1, snapshot.quotes().size(), "whitelisted quote count");
-        checkEquals(Instrument.CN_000001, snapshot.quotes().getFirst().instrument(), "quote instrument");
-        checkEquals(30_001_234L, snapshot.quotes().getFirst().priceScaled(), "quote price scale");
-        checkEquals(125L, snapshot.quotes().getFirst().changeBps(), "quote change scale");
-        checkEquals(MarketStatus.OPEN, snapshot.quotes().getFirst().status(), "quote status");
-        checkEquals(java.util.List.of("failed:US:SPX"), snapshot.alerts(), "quote alerts");
     }
 
     private static void cryptoQuoteChecks() {

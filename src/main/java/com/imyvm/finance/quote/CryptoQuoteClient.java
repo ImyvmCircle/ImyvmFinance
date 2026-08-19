@@ -33,12 +33,15 @@ public final class CryptoQuoteClient {
     }
 
     public CompletableFuture<QuoteSnapshot> fetch() {
-        return request(BINANCE_ENDPOINT)
-            .thenApply(body -> parseBinance(body, Instant.now()))
-            .exceptionallyCompose(error -> fetchCoinbase());
+        return fetchBinance().exceptionallyCompose(error -> fetchCoinbase());
     }
 
-    private CompletableFuture<QuoteSnapshot> fetchCoinbase() {
+    public CompletableFuture<QuoteSnapshot> fetchBinance() {
+        return request(BINANCE_ENDPOINT)
+            .thenApply(body -> parseBinance(body, Instant.now()));
+    }
+
+    public CompletableFuture<QuoteSnapshot> fetchCoinbase() {
         CompletableFuture<String> btc = request(URI.create(COINBASE_BASE + "BTC-USD/stats"));
         CompletableFuture<String> eth = request(URI.create(COINBASE_BASE + "ETH-USD/stats"));
         return btc.thenCombine(eth, (btcBody, ethBody) -> parseCoinbase(btcBody, ethBody, Instant.now()));

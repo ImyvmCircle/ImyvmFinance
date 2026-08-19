@@ -5,16 +5,14 @@ import com.imyvm.finance.trading.TradingRules;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
-import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Properties;
 
 public record FinanceConfig(
-    URI sidecarEndpoint,
-    Duration sidecarConnectTimeout,
-    Duration sidecarReadTimeout,
+    Duration quoteConnectTimeout,
+    Duration quoteReadTimeout,
     long quotePollIntervalMinutes,
     long quotePollDelaySeconds,
     long briefingIntervalMinutes,
@@ -24,12 +22,10 @@ public record FinanceConfig(
     String language,
     TradingRules tradingRules
 ) {
-    private static final String DEFAULT_ENDPOINT = "http://127.0.0.1:8765/quotes";
 
     public static FinanceConfig defaults() {
         return new FinanceConfig(
-            URI.create(DEFAULT_ENDPOINT),
-            Duration.ofSeconds(1),
+                Duration.ofSeconds(1),
             Duration.ofSeconds(2),
             5,
             17,
@@ -51,14 +47,13 @@ public record FinanceConfig(
         } else {
             Files.createDirectories(path.getParent());
             try (Writer writer = Files.newBufferedWriter(path)) {
-                properties.setProperty("sidecar.endpoint", defaults.sidecarEndpoint().toString());
-                properties.setProperty("sidecar.connect-timeout-ms",
-                    Long.toString(defaults.sidecarConnectTimeout().toMillis()));
-                properties.setProperty("sidecar.read-timeout-ms",
-                    Long.toString(defaults.sidecarReadTimeout().toMillis()));
-                properties.setProperty("sidecar.poll-interval-minutes",
+                properties.setProperty("market.connect-timeout-ms",
+                    Long.toString(defaults.quoteConnectTimeout().toMillis()));
+                properties.setProperty("market.read-timeout-ms",
+                    Long.toString(defaults.quoteReadTimeout().toMillis()));
+                properties.setProperty("quote.poll-interval-minutes",
                     Long.toString(defaults.quotePollIntervalMinutes()));
-                properties.setProperty("sidecar.poll-delay-seconds",
+                properties.setProperty("quote.poll-delay-seconds",
                     Long.toString(defaults.quotePollDelaySeconds()));
                 properties.setProperty("briefing.interval-minutes",
                     Long.toString(defaults.briefingIntervalMinutes()));
@@ -80,13 +75,12 @@ public record FinanceConfig(
         }
 
         return new FinanceConfig(
-            URI.create(properties.getProperty("sidecar.endpoint", defaults.sidecarEndpoint().toString())),
-            positiveDuration(properties, "sidecar.connect-timeout-ms",
-                defaults.sidecarConnectTimeout().toMillis()),
-            positiveDuration(properties, "sidecar.read-timeout-ms",
-                defaults.sidecarReadTimeout().toMillis()),
-            positiveLong(properties, "sidecar.poll-interval-minutes", defaults.quotePollIntervalMinutes()),
-            positiveLong(properties, "sidecar.poll-delay-seconds", defaults.quotePollDelaySeconds()),
+            positiveDuration(properties, "market.connect-timeout-ms",
+                defaults.quoteConnectTimeout().toMillis()),
+            positiveDuration(properties, "market.read-timeout-ms",
+                defaults.quoteReadTimeout().toMillis()),
+            positiveLong(properties, "quote.poll-interval-minutes", defaults.quotePollIntervalMinutes()),
+            positiveLong(properties, "quote.poll-delay-seconds", defaults.quotePollDelaySeconds()),
             positiveLong(properties, "briefing.interval-minutes", defaults.briefingIntervalMinutes()),
             positiveLong(properties, "briefing.delay-seconds", defaults.briefingDelaySeconds()),
             parseBoolean(properties, "briefing.enabled", defaults.briefingEnabled()),
@@ -104,7 +98,7 @@ public record FinanceConfig(
     }
 
     public FinanceConfig withSetupInitialized(boolean initialized) {
-        return new FinanceConfig(sidecarEndpoint, sidecarConnectTimeout, sidecarReadTimeout,
+        return new FinanceConfig(quoteConnectTimeout, quoteReadTimeout,
             quotePollIntervalMinutes, quotePollDelaySeconds, briefingIntervalMinutes, briefingDelaySeconds,
             briefingEnabled, initialized, language, tradingRules);
     }

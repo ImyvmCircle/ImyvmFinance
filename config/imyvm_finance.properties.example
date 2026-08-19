@@ -1,9 +1,8 @@
 # Copy to the server config directory as imyvm_finance.properties.
-sidecar.endpoint=http://127.0.0.1:8765/quotes
-sidecar.connect-timeout-ms=1000
-sidecar.read-timeout-ms=2000
-sidecar.poll-interval-minutes=5
-sidecar.poll-delay-seconds=17
+market.connect-timeout-ms=1000
+market.read-timeout-ms=2000
+quote.poll-interval-minutes=5
+quote.poll-delay-seconds=17
 briefing.interval-minutes=20
 briefing.delay-seconds=20
 briefing.enabled=true

@@ -724,7 +724,7 @@ public final class MarketCommands {
             return 0;
         }
         String path = "/control/market?market=" + market + "&enabled=" + enabled;
-        ImyvmFinance.controlSidecar(path).thenAccept(ignored -> source.getServer().execute(() -> {
+        ImyvmFinance.controlMarketData(path).thenAccept(ignored -> source.getServer().execute(() -> {
             try {
                 if (ImyvmFinance.TRADING_STORE == null)
                     throw new IllegalStateException("trading storage unavailable");
@@ -754,7 +754,7 @@ public final class MarketCommands {
 
     private static int sourceStatus(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         CommandSourceStack source = context.getSource();
-        ImyvmFinance.inspectSidecar("/control/status").thenAccept(body ->
+        ImyvmFinance.inspectMarketData("/control/status").thenAccept(body ->
             source.getServer().execute(() -> source.sendSuccess(() -> Component.literal(body), false)))
             .exceptionally(error -> {
                 source.getServer().execute(() -> source.sendFailure(Translator.tr("commands.market.control.failed")));
@@ -771,7 +771,7 @@ public final class MarketCommands {
         String market = StringArgumentType.getString(context, "market").toUpperCase();
         String provider = StringArgumentType.getString(context, "provider").toLowerCase();
         String path = "/control/provider?market=" + market + "&provider=" + provider + "&enabled=" + enabled;
-        ImyvmFinance.controlSidecar(path).thenAccept(ignored -> source.getServer().execute(() ->
+        ImyvmFinance.controlMarketData(path).thenAccept(ignored -> source.getServer().execute(() ->
             source.sendSuccess(() -> Translator.tr("commands.market.source." + (enabled ? "enabled" : "disabled"), market, provider), true)))
             .exceptionally(error -> {
                 source.getServer().execute(() -> source.sendFailure(Translator.tr("commands.market.control.failed")));

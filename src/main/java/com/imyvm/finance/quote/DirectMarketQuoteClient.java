@@ -8,8 +8,6 @@ import com.imyvm.finance.market.MarketQuote;
 import com.imyvm.finance.market.MarketStatus;
 import com.imyvm.finance.market.QuoteSnapshot;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -24,6 +22,8 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
 
 public final class DirectMarketQuoteClient {
@@ -48,6 +48,8 @@ public final class DirectMarketQuoteClient {
     private final Duration requestTimeout;
     private final CryptoQuoteClient cryptoClient;
     private final EnumMap<Instrument, MarketQuote> lastQuotes = new EnumMap<>(Instrument.class);
+    private final Set<String> disabledProviders = ConcurrentHashMap.newKeySet();
+    private final Set<String> closedMarkets = ConcurrentHashMap.newKeySet();
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout) {
         this.httpClient = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
@@ -63,23 +65,28 @@ public final class DirectMarketQuoteClient {
         Instant fetchedAt = Instant.now();
         EnumMap<Instrument, MarketQuote> quotes = new EnumMap<>(Instrument.class);
         List<String> alerts = new ArrayList<>();
-        if (MarketHours.status("CN", fetchedAt) == MarketStatus.OPEN) {
+        if (!closedMarkets.contains("CN") && MarketHours.status("CN", fetchedAt) == MarketStatus.OPEN) {
             try {
                 quotes.putAll(fetchChina());
             } catch (Exception exception) {
                 alerts.add("failed:market:CN");
             }
         }
-        if (MarketHours.status("HK", fetchedAt) == MarketStatus.OPEN
-            || MarketHours.status("US", fetchedAt) == MarketStatus.OPEN) {
+        if ((!closedMarkets.contains("HK") && MarketHours.status("HK", fetchedAt) == MarketStatus.OPEN)
+            || (!closedMarkets.contains("US") && MarketHours.status("US", fetchedAt) == MarketStatus.OPEN)) {
             try {
                 quotes.putAll(fetchGlobal());
             } catch (Exception exception) {
                 alerts.add("failed:market:HK_US");
             }
         }
-        try {
-            quotes.putAll(cryptoClient.fetch().join().quotes().stream()
+        if (!closedMarkets.contains("CRYPTO")) try {
+            var crypto = disabledProviders.contains("CRYPTO:binance")
+                ? cryptoClient.fetchCoinbase().join()
+                : disabledProviders.contains("CRYPTO:coinbase")
+                    ? cryptoClient.fetchBinance().join()
+                    : cryptoClient.fetch().join();
+            quotes.putAll(crypto.quotes().stream()
                 .collect(java.util.stream.Collectors.toMap(MarketQuote::instrument, quote -> quote)));
         } catch (Exception exception) {
             alerts.add("failed:market:CRYPTO");
@@ -101,20 +108,49 @@ public final class DirectMarketQuoteClient {
 
     private Map<Instrument, MarketQuote> fetchChina() throws Exception {
         try {
+            if (disabledProviders.contains("CN:eastmoney"))
+                throw new IllegalStateException("Eastmoney disabled");
             return parseEastmoney(requestBytes(CHINA_EASTMONEY), Instant.now());
         } catch (Exception primary) {
+            if (disabledProviders.contains("CN:sina"))
+                throw primary;
             return parseSina(requestBytes(CHINA_SINA), Instant.now());
         }
     }
 
     private Map<Instrument, MarketQuote> fetchGlobal() throws Exception {
+        if (disabledProviders.contains("GLOBAL:yahoo"))
+            throw new IllegalStateException("Yahoo disabled");
         EnumMap<Instrument, MarketQuote> result = new EnumMap<>(Instrument.class);
         Instant now = Instant.now();
         for (Map.Entry<Instrument, String> entry : YAHOO_SYMBOLS.entrySet()) {
-            if (MarketHours.status(entry.getKey().market(), now) == MarketStatus.OPEN)
+            if (!closedMarkets.contains(entry.getKey().market())
+                && MarketHours.status(entry.getKey().market(), now) == MarketStatus.OPEN)
                 result.put(entry.getKey(), parseYahoo(requestText(yahooUri(entry.getValue())), entry.getKey()));
         }
         return result;
+    }
+
+    public synchronized String controlStatus() {
+        return "{\"closedMarkets\":" + closedMarkets + ",\"disabledProviders\":" + disabledProviders + "}";
+    }
+
+    public synchronized void setMarketEnabled(String market, boolean enabled) {
+        if (enabled)
+            closedMarkets.remove(market);
+        else
+            closedMarkets.add(market);
+    }
+
+    public synchronized void setProviderEnabled(String market, String provider, boolean enabled) {
+        String key = switch (market + ":" + provider) {
+            case "HK:global", "US:global", "HK:yahoo", "US:yahoo" -> "GLOBAL:yahoo";
+            default -> market + ":" + provider;
+        };
+        if (enabled)
+            disabledProviders.remove(key);
+        else
+            disabledProviders.add(key);
     }
 
     public static Map<Instrument, MarketQuote> parseEastmoney(byte[] body, Instant fetchedAt) {
