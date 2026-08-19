@@ -320,10 +320,14 @@ public final class ImyvmFinance implements ModInitializer {
             }
             String market = values.get("market");
             boolean enabled = Boolean.parseBoolean(values.get("enabled"));
-            if (path.startsWith("/control/market"))
+            if (path.startsWith("/control/market")) {
                 QUOTE_REFRESHER.setMarketEnabled(market, enabled);
-            else if (path.startsWith("/control/provider"))
-                QUOTE_REFRESHER.setProviderEnabled(market, values.get("provider"), enabled);
+                FinanceConfig.writeMarketEnabled(CONFIG_PATH, market, enabled);
+            } else if (path.startsWith("/control/provider")) {
+                String provider = values.get("provider");
+                QUOTE_REFRESHER.setProviderEnabled(market, provider, enabled);
+                FinanceConfig.writeProviderEnabled(CONFIG_PATH, market, provider, enabled);
+            }
             else
                 throw new IllegalArgumentException("unknown control path");
             return CompletableFuture.completedFuture("{}");

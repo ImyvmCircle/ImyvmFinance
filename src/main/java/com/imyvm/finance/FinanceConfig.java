@@ -25,6 +25,8 @@ public record FinanceConfig(
     boolean briefingEnabled,
     boolean setupInitialized,
     Map<String, Set<LocalDate>> marketHolidays,
+    Map<String, Boolean> marketEnabled,
+    Set<String> disabledProviders,
     String language,
     TradingRules tradingRules
 ) {
@@ -40,6 +42,8 @@ public record FinanceConfig(
             true,
             false,
             Map.of(),
+            Map.of("CN", true, "HK", true, "US", true, "CRYPTO", true),
+            Set.of(),
             "zh_cn",
             TradingRules.DEFAULT);
     }
@@ -93,6 +97,8 @@ public record FinanceConfig(
             parseBoolean(properties, "briefing.enabled", defaults.briefingEnabled()),
             parseBoolean(properties, "setup.initialized", defaults.setupInitialized()),
             parseHolidays(properties),
+            parseMarketEnabled(properties),
+            parseDisabledProviders(properties),
             properties.getProperty("language", defaults.language()).trim(),
             new TradingRules(
                 positiveLong(properties, "trading.max-quote-age-minutes", 15) * 60 * 1000,
@@ -108,16 +114,50 @@ public record FinanceConfig(
     public FinanceConfig withSetupInitialized(boolean initialized) {
         return new FinanceConfig(quoteConnectTimeout, quoteReadTimeout,
             quotePollIntervalMinutes, quotePollDelaySeconds, briefingIntervalMinutes, briefingDelaySeconds,
-            briefingEnabled, initialized, marketHolidays, language, tradingRules);
+            briefingEnabled, initialized, marketHolidays, marketEnabled, disabledProviders, language, tradingRules);
+    }
+
+    public static void writeMarketEnabled(Path path, String market, boolean enabled) throws IOException {
+        Properties properties = readProperties(path);
+        properties.setProperty("market.enabled." + market, Boolean.toString(enabled));
+        writeProperties(path, properties);
+    }
+
+    public static void writeProviderEnabled(Path path, String market, String provider, boolean enabled) throws IOException {
+        Properties properties = readProperties(path);
+        Set<String> disabled = parseDisabledProviders(properties);
+        String key = market + ":" + provider;
+        if (enabled) disabled.remove(key); else disabled.add(key);
+        properties.setProperty("market.disabled-providers", String.join(",", disabled));
+        writeProperties(path, properties);
+    }
+
+    private static Properties readProperties(Path path) throws IOException {
+        Properties properties = new Properties();
+        if (Files.exists(path)) try (Reader reader = Files.newBufferedReader(path)) { properties.load(reader); }
+        return properties;
+    }
+
+    private static void writeProperties(Path path, Properties properties) throws IOException {
+        try (Writer writer = Files.newBufferedWriter(path)) { properties.store(writer, "ImyvmFinance settings"); }
+    }
+
+    private static Map<String, Boolean> parseMarketEnabled(Properties properties) {
+        Map<String, Boolean> result = new HashMap<>();
+        for (String market : new String[] {"CN", "HK", "US", "CRYPTO"})
+            result.put(market, parseBoolean(properties, "market.enabled." + market, true));
+        return Map.copyOf(result);
+    }
+
+    private static Set<String> parseDisabledProviders(Properties properties) {
+        Set<String> result = new HashSet<>();
+        for (String value : properties.getProperty("market.disabled-providers", "").split(","))
+            if (!value.trim().isEmpty()) result.add(value.trim());
+        return Set.copyOf(result);
     }
 
     public static void writeSetupInitialized(Path path, boolean initialized) throws IOException {
-        Properties properties = new Properties();
-        if (Files.exists(path)) {
-            try (Reader reader = Files.newBufferedReader(path)) {
-                properties.load(reader);
-            }
-        }
+        Properties properties = readProperties(path);
         properties.setProperty("setup.initialized", Boolean.toString(initialized));
         try (Writer writer = Files.newBufferedWriter(path)) {
             properties.store(writer, "ImyvmFinance settings");

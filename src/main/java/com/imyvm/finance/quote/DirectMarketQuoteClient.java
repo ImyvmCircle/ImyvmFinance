@@ -50,6 +50,7 @@ public final class DirectMarketQuoteClient {
     private final Map<String, Set<java.time.LocalDate>> marketHolidays;
     private final EnumMap<Instrument, MarketQuote> lastQuotes = new EnumMap<>(Instrument.class);
     private final Set<String> disabledProviders = ConcurrentHashMap.newKeySet();
+    private final Map<String, Boolean> marketEnabled;
     private final Set<String> closedMarkets = ConcurrentHashMap.newKeySet();
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout) {
@@ -57,7 +58,15 @@ public final class DirectMarketQuoteClient {
     }
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays) {
+        this(connectTimeout, requestTimeout, marketHolidays, Map.of("CN", true, "HK", true, "US", true, "CRYPTO", true), Set.of());
+    }
+
+    public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays, Map<String, Boolean> marketEnabled, Set<String> disabledProviders) {
         this.marketHolidays = Map.copyOf(marketHolidays);
+        this.marketEnabled = Map.copyOf(marketEnabled);
+        this.disabledProviders.addAll(disabledProviders);
+        if (this.disabledProviders.contains("HK:yahoo") || this.disabledProviders.contains("US:yahoo"))
+            this.disabledProviders.add("GLOBAL:yahoo");
         this.httpClient = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
         this.requestTimeout = requestTimeout;
         this.cryptoClient = new CryptoQuoteClient(connectTimeout, requestTimeout);
@@ -71,22 +80,24 @@ public final class DirectMarketQuoteClient {
         Instant fetchedAt = Instant.now();
         EnumMap<Instrument, MarketQuote> quotes = new EnumMap<>(Instrument.class);
         List<String> alerts = new ArrayList<>();
-        if (!closedMarkets.contains("CN") && MarketHours.status("CN", fetchedAt, marketHolidays.getOrDefault("CN", Set.of())) == MarketStatus.OPEN) {
+        if (marketEnabled.getOrDefault("CN", true) && !closedMarkets.contains("CN") && MarketHours.status("CN", fetchedAt, marketHolidays.getOrDefault("CN", Set.of())) == MarketStatus.OPEN) {
             try {
                 quotes.putAll(fetchChina());
             } catch (Exception exception) {
                 alerts.add("failed:market:CN");
             }
         }
-        if ((!closedMarkets.contains("HK") && MarketHours.status("HK", fetchedAt, marketHolidays.getOrDefault("HK", Set.of())) == MarketStatus.OPEN)
-            || (!closedMarkets.contains("US") && MarketHours.status("US", fetchedAt, marketHolidays.getOrDefault("US", Set.of())) == MarketStatus.OPEN)) {
+        if ((marketEnabled.getOrDefault("HK", true) && !closedMarkets.contains("HK") && MarketHours.status("HK", fetchedAt, marketHolidays.getOrDefault("HK", Set.of())) == MarketStatus.OPEN)
+            || (marketEnabled.getOrDefault("US", true) && !closedMarkets.contains("US") && MarketHours.status("US", fetchedAt, marketHolidays.getOrDefault("US", Set.of())) == MarketStatus.OPEN)) {
             try {
                 quotes.putAll(fetchGlobal());
             } catch (Exception exception) {
                 alerts.add("failed:market:HK_US");
             }
         }
-        if (!closedMarkets.contains("CRYPTO")) try {
+        if (marketEnabled.getOrDefault("CRYPTO", true) && !closedMarkets.contains("CRYPTO")) try {
+            if (disabledProviders.contains("CRYPTO:binance") && disabledProviders.contains("CRYPTO:coinbase"))
+                throw new IllegalStateException("all crypto providers disabled");
             var crypto = disabledProviders.contains("CRYPTO:binance")
                 ? cryptoClient.fetchCoinbase().join()
                 : disabledProviders.contains("CRYPTO:coinbase")
