@@ -186,6 +186,24 @@ public record FinanceConfig(
         return Set.copyOf(result);
     }
 
+    public static void writeQuoteSettings(Path path, long interval, long delay, long jitter, long seed, long briefingInterval, long briefingDelay, boolean briefingEnabled) throws IOException {
+        Properties properties = readProperties(path);
+        properties.setProperty("quote.poll-interval-minutes", Long.toString(interval));
+        properties.setProperty("quote.poll-delay-seconds", Long.toString(delay));
+        properties.setProperty("quote.jitter-seconds", Long.toString(jitter));
+        properties.setProperty("quote.random-seed", Long.toString(seed));
+        properties.setProperty("briefing.interval-minutes", Long.toString(briefingInterval));
+        properties.setProperty("briefing.delay-seconds", Long.toString(briefingDelay));
+        properties.setProperty("briefing.enabled", Boolean.toString(briefingEnabled));
+        writeProperties(path, properties);
+    }
+
+    public static void writeHolidays(Path path, String market, String dates) throws IOException {
+        Properties properties = readProperties(path);
+        properties.setProperty("market.holidays." + market, dates);
+        writeProperties(path, properties);
+    }
+
     public static void writeSetupInitialized(Path path, boolean initialized) throws IOException {
         Properties properties = readProperties(path);
         properties.setProperty("setup.initialized", Boolean.toString(initialized));

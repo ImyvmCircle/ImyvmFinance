@@ -417,6 +417,14 @@ public final class ImyvmFinance implements ModInitializer {
         return new DirectMarketQuoteClient(CONFIG.quoteConnectTimeout(), CONFIG.quoteReadTimeout(), CONFIG.marketHolidays(), CONFIG.marketEnabled(), CONFIG.disabledProviders(), CONFIG.providerOrder()).fetch();
     }
 
+    public static void configureQuoteSettings(long interval, long delay, long jitter, long seed, long briefingInterval, long briefingDelay, boolean briefingEnabled) throws java.io.IOException {
+        FinanceConfig.writeQuoteSettings(CONFIG_PATH, interval, delay, jitter, seed, briefingInterval, briefingDelay, briefingEnabled);
+    }
+
+    public static void configureHolidays(String market, String dates) throws java.io.IOException {
+        FinanceConfig.writeHolidays(CONFIG_PATH, market, dates);
+    }
+
     public static void completeSetup() throws java.io.IOException {
         if (CONFIG_PATH == null)
             throw new IllegalStateException("finance config path is unavailable");

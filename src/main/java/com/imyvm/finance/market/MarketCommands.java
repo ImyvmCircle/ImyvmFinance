@@ -177,7 +177,22 @@ public final class MarketCommands {
 
         var setup = Commands.literal("setup")
             .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
-            .executes(MarketCommands::setup);
+            .executes(MarketCommands::setup)
+            .then(Commands.literal("poll")
+                .then(Commands.argument("interval", LongArgumentType.longArg(1))
+                    .then(Commands.argument("delay", LongArgumentType.longArg(0))
+                        .then(Commands.argument("jitter", LongArgumentType.longArg(0))
+                            .then(Commands.argument("seed", LongArgumentType.longArg())
+                                .executes(MarketCommands::configurePoll))))))
+            .then(Commands.literal("briefing")
+                .then(Commands.argument("interval", LongArgumentType.longArg(1))
+                    .then(Commands.argument("delay", LongArgumentType.longArg(0))
+                        .then(Commands.argument("enabled", StringArgumentType.word())
+                            .executes(MarketCommands::configureBriefing)))))
+            .then(Commands.literal("holiday")
+                .then(Commands.argument("market", StringArgumentType.word())
+                    .then(Commands.argument("dates", StringArgumentType.greedyString())
+                        .executes(MarketCommands::configureHoliday))));
 
         var market = dispatcher.register(Commands.literal("imyvm-market")
             .executes(MarketCommands::help)
@@ -242,6 +257,29 @@ public final class MarketCommands {
                 return null;
             });
         return Command.SINGLE_SUCCESS;
+    }
+
+    private static int configurePoll(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        try {
+            ImyvmFinance.configureQuoteSettings(LongArgumentType.getLong(context, "interval"), LongArgumentType.getLong(context, "delay"), LongArgumentType.getLong(context, "jitter"), LongArgumentType.getLong(context, "seed"), ImyvmFinance.CONFIG.briefingIntervalMinutes(), ImyvmFinance.CONFIG.briefingDelaySeconds(), ImyvmFinance.CONFIG.briefingEnabled());
+            context.getSource().sendSuccess(() -> Component.literal("quote settings saved; restart required"), true);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) { return failUnexpected(context.getSource(), "quote configuration", exception); }
+    }
+
+    private static int configureBriefing(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        try {
+            ImyvmFinance.configureQuoteSettings(ImyvmFinance.CONFIG.quotePollIntervalMinutes(), ImyvmFinance.CONFIG.quotePollDelaySeconds(), ImyvmFinance.CONFIG.quoteJitterSeconds(), ImyvmFinance.CONFIG.quoteRandomSeed(), LongArgumentType.getLong(context, "interval"), LongArgumentType.getLong(context, "delay"), Boolean.parseBoolean(StringArgumentType.getString(context, "enabled")));
+            context.getSource().sendSuccess(() -> Component.literal("briefing settings saved; restart required"), true);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) { return failUnexpected(context.getSource(), "briefing configuration", exception); }
+    }
+
+    private static int configureHoliday(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        String market = StringArgumentType.getString(context, "market").toUpperCase();
+        if (!knownMarket(market)) return 0;
+        try { ImyvmFinance.configureHolidays(market, StringArgumentType.getString(context, "dates")); context.getSource().sendSuccess(() -> Component.literal("holiday settings saved; restart required"), true); return Command.SINGLE_SUCCESS; }
+        catch (Exception exception) { return failUnexpected(context.getSource(), "holiday configuration", exception); }
     }
 
     private static int rules(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
