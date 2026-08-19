@@ -27,8 +27,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class DirectMarketQuoteClient {
+    private static final Logger LOGGER = LoggerFactory.getLogger("imyvm_finance/quotes");
     private static final URI CHINA_EASTMONEY = URI.create(
         "https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2&fields=f12,f14,f2,f3"
             + "&secids=1.000001,0.399001,0.399006,1.000300,1.000905");
@@ -48,6 +51,7 @@ public final class DirectMarketQuoteClient {
     private final Map<String, Set<java.time.LocalDate>> marketHolidays;
     private final Map<String, List<String>> providerOrder;
     private final Map<String, String> activeProviders = new ConcurrentHashMap<>();
+    private final Map<String, Integer> providerCursors = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> requestCounts = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> failureCounts = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> lastAttemptAt = new ConcurrentHashMap<>();
@@ -123,7 +127,7 @@ public final class DirectMarketQuoteClient {
 
     private Map<Instrument, MarketQuote> fetchChina() throws Exception {
         Exception failure = null;
-        for (String provider : providerOrder.getOrDefault("CN", List.of("eastmoney", "sina"))) {
+        for (String provider : scheduledProviders("CN")) {
             if (disabledProviders.contains("CN:" + provider)) continue;
             String statsKey = "CN:" + provider;
             if (isBackedOff(statsKey)) continue;
@@ -136,16 +140,22 @@ public final class DirectMarketQuoteClient {
                     default -> throw new IllegalArgumentException("unknown CN provider: " + provider);
                 };
                 activeProviders.put("CN", provider);
+                advanceProviderCursor("CN", provider);
                 recordSuccess(statsKey);
+                LOGGER.info("Quote provider succeeded: market=CN provider={}", provider);
                 return result;
-            } catch (Exception exception) { recordFailure(statsKey, exception); failure = exception; }
+            } catch (Exception exception) {
+                recordFailure(statsKey, exception);
+                LOGGER.warn("Quote provider failed: market=CN provider={} error={}", provider, errorMessage(exception));
+                failure = exception;
+            }
         }
         throw failure == null ? new IllegalStateException("no CN providers enabled") : failure;
     }
 
     private com.imyvm.finance.market.QuoteSnapshot fetchCrypto() throws Exception {
         Exception failure = null;
-        for (String provider : providerOrder.getOrDefault("CRYPTO", List.of("binance", "coinbase", "kraken", "okx", "bybit", "bitstamp"))) {
+        for (String provider : scheduledProviders("CRYPTO")) {
             if (disabledProviders.contains("CRYPTO:" + provider)) continue;
             String statsKey = "CRYPTO:" + provider;
             if (isBackedOff(statsKey)) continue;
@@ -161,11 +171,40 @@ public final class DirectMarketQuoteClient {
                     default -> throw new IllegalArgumentException("unknown crypto provider: " + provider);
                 };
                 activeProviders.put("CRYPTO", provider);
+                advanceProviderCursor("CRYPTO", provider);
                 recordSuccess(statsKey);
+                LOGGER.info("Quote provider succeeded: market=CRYPTO provider={}", provider);
                 return result;
-            } catch (Exception exception) { recordFailure(statsKey, exception); failure = exception; }
+            } catch (Exception exception) {
+                recordFailure(statsKey, exception);
+                LOGGER.warn("Quote provider failed: market=CRYPTO provider={} error={}", provider, errorMessage(exception));
+                failure = exception;
+            }
         }
         throw failure == null ? new IllegalStateException("no crypto providers enabled") : failure;
+    }
+
+    private List<String> scheduledProviders(String market) {
+        List<String> providers = providerOrder.getOrDefault(market, List.of());
+        if (providers.isEmpty())
+            return providers;
+        int start = Math.floorMod(providerCursors.getOrDefault(market, 0), providers.size());
+        List<String> scheduled = new ArrayList<>(providers.size());
+        for (int offset = 0; offset < providers.size(); offset++)
+            scheduled.add(providers.get((start + offset) % providers.size()));
+        LOGGER.info("Quote provider schedule: market={} start={} providers={}", market, start, scheduled);
+        return scheduled;
+    }
+
+    private void advanceProviderCursor(String market, String provider) {
+        List<String> providers = providerOrder.getOrDefault(market, List.of());
+        int index = providers.indexOf(provider);
+        if (index >= 0)
+            providerCursors.put(market, (index + 1) % providers.size());
+    }
+
+    private static String errorMessage(Exception exception) {
+        return exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage();
     }
 
     public synchronized String controlStatus() {
