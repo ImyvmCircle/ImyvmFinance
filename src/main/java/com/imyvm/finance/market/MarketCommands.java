@@ -867,6 +867,8 @@ public final class MarketCommands {
             JsonObject root = JsonParser.parseString(body).getAsJsonObject();
             source.sendSuccess(() -> Translator.tr("commands.market.source.status.header"), false);
             source.sendSuccess(() -> Translator.tr("commands.market.source.status.since", value(root, "statsSince", "-")), false);
+            String outages = root.has("marketOutages") ? root.get("marketOutages").toString().replace("\"", "").replace("[", "").replace("]", "") : "";
+            source.sendSuccess(() -> Translator.tr("commands.market.source.status.outage", outages.isEmpty() ? "-" : outages), false);
             JsonObject scheduler = root.getAsJsonObject("scheduler");
             if (scheduler != null) {
                 source.sendSuccess(() -> Translator.tr("commands.market.source.status.scheduler.config",

@@ -161,6 +161,7 @@
   "imyvm_finance.commands.market.confirmation.expired": "§c该确认已过期或已使用。",
   "imyvm_finance.commands.market.source.status.header": "§6§l=== 行情源状态 ===§r",
   "imyvm_finance.commands.market.source.status.since": "§7统计起点：§8{0}",
+  "imyvm_finance.commands.market.source.status.outage": "§e故障探测市场：§f{0}",
   "imyvm_finance.commands.market.source.status.market": "§6{0}§r §7上次成功：§f§l{1}§r §7调度顺序：§8{2}",
   "imyvm_finance.commands.market.source.status.provider": "  §f§l{0}§r §7请求 §e{1} §7次，失败 §c{2} §7次（§e{3}%§7）；{4} §8最近请求 {5}，成功 {6}，异常 {7}",
   "imyvm_finance.commands.market.source.status.backoff": "§e退避中，剩余 §f{0}§e 秒",

@@ -64,6 +64,7 @@ public final class DirectMarketQuoteClient {
     private final Set<String> disabledProviders = ConcurrentHashMap.newKeySet();
     private final Map<String, Boolean> marketEnabled;
     private final Set<String> closedMarkets = ConcurrentHashMap.newKeySet();
+    private final Set<String> marketOutages = ConcurrentHashMap.newKeySet();
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout) {
         this(connectTimeout, requestTimeout, Map.of());
@@ -97,18 +98,26 @@ public final class DirectMarketQuoteClient {
         EnumMap<Instrument, MarketQuote> quotes = new EnumMap<>(Instrument.class);
         List<String> alerts = new ArrayList<>();
         if (marketEnabled.getOrDefault("CN", true) && !closedMarkets.contains("CN") && MarketHours.status("CN", fetchedAt, marketHolidays.getOrDefault("CN", Set.of())) == MarketStatus.OPEN) {
+            boolean probing = marketOutages.contains("CN");
             try {
                 quotes.putAll(fetchChina());
+                if (probing)
+                    alerts.add("recovered:market:CN");
             } catch (Exception exception) {
                 alerts.add("failed:market:CN");
             }
         }
-        if (marketEnabled.getOrDefault("CRYPTO", true) && !closedMarkets.contains("CRYPTO")) try {
-            var crypto = fetchCrypto();
-            quotes.putAll(crypto.quotes().stream()
-                .collect(java.util.stream.Collectors.toMap(MarketQuote::instrument, quote -> quote)));
-        } catch (Exception exception) {
-            alerts.add("failed:market:CRYPTO");
+        if (marketEnabled.getOrDefault("CRYPTO", true) && !closedMarkets.contains("CRYPTO")) {
+            boolean probing = marketOutages.contains("CRYPTO");
+            try {
+                var crypto = fetchCrypto();
+                quotes.putAll(crypto.quotes().stream()
+                    .collect(java.util.stream.Collectors.toMap(MarketQuote::instrument, quote -> quote)));
+                if (probing)
+                    alerts.add("recovered:market:CRYPTO");
+            } catch (Exception exception) {
+                alerts.add("failed:market:CRYPTO");
+            }
         }
         lastQuotes.putAll(quotes);
         for (Instrument instrument : Instrument.values()) {
@@ -127,7 +136,11 @@ public final class DirectMarketQuoteClient {
 
     private Map<Instrument, MarketQuote> fetchChina() throws Exception {
         Exception failure = null;
-        for (String provider : scheduledProviders("CN")) {
+        boolean probing = marketOutages.contains("CN");
+        List<String> providers = providersForAttempt("CN");
+        if (probing)
+            LOGGER.info("Market recovery probe: market=CN provider={}", providers.isEmpty() ? "none" : providers.getFirst());
+        for (String provider : providers) {
             if (disabledProviders.contains("CN:" + provider)) continue;
             String statsKey = "CN:" + provider;
             if (isBackedOff(statsKey)) {
@@ -146,6 +159,7 @@ public final class DirectMarketQuoteClient {
                 activeProviders.put("CN", provider);
                 advanceProviderCursor("CN", provider);
                 recordSuccess(statsKey);
+                marketOutages.remove("CN");
                 LOGGER.info("Quote provider succeeded: market=CN provider={}", provider);
                 return result;
             } catch (Exception exception) {
@@ -154,12 +168,17 @@ public final class DirectMarketQuoteClient {
                 failure = exception;
             }
         }
+        marketOutages.add("CN");
         throw failure == null ? new IllegalStateException("no CN providers enabled") : failure;
     }
 
     private com.imyvm.finance.market.QuoteSnapshot fetchCrypto() throws Exception {
         Exception failure = null;
-        for (String provider : scheduledProviders("CRYPTO")) {
+        boolean probing = marketOutages.contains("CRYPTO");
+        List<String> providers = providersForAttempt("CRYPTO");
+        if (probing)
+            LOGGER.info("Market recovery probe: market=CRYPTO provider={}", providers.isEmpty() ? "none" : providers.getFirst());
+        for (String provider : providers) {
             if (disabledProviders.contains("CRYPTO:" + provider)) continue;
             String statsKey = "CRYPTO:" + provider;
             if (isBackedOff(statsKey)) {
@@ -181,6 +200,7 @@ public final class DirectMarketQuoteClient {
                 activeProviders.put("CRYPTO", provider);
                 advanceProviderCursor("CRYPTO", provider);
                 recordSuccess(statsKey);
+                marketOutages.remove("CRYPTO");
                 LOGGER.info("Quote provider succeeded: market=CRYPTO provider={}", provider);
                 return result;
             } catch (Exception exception) {
@@ -189,7 +209,20 @@ public final class DirectMarketQuoteClient {
                 failure = exception;
             }
         }
+        marketOutages.add("CRYPTO");
         throw failure == null ? new IllegalStateException("no crypto providers enabled") : failure;
+    }
+
+    private List<String> providersForAttempt(String market) {
+        List<String> scheduled = scheduledProviders(market);
+        if (!marketOutages.contains(market))
+            return scheduled;
+        for (String provider : scheduled) {
+            String key = market + ":" + provider;
+            if (!disabledProviders.contains(key) && !isBackedOff(key))
+                return List.of(provider);
+        }
+        return List.of();
     }
 
     private List<String> scheduledProviders(String market) {
@@ -216,7 +249,8 @@ public final class DirectMarketQuoteClient {
     }
 
     public synchronized String controlStatus() {
-        return "{\"closedMarkets\":" + jsonArray(closedMarkets) + ",\"disabledProviders\":" + jsonArray(disabledProviders)
+        return "{\"closedMarkets\":" + jsonArray(closedMarkets) + ",\"marketOutages\":" + jsonArray(marketOutages)
+            + ",\"disabledProviders\":" + jsonArray(disabledProviders)
             + ",\"lastSuccessfulProviders\":" + jsonMap(activeProviders) + ",\"providerOrder\":" + jsonMapList(providerOrder)
             + ",\"statsSince\":" + jsonString(Instant.ofEpochMilli(statsStartedAt).toString())
             + ",\"providerStats\":" + jsonStats() + "}";
