@@ -83,6 +83,7 @@ _last_market_digest: str | None = None
 _last_market_time = 0
 _unavailable: set[str] = set()
 _market_providers = DEFAULT_MARKET_PROVIDERS
+_active_providers: dict[str, str] = {market: providers[0] for market, providers in DEFAULT_MARKET_PROVIDERS.items()}
 _open_delay_seconds = 60.0
 _closed_poll_seconds = 30.0
 
@@ -280,25 +281,41 @@ def _fetch_market_quotes(active: set[str], now: datetime) -> dict[str, dict[str,
     result: dict[str, dict[str, str]] = {}
     for market in sorted(active):
         expected = {symbol for symbol in INSTRUMENTS if symbol.startswith(market + ":")}
-        for provider in _market_providers.get(market, ()):
-            if provider == "yahoo":
-                for symbol in expected - result.keys():
-                    try:
+        providers = _market_providers.get(market, ())
+        if not providers:
+            continue
+        current = _active_providers.get(market, providers[0])
+        ordered_providers = (current,) + tuple(provider for provider in providers if provider != current)
+        market_result: dict[str, dict[str, str]] = {}
+        for provider in ordered_providers:
+            try:
+                candidate: dict[str, dict[str, str]] = {}
+                if provider == "yahoo":
+                    for symbol in expected - market_result.keys():
                         fallback = _fetch_yahoo(symbol, now)
                         if fallback is not None:
-                            result[symbol] = fallback
-                    except Exception:
-                        continue
-            else:
-                if ak is None:
-                    ak = _akshare()
-                if provider not in provider_cache:
-                    provider_cache[provider] = _provider_quotes(provider, ak, now, active)
-                for symbol, quote_value in provider_cache[provider].items():
-                    if symbol in expected:
-                        result.setdefault(symbol, quote_value)
-            if expected <= result.keys():
+                            candidate[symbol] = fallback
+                else:
+                    if ak is None:
+                        ak = _akshare()
+                    if provider not in provider_cache:
+                        provider_cache[provider] = _provider_quotes(provider, ak, now, active)
+                    candidate = {symbol: quote_value for symbol, quote_value in provider_cache[provider].items()
+                        if symbol in expected}
+                if expected <= candidate.keys():
+                    market_result = candidate
+                else:
+                    for symbol, quote_value in candidate.items():
+                        market_result.setdefault(symbol, quote_value)
+            except Exception as exc:
+                print(f"[sidecar] provider {provider} failed for {market}: {exc}")
+                continue
+            if expected <= market_result.keys():
+                if _active_providers.get(market) != provider:
+                    print(f"[sidecar] provider for {market} switched to {provider}")
+                    _active_providers[market] = provider
                 break
+        result.update(market_result)
     return result
 
 
@@ -418,8 +435,9 @@ def main() -> None:
     parser.add_argument("--open-delay-seconds", type=float, default=60.0)
     parser.add_argument("--closed-poll-seconds", type=float, default=30.0)
     args = parser.parse_args()
-    global _market_providers, _open_delay_seconds, _closed_poll_seconds
+    global _market_providers, _active_providers, _open_delay_seconds, _closed_poll_seconds
     _market_providers = _parse_market_providers(args.market_providers)
+    _active_providers = {market: providers[0] for market, providers in _market_providers.items() if providers}
     _open_delay_seconds = max(0.0, args.open_delay_seconds)
     _closed_poll_seconds = max(5.0, args.closed_poll_seconds)
     Handler.cache_seconds = max(0.0, args.cache_seconds)
