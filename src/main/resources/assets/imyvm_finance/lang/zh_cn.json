@@ -39,6 +39,8 @@
   "imyvm_finance.commands.market.quote.unavailable": "{0}§c 暂无已确认行情。",
   "imyvm_finance.commands.market.quote.failed": "§e行情抓取失败，§f§l{0}§r §e的交易将在十五分钟后停止。",
   "imyvm_finance.commands.market.quote.recovered": "§a行情抓取已恢复，§f§l{0}§r §a可继续等待新报价。",
+  "imyvm_finance.commands.market.quote.market_failed": "§e行情 API 读取失败，市场 §f§l{0}§r §e将继续切换备用来源。",
+  "imyvm_finance.commands.market.quote.market_recovered": "§a行情 API 已恢复，市场 §f§l{0}§r §a已恢复读取。",
   "imyvm_finance.commands.market.quote.result": "{0}§7：§e{1}§7，涨跌 §f{2} §8[ {3} §8]",
   "imyvm_finance.commands.market.notice.startup": "§6§l=== IMYVM 金融市场服务已启动 ===§r\n§7市场状态与行情将在后台读取；即使当前暂无行情，市场状态公告仍会正常发送。",
   "imyvm_finance.commands.market.notice.opened": "§a§l市场 {0} 已经开市！§r §7行情读取与交易状态正在更新。",

@@ -39,6 +39,8 @@
   "imyvm_finance.commands.market.quote.unavailable": "{0}§c: no confirmed quote is available.",
   "imyvm_finance.commands.market.quote.failed": "§eQuote retrieval failed; trading for §f§l{0}§r §estops in fifteen minutes.",
   "imyvm_finance.commands.market.quote.recovered": "§aQuote retrieval recovered for §f§l{0}§r§a.",
+  "imyvm_finance.commands.market.quote.market_failed": "§eMarket data API failed for §f§l{0}§r§e; fallback sources will continue to be tried.",
+  "imyvm_finance.commands.market.quote.market_recovered": "§aMarket data API recovered for §f§l{0}§r§a.",
   "imyvm_finance.commands.market.quote.result": "{0}§7: §e{1}§7, change §f{2} §8[ {3} §8]",
   "imyvm_finance.commands.market.notice.startup": "§6§l=== IMYVM Finance market service started ===§r\n§7Market status and quotes will be read in the background; status notices are sent even when quotes are unavailable.",
   "imyvm_finance.commands.market.notice.opened": "§a§lMarket {0} is now open!§r §7Quotes and trading status are being updated.",

@@ -83,6 +83,7 @@ _last_snapshot: dict[str, Any] | None = None
 _last_market_digest: str | None = None
 _last_market_time = 0
 _unavailable: set[str] = set()
+_market_unavailable: set[str] = set()
 _market_providers = DEFAULT_MARKET_PROVIDERS
 _active_providers: dict[str, str] = {market: providers[0] for market, providers in DEFAULT_MARKET_PROVIDERS.items()}
 _open_delay_seconds = 60.0
@@ -276,7 +277,8 @@ def _provider_quotes(provider: str, ak: Any, now: datetime, active: set[str]) ->
     return {}
 
 
-def _fetch_market_quotes(active: set[str], now: datetime) -> dict[str, dict[str, str]]:
+def _fetch_market_quotes(active: set[str], now: datetime) -> tuple[dict[str, dict[str, str]], set[str]]:
+    failed_markets: set[str] = set()
     ak = None
     provider_cache: dict[str, dict[str, dict[str, str]]] = {}
     result: dict[str, dict[str, str]] = {}
@@ -319,12 +321,23 @@ def _fetch_market_quotes(active: set[str], now: datetime) -> dict[str, dict[str,
         if expected - market_result.keys():
             missing = ",".join(sorted(expected - market_result.keys()))
             print(f"[sidecar] all providers failed for {market}; missing {missing}")
+            failed_markets.add(market)
         result.update(market_result)
-    return result
+    return result, failed_markets
 
 
-def _build_snapshot(quotes: dict[str, dict[str, str]], now: datetime) -> dict[str, Any]:
+def _market_alerts(failed_markets: set[str]) -> list[str]:
+    global _market_unavailable
+    alerts = ["failed:market:" + market for market in sorted(failed_markets - _market_unavailable)]
+    alerts.extend("recovered:market:" + market for market in sorted(_market_unavailable - failed_markets))
+    _market_unavailable = set(failed_markets)
+    return alerts
+
+
+def _build_snapshot(quotes: dict[str, dict[str, str]], now: datetime, failed_markets: set[str] | None = None) -> dict[str, Any]:
     global _last_market_digest, _last_market_time, _last_quotes, _last_snapshot
+    if failed_markets is None:
+        failed_markets = set()
     _last_quotes.update(quotes)
     statuses = _market_statuses(now)
     for quote_value in _last_quotes.values():
@@ -342,7 +355,8 @@ def _build_snapshot(quotes: dict[str, dict[str, str]], now: datetime) -> dict[st
         _last_market_time = timestamp
     available = {quote_value["symbol"] for quote_value in ordered}
     failed = set(INSTRUMENTS) - available
-    alerts = ["failed:" + symbol for symbol in sorted(failed - _unavailable)]
+    alerts = _market_alerts(failed_markets)
+    alerts.extend("failed:" + symbol for symbol in sorted(failed - _unavailable))
     alerts.extend("recovered:" + symbol for symbol in sorted(_unavailable & available))
     _unavailable.clear()
     _unavailable.update(failed)
@@ -362,13 +376,15 @@ def fetch_snapshot() -> dict[str, Any]:
     now = datetime.now(timezone.utc)
     active = _active_markets(now)
     if active:
-        fresh = _fetch_market_quotes(active, now)
+        fresh, failed_markets = _fetch_market_quotes(active, now)
         if fresh:
-            return _build_snapshot(fresh, now)
+            return _build_snapshot(fresh, now, failed_markets)
         if _last_snapshot is not None:
-            return _last_snapshot
+            snapshot = dict(_last_snapshot)
+            snapshot["alerts"] = _market_alerts(failed_markets)
+            return snapshot
     if _last_quotes:
-        return _build_snapshot({}, now)
+        return _build_snapshot({}, now, set())
     raise RuntimeError("all markets are closed and quote cache is empty")
 
 

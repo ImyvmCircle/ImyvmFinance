@@ -195,6 +195,14 @@ public final class FinanceSelfTest {
             trading.setBriefingOptedOut(subscriber, false);
             check(!trading.isBriefingOptedOut(subscriber), "briefing re-subscribed");
             check(trading.findBriefingOptOuts().isEmpty(), "briefing opt-out cleared");
+            UUID alertPlayer = UUID.randomUUID();
+            for (int index = 0; index < 11; index++)
+                trading.enqueueMarketAlert("failed:market:" + index, index);
+            var pendingAlerts = trading.findUndeliveredMarketAlerts(alertPlayer);
+            checkEquals(10, pendingAlerts.size(), "market alert retention");
+            checkEquals("failed:market:1", pendingAlerts.getFirst().alert(), "market alert oldest retained");
+            trading.markMarketAlertDelivered(alertPlayer, pendingAlerts.getFirst().id());
+            checkEquals(9, trading.findUndeliveredMarketAlerts(alertPlayer).size(), "market alert receipt");
 
             UUID player = UUID.randomUUID();
             UUID positionId = createActiveBuy(trading, transactions, player, 100L);

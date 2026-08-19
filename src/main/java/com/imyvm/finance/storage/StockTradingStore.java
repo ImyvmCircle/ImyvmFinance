@@ -22,6 +22,8 @@ import java.sql.Statement;
 import java.util.UUID;
 
 public final class StockTradingStore implements AutoCloseable {
+    public record MarketAlert(long id, String alert) {}
+
     private final Connection connection;
 
     private StockTradingStore(Connection connection) throws SQLException {
@@ -101,6 +103,22 @@ public final class StockTradingStore implements AutoCloseable {
                 )
                 """);
             statement.execute("""
+                CREATE TABLE IF NOT EXISTS market_alerts (
+                    alert_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    alert TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                )
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS market_alert_receipts (
+                    alert_id INTEGER NOT NULL,
+                    player_id TEXT NOT NULL,
+                    delivered_at INTEGER NOT NULL,
+                    PRIMARY KEY (alert_id, player_id),
+                    FOREIGN KEY (alert_id) REFERENCES market_alerts(alert_id) ON DELETE CASCADE
+                )
+                """);
+            statement.execute("""
                 CREATE INDEX IF NOT EXISTS stock_orders_player_state_idx
                 ON stock_orders(player_id, state)
                 """);
@@ -111,6 +129,10 @@ public final class StockTradingStore implements AutoCloseable {
             statement.execute("""
                 CREATE INDEX IF NOT EXISTS stock_trades_player_created_idx
                 ON stock_trades(player_id, created_at)
+                """);
+            statement.execute("""
+                CREATE INDEX IF NOT EXISTS market_alerts_created_idx
+                ON market_alerts(alert_id)
                 """);
         }
     }
@@ -199,6 +221,58 @@ public final class StockTradingStore implements AutoCloseable {
             while (result.next())
                 players.add(UUID.fromString(result.getString(1)));
             return players;
+        }
+    }
+
+    public synchronized long enqueueMarketAlert(String alert, long createdAt) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(
+            "INSERT INTO market_alerts(alert, created_at) VALUES (?, ?)")) {
+            statement.setString(1, alert);
+            statement.setLong(2, createdAt);
+            statement.executeUpdate();
+        }
+        long id;
+        try (Statement statement = connection.createStatement();
+             ResultSet result = statement.executeQuery("SELECT last_insert_rowid()")) {
+            result.next();
+            id = result.getLong(1);
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("DELETE FROM market_alerts WHERE alert_id NOT IN "
+                + "(SELECT alert_id FROM market_alerts ORDER BY alert_id DESC LIMIT 10)");
+        }
+        return id;
+    }
+
+    public synchronized List<MarketAlert> findUndeliveredMarketAlerts(UUID playerId) throws SQLException {
+        List<MarketAlert> alerts = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement("""
+            SELECT a.alert_id, a.alert
+            FROM market_alerts a
+            LEFT JOIN market_alert_receipts r
+                ON r.alert_id = a.alert_id AND r.player_id = ?
+            WHERE r.alert_id IS NULL
+            ORDER BY a.alert_id ASC
+            LIMIT 10
+            """)) {
+            statement.setString(1, playerId.toString());
+            try (ResultSet result = statement.executeQuery()) {
+                while (result.next())
+                    alerts.add(new MarketAlert(result.getLong(1), result.getString(2)));
+            }
+        }
+        return alerts;
+    }
+
+    public synchronized void markMarketAlertDelivered(UUID playerId, long alertId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            INSERT OR IGNORE INTO market_alert_receipts(alert_id, player_id, delivered_at)
+            VALUES (?, ?, ?)
+            """)) {
+            statement.setLong(1, alertId);
+            statement.setString(2, playerId.toString());
+            statement.setLong(3, System.currentTimeMillis());
+            statement.executeUpdate();
         }
     }
 

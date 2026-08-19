@@ -83,8 +83,10 @@ public final class ImyvmFinance implements ModInitializer {
             pruneExpiredData();
             sendMarketBriefing(server);
         });
-        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
-            notifyPendingSettlement(handler.getPlayer()));
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            notifyPendingSettlement(handler.getPlayer());
+            notifyPendingMarketAlerts(handler.getPlayer());
+        });
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> closeQuoteStore());
         LOGGER.info("Initializing Imyvm Finance");
     }
@@ -172,6 +174,20 @@ public final class ImyvmFinance implements ModInitializer {
                 player.sendSystemMessage(Translator.tr("commands.market.pending.player_notice", count));
         } catch (Exception exception) {
             LOGGER.error("Failed to read pending finance settlements for {}", player.getUUID(), exception);
+        }
+    }
+
+    private static void notifyPendingMarketAlerts(net.minecraft.server.level.ServerPlayer player) {
+        if (TRADING_STORE == null
+            || !player.createCommandSourceStack().permissions().hasPermission(Permissions.COMMANDS_ADMIN))
+            return;
+        try {
+            for (StockTradingStore.MarketAlert alert : TRADING_STORE.findUndeliveredMarketAlerts(player.getUUID())) {
+                player.sendSystemMessage(marketAlertMessage(alert.alert()));
+                TRADING_STORE.markMarketAlertDelivered(player.getUUID(), alert.id());
+            }
+        } catch (Exception exception) {
+            LOGGER.error("Failed to deliver pending market alerts for {}", player.getUUID(), exception);
         }
     }
 
@@ -336,18 +352,42 @@ public final class ImyvmFinance implements ModInitializer {
     }
 
     private static void notifyQuoteAlert(String alert) {
+        long alertId = -1L;
+        if (TRADING_STORE != null) {
+            try {
+                alertId = TRADING_STORE.enqueueMarketAlert(alert, System.currentTimeMillis());
+            } catch (Exception exception) {
+                LOGGER.error("Failed to persist market alert {}", alert, exception);
+            }
+        }
         net.minecraft.server.MinecraftServer server = SERVER;
         if (server == null)
             return;
+        long persistedAlertId = alertId;
         server.execute(() -> {
-            Component message = alert.startsWith("recovered:")
-                ? Translator.tr("commands.market.quote.recovered", alert.substring("recovered:".length()))
-                : Translator.tr("commands.market.quote.failed", alert.substring("failed:".length()));
+            Component message = marketAlertMessage(alert);
             for (var player : server.getPlayerList().getPlayers()) {
-                if (player.createCommandSourceStack().permissions().hasPermission(Permissions.COMMANDS_ADMIN))
+                if (player.createCommandSourceStack().permissions().hasPermission(Permissions.COMMANDS_ADMIN)) {
                     player.sendSystemMessage(message);
+                    if (persistedAlertId >= 0 && TRADING_STORE != null) {
+                        try {
+                            TRADING_STORE.markMarketAlertDelivered(player.getUUID(), persistedAlertId);
+                        } catch (Exception exception) {
+                            LOGGER.error("Failed to mark market alert delivered for {}", player.getUUID(), exception);
+                        }
+                    }
+                }
             }
         });
+    }
+
+    private static Component marketAlertMessage(String alert) {
+        boolean recovered = alert.startsWith("recovered:");
+        String value = alert.substring((recovered ? "recovered:" : "failed:").length());
+        if (value.startsWith("market:"))
+            return Translator.tr("commands.market.quote." + (recovered ? "market_recovered" : "market_failed"),
+                value.substring("market:".length()));
+        return Translator.tr("commands.market.quote." + (recovered ? "recovered" : "failed"), value);
     }
 
     private static void closeQuoteStore() {
