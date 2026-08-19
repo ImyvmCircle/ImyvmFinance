@@ -49,6 +49,7 @@ public final class DirectMarketQuoteClient {
     private final CryptoQuoteClient cryptoClient;
     private final Map<String, Set<java.time.LocalDate>> marketHolidays;
     private final Map<String, List<String>> providerOrder;
+    private final Map<String, String> activeProviders = new ConcurrentHashMap<>();
     private final EnumMap<Instrument, MarketQuote> lastQuotes = new EnumMap<>(Instrument.class);
     private final Set<String> disabledProviders = ConcurrentHashMap.newKeySet();
     private final Map<String, Boolean> marketEnabled;
@@ -138,11 +139,13 @@ public final class DirectMarketQuoteClient {
         for (String provider : providerOrder.getOrDefault("CRYPTO", List.of("binance", "coinbase"))) {
             if (disabledProviders.contains("CRYPTO:" + provider)) continue;
             try {
-                return switch (provider) {
+                var result = switch (provider) {
                     case "binance" -> cryptoClient.fetchBinance().join();
                     case "coinbase" -> cryptoClient.fetchCoinbase().join();
                     default -> throw new IllegalArgumentException("unknown crypto provider: " + provider);
                 };
+                activeProviders.put("CRYPTO", provider);
+                return result;
             } catch (Exception exception) { failure = exception; }
         }
         throw failure == null ? new IllegalStateException("no crypto providers enabled") : failure;
@@ -151,6 +154,7 @@ public final class DirectMarketQuoteClient {
     private Map<Instrument, MarketQuote> fetchGlobal() throws Exception {
         if (disabledProviders.contains("GLOBAL:yahoo"))
             throw new IllegalStateException("Yahoo disabled");
+        activeProviders.put("GLOBAL", "yahoo");
         EnumMap<Instrument, MarketQuote> result = new EnumMap<>(Instrument.class);
         Instant now = Instant.now();
         for (Map.Entry<Instrument, String> entry : YAHOO_SYMBOLS.entrySet()) {
