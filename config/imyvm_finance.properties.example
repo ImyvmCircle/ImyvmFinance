@@ -2,15 +2,9 @@
 market.connect-timeout-ms=1000
 market.read-timeout-ms=2000
 market.holidays.CN=
-market.holidays.HK=
-market.holidays.US=
 market.enabled.CN=true
-market.enabled.HK=true
-market.enabled.US=true
 market.enabled.CRYPTO=true
 market.providers.CN=eastmoney,sina,tencent
-market.providers.HK=yahoo
-market.providers.US=yahoo
 market.providers.CRYPTO=binance,coinbase,kraken,okx,bybit,bitstamp
 market.disabled-providers=
 quote.poll-interval-minutes=5

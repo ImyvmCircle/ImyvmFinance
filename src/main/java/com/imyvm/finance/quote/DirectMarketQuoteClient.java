@@ -24,6 +24,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 
 public final class DirectMarketQuoteClient {
@@ -33,12 +35,6 @@ public final class DirectMarketQuoteClient {
     private static final URI CHINA_TENCENT = URI.create("https://qt.gtimg.cn/q=s_sh000001,s_sz399001,s_sz399006,s_sh000300,s_sh000905");
     private static final URI CHINA_SINA = URI.create(
         "https://hq.sinajs.cn/list=s_sh000001,s_sz399001,s_sz399006,s_sh000300,s_sh000905");
-    private static final Map<Instrument, String> YAHOO_SYMBOLS = Map.of(
-        Instrument.HK_HSI, "^HSI",
-        Instrument.HK_HSTECH, "^HSTECH",
-        Instrument.US_DJI, "^DJI",
-        Instrument.US_SPX, "^GSPC",
-        Instrument.US_NDX, "^NDX");
     private static final Map<String, Instrument> CHINA_CODES = Map.of(
         "000001", Instrument.CN_000001,
         "399001", Instrument.CN_399001,
@@ -51,6 +47,12 @@ public final class DirectMarketQuoteClient {
     private final Map<String, Set<java.time.LocalDate>> marketHolidays;
     private final Map<String, List<String>> providerOrder;
     private final Map<String, String> activeProviders = new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> requestCounts = new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> failureCounts = new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> lastAttemptAt = new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> lastSuccessAt = new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> lastFailureAt = new ConcurrentHashMap<>();
+    private final Map<String, String> lastErrors = new ConcurrentHashMap<>();
     private final EnumMap<Instrument, MarketQuote> lastQuotes = new EnumMap<>(Instrument.class);
     private final Set<String> disabledProviders = ConcurrentHashMap.newKeySet();
     private final Map<String, Boolean> marketEnabled;
@@ -61,7 +63,7 @@ public final class DirectMarketQuoteClient {
     }
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays) {
-        this(connectTimeout, requestTimeout, marketHolidays, Map.of("CN", true, "HK", true, "US", true, "CRYPTO", true), Set.of(), Map.of("CN", List.of("eastmoney", "sina", "tencent"), "HK", List.of("yahoo"), "US", List.of("yahoo"), "CRYPTO", List.of("binance", "coinbase", "kraken", "okx", "bybit", "bitstamp")));
+        this(connectTimeout, requestTimeout, marketHolidays, Map.of("CN", true, "CRYPTO", true), Set.of(), Map.of("CN", List.of("eastmoney", "sina", "tencent"), "CRYPTO", List.of("binance", "coinbase", "kraken", "okx", "bybit", "bitstamp")));
     }
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays, Map<String, Boolean> marketEnabled, Set<String> disabledProviders, Map<String, List<String>> providerOrder) {
@@ -69,8 +71,6 @@ public final class DirectMarketQuoteClient {
         this.marketEnabled = Map.copyOf(marketEnabled);
         this.providerOrder = Map.copyOf(providerOrder);
         this.disabledProviders.addAll(disabledProviders);
-        if (this.disabledProviders.contains("HK:yahoo") || this.disabledProviders.contains("US:yahoo"))
-            this.disabledProviders.add("GLOBAL:yahoo");
         this.httpClient = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
         this.requestTimeout = requestTimeout;
         this.cryptoClient = new CryptoQuoteClient(connectTimeout, requestTimeout);
@@ -91,17 +91,7 @@ public final class DirectMarketQuoteClient {
                 alerts.add("failed:market:CN");
             }
         }
-        if ((marketEnabled.getOrDefault("HK", true) && !closedMarkets.contains("HK") && MarketHours.status("HK", fetchedAt, marketHolidays.getOrDefault("HK", Set.of())) == MarketStatus.OPEN)
-            || (marketEnabled.getOrDefault("US", true) && !closedMarkets.contains("US") && MarketHours.status("US", fetchedAt, marketHolidays.getOrDefault("US", Set.of())) == MarketStatus.OPEN)) {
-            try {
-                quotes.putAll(fetchGlobal());
-            } catch (Exception exception) {
-                alerts.add("failed:market:HK_US");
-            }
-        }
         if (marketEnabled.getOrDefault("CRYPTO", true) && !closedMarkets.contains("CRYPTO")) try {
-            if (disabledProviders.contains("CRYPTO:binance") && disabledProviders.contains("CRYPTO:coinbase"))
-                throw new IllegalStateException("all crypto providers disabled");
             var crypto = fetchCrypto();
             quotes.putAll(crypto.quotes().stream()
                 .collect(java.util.stream.Collectors.toMap(MarketQuote::instrument, quote -> quote)));
@@ -127,6 +117,8 @@ public final class DirectMarketQuoteClient {
         Exception failure = null;
         for (String provider : providerOrder.getOrDefault("CN", List.of("eastmoney", "sina"))) {
             if (disabledProviders.contains("CN:" + provider)) continue;
+            String statsKey = "CN:" + provider;
+            recordAttempt(statsKey);
             try {
                 Map<Instrument, MarketQuote> result = switch (provider) {
                     case "eastmoney" -> parseEastmoney(requestBytes(CHINA_EASTMONEY), Instant.now());
@@ -135,8 +127,9 @@ public final class DirectMarketQuoteClient {
                     default -> throw new IllegalArgumentException("unknown CN provider: " + provider);
                 };
                 activeProviders.put("CN", provider);
+                recordSuccess(statsKey);
                 return result;
-            } catch (Exception exception) { failure = exception; }
+            } catch (Exception exception) { recordFailure(statsKey, exception); failure = exception; }
         }
         throw failure == null ? new IllegalStateException("no CN providers enabled") : failure;
     }
@@ -145,6 +138,8 @@ public final class DirectMarketQuoteClient {
         Exception failure = null;
         for (String provider : providerOrder.getOrDefault("CRYPTO", List.of("binance", "coinbase", "kraken", "okx", "bybit", "bitstamp"))) {
             if (disabledProviders.contains("CRYPTO:" + provider)) continue;
+            String statsKey = "CRYPTO:" + provider;
+            recordAttempt(statsKey);
             try {
                 var result = switch (provider) {
                     case "binance" -> cryptoClient.fetchBinance().join();
@@ -156,28 +151,58 @@ public final class DirectMarketQuoteClient {
                     default -> throw new IllegalArgumentException("unknown crypto provider: " + provider);
                 };
                 activeProviders.put("CRYPTO", provider);
+                recordSuccess(statsKey);
                 return result;
-            } catch (Exception exception) { failure = exception; }
+            } catch (Exception exception) { recordFailure(statsKey, exception); failure = exception; }
         }
         throw failure == null ? new IllegalStateException("no crypto providers enabled") : failure;
     }
 
-    private Map<Instrument, MarketQuote> fetchGlobal() throws Exception {
-        if (disabledProviders.contains("GLOBAL:yahoo"))
-            throw new IllegalStateException("Yahoo disabled");
-        activeProviders.put("GLOBAL", "yahoo");
-        EnumMap<Instrument, MarketQuote> result = new EnumMap<>(Instrument.class);
-        Instant now = Instant.now();
-        for (Map.Entry<Instrument, String> entry : YAHOO_SYMBOLS.entrySet()) {
-            if (!closedMarkets.contains(entry.getKey().market())
-                && MarketHours.status(entry.getKey().market(), now, marketHolidays.getOrDefault(entry.getKey().market(), Set.of())) == MarketStatus.OPEN)
-                result.put(entry.getKey(), parseYahoo(requestText(yahooUri(entry.getValue())), entry.getKey()));
-        }
-        return result;
+    public synchronized String controlStatus() {
+        return "{\"closedMarkets\":" + jsonArray(closedMarkets) + ",\"disabledProviders\":" + jsonArray(disabledProviders)
+            + ",\"lastSuccessfulProviders\":" + jsonMap(activeProviders) + ",\"providerOrder\":" + jsonMapList(providerOrder)
+            + ",\"statsSince\":" + jsonString(Instant.ofEpochMilli(statsStartedAt).toString())
+            + ",\"providerStats\":" + jsonStats() + "}";
     }
 
-    public synchronized String controlStatus() {
-        return "{\"closedMarkets\":" + jsonArray(closedMarkets) + ",\"disabledProviders\":" + jsonArray(disabledProviders) + ",\"activeProviders\":" + jsonMap(activeProviders) + ",\"providerOrder\":" + jsonMapList(providerOrder) + "}";
+    private final long statsStartedAt = System.currentTimeMillis();
+
+    private void recordAttempt(String provider) {
+        requestCounts.computeIfAbsent(provider, ignored -> new AtomicLong()).incrementAndGet();
+        lastAttemptAt.computeIfAbsent(provider, ignored -> new AtomicLong()).set(System.currentTimeMillis());
+    }
+
+    private void recordSuccess(String provider) {
+        lastSuccessAt.computeIfAbsent(provider, ignored -> new AtomicLong()).set(System.currentTimeMillis());
+    }
+
+    private void recordFailure(String provider, Exception exception) {
+        failureCounts.computeIfAbsent(provider, ignored -> new AtomicLong()).incrementAndGet();
+        lastFailureAt.computeIfAbsent(provider, ignored -> new AtomicLong()).set(System.currentTimeMillis());
+        lastErrors.put(provider, exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage());
+    }
+
+    private String jsonStats() {
+        return requestCounts.keySet().stream().sorted().map(provider -> {
+            long requests = requestCounts.get(provider).get();
+            long failures = failureCounts.getOrDefault(provider, new AtomicLong()).get();
+            double rate = requests == 0 ? 0 : failures * 100.0 / requests;
+            return jsonString(provider) + ":{\"requests\":" + requests + ",\"failures\":" + failures
+                + ",\"failureRatePercent\":" + String.format(Locale.ROOT, "%.2f", rate)
+                + ",\"lastAttemptAt\":" + jsonTime(lastAttemptAt.get(provider))
+                + ",\"lastSuccessAt\":" + jsonTime(lastSuccessAt.get(provider))
+                + ",\"lastFailureAt\":" + jsonTime(lastFailureAt.get(provider))
+                + ",\"lastError\":" + jsonString(lastErrors.get(provider)) + "}";
+        }).collect(java.util.stream.Collectors.joining(",", "{", "}"));
+    }
+
+    private static String jsonTime(AtomicLong time) {
+        return time == null || time.get() == 0 ? "null" : jsonString(Instant.ofEpochMilli(time.get()).toString());
+    }
+
+    private static String jsonString(String value) {
+        if (value == null) return "null";
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     private static String jsonArray(Set<String> values) {
@@ -201,7 +226,7 @@ public final class DirectMarketQuoteClient {
 
     public synchronized void setProviderEnabled(String market, String provider, boolean enabled) {
         String key = switch (market + ":" + provider) {
-            case "HK:global", "US:global", "HK:yahoo", "US:yahoo" -> "GLOBAL:yahoo";
+            case "HK:global", "US:global", "HK:yahoo", "US:yahoo" -> market + ":" + provider;
             default -> market + ":" + provider;
         };
         if (enabled)

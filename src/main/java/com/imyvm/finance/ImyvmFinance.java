@@ -238,7 +238,7 @@ public final class ImyvmFinance implements ModInitializer {
         if (!hasOpenMarket)
             return;
         MutableComponent briefing = Component.empty().append(Translator.tr("commands.market.briefing.header"));
-        for (String market : new String[]{"CN", "HK", "US", "CRYPTO"}) {
+        for (String market : new String[]{"CN", "CRYPTO"}) {
             MutableComponent line = Component.empty().append("\n").append(Translator.tr("commands.market.briefing.market", marketLabel(market)));
             for (int index = 0; index < instruments.length; index++) {
                 Instrument instrument = instruments[index];

@@ -48,9 +48,9 @@ public record FinanceConfig(
             true,
             false,
             Map.of(),
-            Map.of("CN", true, "HK", true, "US", true, "CRYPTO", true),
+            Map.of("CN", true, "CRYPTO", true),
             Set.of(),
-            Map.of("CN", java.util.List.of("eastmoney", "sina", "tencent"), "HK", java.util.List.of("yahoo"), "US", java.util.List.of("yahoo"), "CRYPTO", java.util.List.of("binance", "coinbase", "kraken", "okx", "bybit", "bitstamp")),
+            Map.of("CN", java.util.List.of("eastmoney", "sina", "tencent"), "CRYPTO", java.util.List.of("binance", "coinbase", "kraken", "okx", "bybit", "bitstamp")),
             "zh_cn",
             TradingRules.DEFAULT);
     }
@@ -159,8 +159,6 @@ public record FinanceConfig(
     private static Map<String, java.util.List<String>> parseProviderOrder(Properties properties) {
         Map<String, java.util.List<String>> defaults = Map.of(
             "CN", java.util.List.of("eastmoney", "sina", "tencent"),
-            "HK", java.util.List.of("yahoo"),
-            "US", java.util.List.of("yahoo"),
             "CRYPTO", java.util.List.of("binance", "coinbase", "kraken", "okx", "bybit", "bitstamp"));
         Map<String, java.util.List<String>> result = new HashMap<>();
         for (Map.Entry<String, java.util.List<String>> entry : defaults.entrySet()) {
@@ -174,7 +172,7 @@ public record FinanceConfig(
 
     private static Map<String, Boolean> parseMarketEnabled(Properties properties) {
         Map<String, Boolean> result = new HashMap<>();
-        for (String market : new String[] {"CN", "HK", "US", "CRYPTO"})
+        for (String market : new String[] {"CN", "CRYPTO"})
             result.put(market, parseBoolean(properties, "market.enabled." + market, true));
         return Map.copyOf(result);
     }
@@ -220,7 +218,7 @@ public record FinanceConfig(
 
     private static Map<String, Set<LocalDate>> parseHolidays(Properties properties) {
         Map<String, Set<LocalDate>> holidays = new HashMap<>();
-        for (String market : new String[] {"CN", "HK", "US"}) {
+        for (String market : new String[] {"CN"}) {
             Set<LocalDate> dates = new HashSet<>();
             for (String value : properties.getProperty("market.holidays." + market, "").split(",")) {
                 try {

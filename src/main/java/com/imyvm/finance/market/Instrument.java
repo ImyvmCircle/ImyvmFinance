@@ -9,11 +9,6 @@ public enum Instrument {
     CN_399006("CN:399006", "CN"),
     CN_000300("CN:000300", "CN"),
     CN_000905("CN:000905", "CN"),
-    HK_HSI("HK:HSI", "HK"),
-    HK_HSTECH("HK:HSTECH", "HK"),
-    US_DJI("US:DJI", "US"),
-    US_SPX("US:SPX", "US"),
-    US_NDX("US:NDX", "US"),
     CRYPTO_BTC("CRYPTO:BTCUSDT", "CRYPTO"),
     CRYPTO_ETH("CRYPTO:ETHUSDT", "CRYPTO");
 

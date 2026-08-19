@@ -737,7 +737,7 @@ public final class MarketCommands {
         if (!context.getNodes().stream().anyMatch(node -> node.getNode() instanceof ArgumentCommandNode<?, ?>
             && "market".equals(node.getNode().getName())) ) {
             try {
-                for (String market : new String[]{"CN", "HK", "US", "CRYPTO"}) {
+                for (String market : new String[]{"CN", "CRYPTO"}) {
                     boolean enabled = ImyvmFinance.TRADING_STORE != null
                         && ImyvmFinance.TRADING_STORE.isMarketTradingEnabled(market);
                     source.sendSuccess(() -> Translator.tr("commands.market.market.status", marketLabel(market),
