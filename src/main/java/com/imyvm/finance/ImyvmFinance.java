@@ -73,6 +73,7 @@ public final class ImyvmFinance implements ModInitializer {
                 .resolve(MOD_ID + ".properties");
             CONFIG_PATH = configPath;
             CONFIG = FinanceConfig.load(configPath);
+            MarketHours.setDisplayZone(CONFIG.zoneId());
             TRADING_RULES = CONFIG.tradingRules();
             Translator.setLanguage(CONFIG.language());
             Path databasePath = FabricLoader.getInstance().getGameDir()
@@ -85,6 +86,7 @@ public final class ImyvmFinance implements ModInitializer {
         } catch (Exception exception) {
             LOGGER.error("Finance configuration or storage is unavailable", exception);
             CONFIG = FinanceConfig.defaults();
+            MarketHours.setDisplayZone(CONFIG.zoneId());
             TRADING_RULES = CONFIG.tradingRules();
         }
 
@@ -319,7 +321,7 @@ public final class ImyvmFinance implements ModInitializer {
     }
 
     private static String formatLocalTimestamp(long epochMillis) {
-        return ZonedDateTime.ofInstant(Instant.ofEpochMilli(epochMillis), MarketHours.CHINA_ZONE)
+        return ZonedDateTime.ofInstant(Instant.ofEpochMilli(epochMillis), MarketHours.displayZone())
             .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss XXX z"));
     }
 
@@ -484,7 +486,7 @@ public final class ImyvmFinance implements ModInitializer {
         long age = System.currentTimeMillis() - snapshot.fetchedAtEpochMillis();
         if (age < 0 || age >= CONFIG.quotePollIntervalMinutes() * 60_000L)
             return false;
-        return isBriefingPollNode(Instant.ofEpochMilli(snapshot.fetchedAtEpochMillis()), MarketHours.CHINA_ZONE,
+        return isBriefingPollNode(Instant.ofEpochMilli(snapshot.fetchedAtEpochMillis()), MarketHours.displayZone(),
             CONFIG.quotePollDelaySeconds(), CONFIG.quoteJitterSeconds(), CONFIG.briefingIntervalMinutes());
     }
 

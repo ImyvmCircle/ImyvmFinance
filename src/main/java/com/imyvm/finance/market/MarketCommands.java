@@ -1366,7 +1366,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
             TradeEstimate estimate = TradeCalculator.estimate(
                 TradeSide.BUY, storedQuote.get(), units, now, ImyvmFinance.TRADING_RULES);
             ServerPlayer player = context.getSource().getPlayer();
-            ZoneId zone = MarketHours.CHINA_ZONE;
+            ZoneId zone = MarketHours.displayZone();
             LocalDate date = LocalDate.now(zone);
             long dailyBuyUsed = ImyvmFinance.TRADING_STORE.dailyBuyAmount(
                 player.getUUID(),
@@ -1614,7 +1614,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
     }
 
     private static long dailySellAmount(UUID playerId, long nowEpochMillis) throws Exception {
-        ZoneId zone = MarketHours.CHINA_ZONE;
+        ZoneId zone = MarketHours.displayZone();
         LocalDate date = LocalDate.now(zone);
         return ImyvmFinance.TRADING_STORE.dailySellAmount(
             playerId,
@@ -1654,7 +1654,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
             }
             TradeEstimate estimate = TradeCalculator.estimate(
                 TradeSide.BUY, storedQuote.get(), units, now, ImyvmFinance.TRADING_RULES);
-            ZoneId zone = MarketHours.CHINA_ZONE;
+            ZoneId zone = MarketHours.displayZone();
             LocalDate date = LocalDate.now(zone);
             long dayStart = date.atStartOfDay(zone).toInstant().toEpochMilli();
             long dayEnd = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli();
@@ -1770,7 +1770,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
     }
 
     private static String formatLocalTimestamp(long epochMillis) {
-        return ZonedDateTime.ofInstant(Instant.ofEpochMilli(epochMillis), MarketHours.CHINA_ZONE)
+        return ZonedDateTime.ofInstant(Instant.ofEpochMilli(epochMillis), MarketHours.displayZone())
             .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss XXX z"));
     }
 

@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Map;
 import java.util.Set;
 import java.util.HashMap;
@@ -34,6 +35,7 @@ public record FinanceConfig(
     Set<String> disabledProviders,
     Map<String, java.util.List<String>> providerOrder,
     String language,
+    String timeZone,
     TradingRules tradingRules
 ) {
 
@@ -56,6 +58,7 @@ public record FinanceConfig(
             Set.of(),
             Map.of("CN", java.util.List.of("eastmoney", "sina", "tencent"), "CRYPTO", java.util.List.of("binance", "coinbase", "kraken", "okx", "bybit", "bitstamp")),
             "zh_cn",
+            "Asia/Shanghai",
             TradingRules.DEFAULT);
     }
 
@@ -92,6 +95,7 @@ public record FinanceConfig(
                 properties.setProperty("briefing.enabled", Boolean.toString(defaults.briefingEnabled()));
                 properties.setProperty("setup.initialized", Boolean.toString(defaults.setupInitialized()));
                 properties.setProperty("language", defaults.language());
+                properties.setProperty("time-zone", defaults.timeZone());
                 properties.setProperty("trading.max-quote-age-minutes", "15");
                 properties.setProperty("trading.sell-cooldown-minutes", "30");
                 properties.setProperty("trading.fee-bps", "20");
@@ -124,6 +128,7 @@ public record FinanceConfig(
             parseDisabledProviders(properties),
             parseProviderOrder(properties),
             properties.getProperty("language", defaults.language()).trim(),
+            parseTimeZone(properties, "time-zone", defaults.timeZone()),
             new TradingRules(
                 positiveLong(properties, "trading.max-quote-age-minutes", 15) * 60 * 1000,
                 positiveLong(properties, "trading.sell-cooldown-minutes", 30) * 60 * 1000,
@@ -135,10 +140,14 @@ public record FinanceConfig(
                 positiveLong(properties, "trading.min-units", 1)));
     }
 
+    public ZoneId zoneId() {
+        return ZoneId.of(timeZone);
+    }
+
     public FinanceConfig withSetupInitialized(boolean initialized) {
         return new FinanceConfig(quoteConnectTimeout, quoteReadTimeout,
             quotePollIntervalMinutes, quoteIdlePollIntervalMinutes, quotePollDelaySeconds, quoteJitterSeconds, quoteProviderBackoffMinutes, quoteRandomSeed, briefingIntervalMinutes, briefingDelaySeconds,
-            briefingEnabled, initialized, marketHolidays, marketEnabled, disabledProviders, providerOrder, language, tradingRules);
+            briefingEnabled, initialized, marketHolidays, marketEnabled, disabledProviders, providerOrder, language, timeZone, tradingRules);
     }
 
     public static void writeMarketEnabled(Path path, String market, boolean enabled) throws IOException {
@@ -242,6 +251,16 @@ public record FinanceConfig(
                 holidays.put(market, Set.copyOf(dates));
         }
         return Map.copyOf(holidays);
+    }
+
+    private static String parseTimeZone(Properties properties, String key, String fallback) {
+        String value = properties.getProperty(key, fallback).trim();
+        try {
+            ZoneId.of(value);
+            return value;
+        } catch (Exception exception) {
+            return fallback;
+        }
     }
 
     private static boolean parseBoolean(Properties properties, String key, boolean fallback) {

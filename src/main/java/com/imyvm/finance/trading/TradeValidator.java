@@ -36,7 +36,7 @@ public final class TradeValidator {
             throw new TradeValidationException(
                 "commands.market.trade.sell_cooldown",
                 java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-                    .withZone(MarketHours.CHINA_ZONE)
+                    .withZone(MarketHours.displayZone())
                     .format(java.time.Instant.ofEpochMilli(position.earliestSellAtEpochMillis())));
         if (quoteFetchedAtEpochMillis <= position.boughtAtEpochMillis())
             throw new TradeValidationException("commands.market.trade.same_snapshot");

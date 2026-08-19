@@ -61,6 +61,7 @@ public final class FinanceSelfTest {
             checkEquals(15L, defaults.quoteProviderBackoffMinutes(), "default provider backoff");
             check(!defaults.setupInitialized(), "setup defaults incomplete");
             checkEquals("zh_cn", defaults.language(), "default language");
+            checkEquals("Asia/Shanghai", defaults.timeZone(), "default time zone");
             check(defaults.briefingEnabled(), "default briefing enabled");
             checkEquals(15L * 60 * 1000, defaults.tradingRules().maxQuoteAgeMillis(), "default quote age");
 
@@ -68,6 +69,7 @@ public final class FinanceSelfTest {
             properties.setProperty("market.connect-timeout-ms", "1500");
             properties.setProperty("market.read-timeout-ms", "3500");
             properties.setProperty("market.holidays.CN", "2026-08-24,invalid");
+            properties.setProperty("time-zone", "Asia/Tokyo");
             properties.setProperty("quote.poll-interval-minutes", "7");
             properties.setProperty("quote.idle-poll-interval-minutes", "11");
             properties.setProperty("quote.poll-delay-seconds", "19");
@@ -82,6 +84,8 @@ public final class FinanceSelfTest {
             FinanceConfig overridden = FinanceConfig.load(config);
             checkEquals(1500L, overridden.quoteConnectTimeout().toMillis(), "connect timeout");
             checkEquals(3500L, overridden.quoteReadTimeout().toMillis(), "read timeout");
+            checkEquals("Asia/Tokyo", overridden.timeZone(), "custom time zone");
+            checkEquals("Asia/Tokyo", overridden.zoneId().getId(), "custom zone id");
             checkEquals(7L, overridden.quotePollIntervalMinutes(), "custom poll interval");
             checkEquals(11L, overridden.quoteIdlePollIntervalMinutes(), "custom idle poll interval");
             checkEquals(19L, overridden.quotePollDelaySeconds(), "custom poll delay");

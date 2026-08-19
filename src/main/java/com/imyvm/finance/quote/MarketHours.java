@@ -14,8 +14,17 @@ public final class MarketHours {
     public static final ZoneId CHINA_ZONE = ZoneId.of("Asia/Shanghai");
     private static final ZoneId HONG_KONG = ZoneId.of("Asia/Hong_Kong");
     private static final ZoneId NEW_YORK = ZoneId.of("America/New_York");
+    private static volatile ZoneId displayZone = CHINA_ZONE;
 
     private MarketHours() {
+    }
+
+    public static ZoneId displayZone() {
+        return displayZone;
+    }
+
+    public static void setDisplayZone(ZoneId zone) {
+        displayZone = zone == null ? CHINA_ZONE : zone;
     }
 
     public static MarketStatus status(String market, Instant instant) {
