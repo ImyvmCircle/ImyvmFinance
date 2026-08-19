@@ -34,6 +34,7 @@ public final class FinanceSelfTest {
         configChecks();
         translationChecks();
         sidecarChecks();
+        cryptoQuoteChecks();
         storageChecks();
         tradingValidationChecks();
         marketTimeChecks();
@@ -139,6 +140,16 @@ public final class FinanceSelfTest {
         checkEquals(125L, snapshot.quotes().getFirst().changeBps(), "quote change scale");
         checkEquals(MarketStatus.OPEN, snapshot.quotes().getFirst().status(), "quote status");
         checkEquals(java.util.List.of("failed:US:SPX"), snapshot.alerts(), "quote alerts");
+    }
+
+    private static void cryptoQuoteChecks() {
+        var snapshot = com.imyvm.finance.quote.CryptoQuoteClient.parseBinance(
+            "[{\"symbol\":\"BTCUSDT\",\"lastPrice\":\"60000\",\"priceChangePercent\":\"1.5\"},{\"symbol\":\"ETHUSDT\",\"lastPrice\":\"3000\",\"priceChangePercent\":\"-0.5\"}]",
+            java.time.Instant.ofEpochMilli(1000));
+        checkEquals(2, snapshot.quotes().size(), "crypto quote count");
+        checkEquals(com.imyvm.finance.market.Instrument.CRYPTO_BTC, snapshot.quotes().getFirst().instrument(), "crypto BTC instrument");
+        checkEquals(600_000_000L, snapshot.quotes().getFirst().priceScaled(), "crypto BTC price");
+        checkEquals(150L, snapshot.quotes().getFirst().changeBps(), "crypto BTC change");
     }
 
     private static void tradingValidationChecks() throws Exception {
