@@ -12,6 +12,7 @@ import java.time.LocalDate;
 import java.util.Map;
 import java.util.Set;
 import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Properties;
 
@@ -29,6 +30,7 @@ public record FinanceConfig(
     Map<String, Set<LocalDate>> marketHolidays,
     Map<String, Boolean> marketEnabled,
     Set<String> disabledProviders,
+    Map<String, java.util.List<String>> providerOrder,
     String language,
     TradingRules tradingRules
 ) {
@@ -48,6 +50,7 @@ public record FinanceConfig(
             Map.of(),
             Map.of("CN", true, "HK", true, "US", true, "CRYPTO", true),
             Set.of(),
+            Map.of("CN", java.util.List.of("eastmoney", "sina"), "HK", java.util.List.of("yahoo"), "US", java.util.List.of("yahoo"), "CRYPTO", java.util.List.of("binance", "coinbase")),
             "zh_cn",
             TradingRules.DEFAULT);
     }
@@ -109,6 +112,7 @@ public record FinanceConfig(
             parseHolidays(properties),
             parseMarketEnabled(properties),
             parseDisabledProviders(properties),
+            parseProviderOrder(properties),
             properties.getProperty("language", defaults.language()).trim(),
             new TradingRules(
                 positiveLong(properties, "trading.max-quote-age-minutes", 15) * 60 * 1000,
@@ -124,7 +128,7 @@ public record FinanceConfig(
     public FinanceConfig withSetupInitialized(boolean initialized) {
         return new FinanceConfig(quoteConnectTimeout, quoteReadTimeout,
             quotePollIntervalMinutes, quotePollDelaySeconds, quoteJitterSeconds, quoteRandomSeed, briefingIntervalMinutes, briefingDelaySeconds,
-            briefingEnabled, initialized, marketHolidays, marketEnabled, disabledProviders, language, tradingRules);
+            briefingEnabled, initialized, marketHolidays, marketEnabled, disabledProviders, providerOrder, language, tradingRules);
     }
 
     public static void writeMarketEnabled(Path path, String market, boolean enabled) throws IOException {
@@ -150,6 +154,22 @@ public record FinanceConfig(
 
     private static void writeProperties(Path path, Properties properties) throws IOException {
         try (Writer writer = Files.newBufferedWriter(path)) { properties.store(writer, "ImyvmFinance settings"); }
+    }
+
+    private static Map<String, java.util.List<String>> parseProviderOrder(Properties properties) {
+        Map<String, java.util.List<String>> defaults = Map.of(
+            "CN", java.util.List.of("eastmoney", "sina"),
+            "HK", java.util.List.of("yahoo"),
+            "US", java.util.List.of("yahoo"),
+            "CRYPTO", java.util.List.of("binance", "coinbase"));
+        Map<String, java.util.List<String>> result = new HashMap<>();
+        for (Map.Entry<String, java.util.List<String>> entry : defaults.entrySet()) {
+            java.util.List<String> providers = new ArrayList<>();
+            for (String value : properties.getProperty("market.providers." + entry.getKey(), String.join(",", entry.getValue())).split(","))
+                if (!value.trim().isEmpty()) providers.add(value.trim().toLowerCase());
+            result.put(entry.getKey(), java.util.List.copyOf(providers));
+        }
+        return Map.copyOf(result);
     }
 
     private static Map<String, Boolean> parseMarketEnabled(Properties properties) {

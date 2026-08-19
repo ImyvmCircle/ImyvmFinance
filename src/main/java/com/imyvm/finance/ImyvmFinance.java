@@ -414,7 +414,7 @@ public final class ImyvmFinance implements ModInitializer {
     }
 
     public static CompletableFuture<QuoteSnapshot> checkMarketData() {
-        return new DirectMarketQuoteClient(CONFIG.quoteConnectTimeout(), CONFIG.quoteReadTimeout(), CONFIG.marketHolidays()).fetch();
+        return new DirectMarketQuoteClient(CONFIG.quoteConnectTimeout(), CONFIG.quoteReadTimeout(), CONFIG.marketHolidays(), CONFIG.marketEnabled(), CONFIG.disabledProviders(), CONFIG.providerOrder()).fetch();
     }
 
     public static void completeSetup() throws java.io.IOException {

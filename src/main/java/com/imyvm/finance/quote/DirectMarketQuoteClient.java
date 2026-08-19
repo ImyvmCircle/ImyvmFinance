@@ -48,6 +48,7 @@ public final class DirectMarketQuoteClient {
     private final Duration requestTimeout;
     private final CryptoQuoteClient cryptoClient;
     private final Map<String, Set<java.time.LocalDate>> marketHolidays;
+    private final Map<String, List<String>> providerOrder;
     private final EnumMap<Instrument, MarketQuote> lastQuotes = new EnumMap<>(Instrument.class);
     private final Set<String> disabledProviders = ConcurrentHashMap.newKeySet();
     private final Map<String, Boolean> marketEnabled;
@@ -58,12 +59,13 @@ public final class DirectMarketQuoteClient {
     }
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays) {
-        this(connectTimeout, requestTimeout, marketHolidays, Map.of("CN", true, "HK", true, "US", true, "CRYPTO", true), Set.of());
+        this(connectTimeout, requestTimeout, marketHolidays, Map.of("CN", true, "HK", true, "US", true, "CRYPTO", true), Set.of(), Map.of("CN", List.of("eastmoney", "sina"), "HK", List.of("yahoo"), "US", List.of("yahoo"), "CRYPTO", List.of("binance", "coinbase")));
     }
 
-    public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays, Map<String, Boolean> marketEnabled, Set<String> disabledProviders) {
+    public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays, Map<String, Boolean> marketEnabled, Set<String> disabledProviders, Map<String, List<String>> providerOrder) {
         this.marketHolidays = Map.copyOf(marketHolidays);
         this.marketEnabled = Map.copyOf(marketEnabled);
+        this.providerOrder = Map.copyOf(providerOrder);
         this.disabledProviders.addAll(disabledProviders);
         if (this.disabledProviders.contains("HK:yahoo") || this.disabledProviders.contains("US:yahoo"))
             this.disabledProviders.add("GLOBAL:yahoo");
@@ -98,11 +100,7 @@ public final class DirectMarketQuoteClient {
         if (marketEnabled.getOrDefault("CRYPTO", true) && !closedMarkets.contains("CRYPTO")) try {
             if (disabledProviders.contains("CRYPTO:binance") && disabledProviders.contains("CRYPTO:coinbase"))
                 throw new IllegalStateException("all crypto providers disabled");
-            var crypto = disabledProviders.contains("CRYPTO:binance")
-                ? cryptoClient.fetchCoinbase().join()
-                : disabledProviders.contains("CRYPTO:coinbase")
-                    ? cryptoClient.fetchBinance().join()
-                    : cryptoClient.fetch().join();
+            var crypto = fetchCrypto();
             quotes.putAll(crypto.quotes().stream()
                 .collect(java.util.stream.Collectors.toMap(MarketQuote::instrument, quote -> quote)));
         } catch (Exception exception) {
@@ -133,6 +131,21 @@ public final class DirectMarketQuoteClient {
                 throw primary;
             return parseSina(requestBytes(CHINA_SINA), Instant.now());
         }
+    }
+
+    private com.imyvm.finance.market.QuoteSnapshot fetchCrypto() throws Exception {
+        Exception failure = null;
+        for (String provider : providerOrder.getOrDefault("CRYPTO", List.of("binance", "coinbase"))) {
+            if (disabledProviders.contains("CRYPTO:" + provider)) continue;
+            try {
+                return switch (provider) {
+                    case "binance" -> cryptoClient.fetchBinance().join();
+                    case "coinbase" -> cryptoClient.fetchCoinbase().join();
+                    default -> throw new IllegalArgumentException("unknown crypto provider: " + provider);
+                };
+            } catch (Exception exception) { failure = exception; }
+        }
+        throw failure == null ? new IllegalStateException("no crypto providers enabled") : failure;
     }
 
     private Map<Instrument, MarketQuote> fetchGlobal() throws Exception {
