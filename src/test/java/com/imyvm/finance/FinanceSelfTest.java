@@ -35,6 +35,7 @@ public final class FinanceSelfTest {
         translationChecks();
         sidecarChecks();
         cryptoQuoteChecks();
+        directMarketQuoteChecks();
         storageChecks();
         tradingValidationChecks();
         marketTimeChecks();
@@ -150,6 +151,14 @@ public final class FinanceSelfTest {
         checkEquals(com.imyvm.finance.market.Instrument.CRYPTO_BTC, snapshot.quotes().getFirst().instrument(), "crypto BTC instrument");
         checkEquals(600_000_000L, snapshot.quotes().getFirst().priceScaled(), "crypto BTC price");
         checkEquals(150L, snapshot.quotes().getFirst().changeBps(), "crypto BTC change");
+    }
+
+    private static void directMarketQuoteChecks() {
+        var quote = com.imyvm.finance.quote.DirectMarketQuoteClient.parseYahoo(
+            "{\"chart\":{\"result\":[{\"meta\":{\"regularMarketPrice\":\"3000\",\"previousClose\":\"3010\"}}]}}",
+            com.imyvm.finance.market.Instrument.US_SPX);
+        checkEquals(30_000_000L, quote.priceScaled(), "direct Yahoo price");
+        checkEquals(-33L, quote.changeBps(), "direct Yahoo change");
     }
 
     private static void tradingValidationChecks() throws Exception {
