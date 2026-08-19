@@ -357,6 +357,13 @@ public final class MarketCommands {
         context.getSource().sendSuccess(() -> footer, false);
     }
 
+    private static boolean requireInitialized(CommandSourceStack source) {
+        if (ImyvmFinance.CONFIG.setupInitialized())
+            return true;
+        source.sendFailure(Translator.tr("commands.market.setup.required"));
+        return false;
+    }
+
     private static int failUnexpected(CommandSourceStack source, String operation, Exception exception) {
         LOGGER.warn("Finance {} failed unexpectedly", operation, exception);
         source.sendFailure(Translator.tr("commands.market.error"));
@@ -367,6 +374,8 @@ public final class MarketCommands {
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
         long page
     ) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         if (ImyvmFinance.TRADING_STORE == null) {
             context.getSource().sendFailure(Translator.tr("commands.market.positions.storage_unavailable"));
             return 0;
@@ -435,6 +444,8 @@ public final class MarketCommands {
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
         long page
     ) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         if (ImyvmFinance.TRADING_STORE == null) {
             context.getSource().sendFailure(Translator.tr("commands.market.history.storage_unavailable"));
             return 0;
@@ -471,6 +482,8 @@ public final class MarketCommands {
     }
 
     private static int pending(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         if (ImyvmFinance.TRADING_STORE == null) {
             context.getSource().sendFailure(Translator.tr("commands.market.pending.storage_unavailable"));
             return 0;
@@ -517,7 +530,8 @@ public final class MarketCommands {
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
         SuggestionsBuilder builder
     ) {
-        if (ImyvmFinance.TRADING_STORE == null || !context.getSource().isPlayer())
+        if (!ImyvmFinance.CONFIG.setupInitialized()
+            || ImyvmFinance.TRADING_STORE == null || !context.getSource().isPlayer())
             return builder.buildFuture();
         try {
             String remaining = builder.getRemaining().toLowerCase(java.util.Locale.ROOT);
@@ -553,7 +567,8 @@ public final class MarketCommands {
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
         SuggestionsBuilder builder
     ) {
-        if (ImyvmFinance.TRADING_STORE == null || !context.getSource().isPlayer())
+        if (!ImyvmFinance.CONFIG.setupInitialized()
+            || ImyvmFinance.TRADING_STORE == null || !context.getSource().isPlayer())
             return builder.buildFuture();
         try {
             UUID positionId = UUID.fromString(StringArgumentType.getString(context, "positionId"));
@@ -580,7 +595,7 @@ public final class MarketCommands {
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
         SuggestionsBuilder builder
     ) {
-        if (ImyvmFinance.TRADING_STORE == null)
+        if (!ImyvmFinance.CONFIG.setupInitialized() || ImyvmFinance.TRADING_STORE == null)
             return builder.buildFuture();
         try {
             String remaining = builder.getRemaining().toLowerCase(java.util.Locale.ROOT);
@@ -598,6 +613,8 @@ public final class MarketCommands {
     }
 
     private static int adminPosition(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         try {
             GameProfile profile = resolveAdminProfile(context).orElseThrow();
             Instrument instrument = Instrument.fromSymbol(StringArgumentType.getString(context, "symbol"));
@@ -624,6 +641,8 @@ public final class MarketCommands {
     }
 
     private static int adminSettle(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         CommandSourceStack source = context.getSource();
         try {
             GameProfile profile = resolveAdminProfile(context).orElseThrow();
@@ -744,6 +763,8 @@ public final class MarketCommands {
     }
 
     private static int marketStatus(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         CommandSourceStack source = context.getSource();
         if (!context.getNodes().stream().anyMatch(node -> node.getNode() instanceof ArgumentCommandNode<?, ?>
             && "market".equals(node.getNode().getName())) ) {
@@ -777,6 +798,8 @@ public final class MarketCommands {
     private static int setMarket(
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, boolean enabled
     ) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         CommandSourceStack source = context.getSource();
         String market = StringArgumentType.getString(context, "market").toUpperCase();
         if (!knownMarket(market)) {
@@ -813,6 +836,8 @@ public final class MarketCommands {
     }
 
     private static int sourceStatus(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         CommandSourceStack source = context.getSource();
         ImyvmFinance.inspectMarketData("/control/status").thenAccept(body ->
             source.getServer().execute(() -> renderSourceStatus(source, body)))
@@ -871,6 +896,8 @@ public final class MarketCommands {
     private static int setSource(
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, boolean enabled
     ) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         CommandSourceStack source = context.getSource();
         String market = StringArgumentType.getString(context, "market").toUpperCase();
         String provider = StringArgumentType.getString(context, "provider").toLowerCase();
@@ -886,6 +913,8 @@ public final class MarketCommands {
     }
 
     private static int tradingStatus(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         if (ImyvmFinance.TRADING_STORE == null) {
             context.getSource().sendFailure(Translator.tr("commands.market.trading.storage_unavailable"));
             return 0;
@@ -903,6 +932,8 @@ public final class MarketCommands {
     }
 
     private static int tradingInstrumentStatus(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         Instrument instrument = instrument(context);
         if (instrument == null) {
             context.getSource().sendFailure(Translator.tr("commands.market.quote.unknown_symbol"));
@@ -927,6 +958,8 @@ public final class MarketCommands {
     private static int setInstrumentTrading(
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, boolean enabled
     ) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         Instrument instrument = instrument(context);
         if (instrument == null) {
             context.getSource().sendFailure(Translator.tr("commands.market.quote.unknown_symbol"));
@@ -938,6 +971,8 @@ public final class MarketCommands {
     private static int setTrading(
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, boolean enabled, Instrument instrument
     ) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         if (ImyvmFinance.TRADING_STORE == null) {
             context.getSource().sendFailure(Translator.tr("commands.market.trading.storage_unavailable"));
             return 0;
@@ -983,6 +1018,8 @@ public final class MarketCommands {
     private static int resolvePending(
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
         boolean confirm) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         UUID transactionId;
         try {
             transactionId = UUID.fromString(StringArgumentType.getString(context, "transactionId"));
@@ -1067,6 +1104,8 @@ public final class MarketCommands {
     }
 
     private static int list(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         MutableComponent message = Component.empty()
             .append(Translator.tr("commands.market.list.header"));
         String currentMarket = "";
@@ -1119,6 +1158,8 @@ public final class MarketCommands {
     }
 
     private static int quote(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         Instrument instrument = Instrument.fromSymbol(StringArgumentType.getString(context, "symbol"));
         if (instrument == null) {
             context.getSource().sendFailure(Translator.tr("commands.market.quote.unknown_symbol"));
@@ -1173,6 +1214,8 @@ public final class MarketCommands {
     }
 
     private static int estimate(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         Instrument instrument = Instrument.fromSymbol(StringArgumentType.getString(context, "symbol"));
         long units = LongArgumentType.getLong(context, "units");
         if (instrument == null) {
@@ -1243,6 +1286,8 @@ public final class MarketCommands {
     }
 
     private static int confirm(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         UUID confirmationId;
         try {
             confirmationId = UUID.fromString(StringArgumentType.getString(context, "confirmationId"));
@@ -1275,6 +1320,8 @@ public final class MarketCommands {
     }
 
     private static int sell(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, boolean confirmed) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         try {
             return sell(context, UUID.fromString(StringArgumentType.getString(context, "positionId")),
                 LongArgumentType.getLong(context, "units"), null, confirmed);
@@ -1442,6 +1489,8 @@ public final class MarketCommands {
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
         Instrument instrument, long units, String snapshotId
     ) {
+        if (!requireInitialized(context.getSource()))
+            return 0;
         ServerPlayer player = context.getSource().getPlayer();
         if (instrument == null) {
             context.getSource().sendFailure(Translator.tr("commands.market.quote.unknown_symbol"));

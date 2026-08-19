@@ -85,9 +85,10 @@ public final class ImyvmFinance implements ModInitializer {
             pruneExpiredData();
             nextBriefingAt = Long.MAX_VALUE;
             lastBriefingSnapshotId = null;
-            if (CONFIG.setupInitialized())
+            if (CONFIG.setupInitialized()) {
                 sendStartupAnnouncement(server);
-            startQuoteRefresh();
+                startQuoteRefresh();
+            }
         });
         ServerTickEvents.END_SERVER_TICK.register(server -> {
             pruneExpiredData();
@@ -179,7 +180,7 @@ public final class ImyvmFinance implements ModInitializer {
     }
 
     private static void notifyPendingSettlement(net.minecraft.server.level.ServerPlayer player) {
-        if (TRANSACTION_STORE == null)
+        if (!CONFIG.setupInitialized() || TRANSACTION_STORE == null)
             return;
         try {
             int count = TRANSACTION_STORE.pendingSettlementCount(player.getUUID());
@@ -191,7 +192,8 @@ public final class ImyvmFinance implements ModInitializer {
     }
 
     private static void notifyPendingMarketAlerts(net.minecraft.server.level.ServerPlayer player) {
-        if (TRADING_STORE == null
+        if (!CONFIG.setupInitialized()
+            || TRADING_STORE == null
             || !player.createCommandSourceStack().permissions().hasPermission(Permissions.COMMANDS_ADMIN))
             return;
         try {
