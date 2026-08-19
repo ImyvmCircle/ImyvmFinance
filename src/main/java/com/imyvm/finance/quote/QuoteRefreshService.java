@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.concurrent.TimeUnit;
+import java.util.SplittableRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.HashSet;
 import java.util.Set;
@@ -25,6 +26,8 @@ public final class QuoteRefreshService implements AutoCloseable {
     private final AtomicBoolean closed = new AtomicBoolean();
     private final long pollIntervalMinutes;
     private final long pollDelaySeconds;
+    private final long jitterSeconds;
+    private final SplittableRandom random;
     private final Consumer<String> alertConsumer;
     private final Consumer<com.imyvm.finance.market.QuoteSnapshot> snapshotConsumer;
     private final Set<String> unavailableInstruments = new HashSet<>();
@@ -53,6 +56,8 @@ public final class QuoteRefreshService implements AutoCloseable {
             config.marketHolidays(), config.marketEnabled(), config.disabledProviders());
         this.pollIntervalMinutes = config.quotePollIntervalMinutes();
         this.pollDelaySeconds = config.quotePollDelaySeconds();
+        this.jitterSeconds = config.quoteJitterSeconds();
+        this.random = config.quoteRandomSeed() == 0 ? new SplittableRandom() : new SplittableRandom(config.quoteRandomSeed());
         this.alertConsumer = alertConsumer;
         this.snapshotConsumer = snapshotConsumer;
         this.executor = Executors.newSingleThreadScheduledExecutor(task -> {
@@ -64,15 +69,23 @@ public final class QuoteRefreshService implements AutoCloseable {
 
     public void start() {
         refresh();
-        scheduleNext(millisecondsUntilPollNode(Instant.now(), ZoneId.systemDefault(), pollIntervalMinutes, pollDelaySeconds));
+        scheduleNext(nextPollDelay());
     }
 
     private void scheduleNext(long delayMillis) {
         executor.schedule(() -> {
             refresh();
             if (!closed.get())
-                scheduleNext(millisecondsUntilPollNode(Instant.now(), ZoneId.systemDefault(), pollIntervalMinutes, pollDelaySeconds));
+                scheduleNext(nextPollDelay());
         }, delayMillis, TimeUnit.MILLISECONDS);
+    }
+
+    private long nextPollDelay() {
+        long base = millisecondsUntilPollNode(Instant.now(), ZoneId.systemDefault(), pollIntervalMinutes, pollDelaySeconds);
+        if (jitterSeconds == 0)
+            return base;
+        long jitter = random.nextLong(-jitterSeconds, jitterSeconds + 1) * 1000L;
+        return Math.max(1000L, base + jitter);
     }
 
     public static long millisecondsUntilPollNode(Instant instant, ZoneId zone, long intervalMinutes, long delaySeconds) {

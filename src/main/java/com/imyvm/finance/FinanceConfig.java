@@ -20,6 +20,8 @@ public record FinanceConfig(
     Duration quoteReadTimeout,
     long quotePollIntervalMinutes,
     long quotePollDelaySeconds,
+    long quoteJitterSeconds,
+    long quoteRandomSeed,
     long briefingIntervalMinutes,
     long briefingDelaySeconds,
     boolean briefingEnabled,
@@ -37,6 +39,8 @@ public record FinanceConfig(
             Duration.ofSeconds(2),
             5,
             17,
+            15,
+            0,
             20,
             20,
             true,
@@ -66,6 +70,10 @@ public record FinanceConfig(
                     Long.toString(defaults.quotePollIntervalMinutes()));
                 properties.setProperty("quote.poll-delay-seconds",
                     Long.toString(defaults.quotePollDelaySeconds()));
+                properties.setProperty("quote.jitter-seconds",
+                    Long.toString(defaults.quoteJitterSeconds()));
+                properties.setProperty("quote.random-seed",
+                    Long.toString(defaults.quoteRandomSeed()));
                 properties.setProperty("briefing.interval-minutes",
                     Long.toString(defaults.briefingIntervalMinutes()));
                 properties.setProperty("briefing.delay-seconds",
@@ -92,6 +100,8 @@ public record FinanceConfig(
                 defaults.quoteReadTimeout().toMillis()),
             positiveLong(properties, "quote.poll-interval-minutes", defaults.quotePollIntervalMinutes()),
             positiveLong(properties, "quote.poll-delay-seconds", defaults.quotePollDelaySeconds()),
+            nonNegativeLong(properties, "quote.jitter-seconds", defaults.quoteJitterSeconds()),
+            parseLong(properties, "quote.random-seed", defaults.quoteRandomSeed()),
             positiveLong(properties, "briefing.interval-minutes", defaults.briefingIntervalMinutes()),
             positiveLong(properties, "briefing.delay-seconds", defaults.briefingDelaySeconds()),
             parseBoolean(properties, "briefing.enabled", defaults.briefingEnabled()),
@@ -113,7 +123,7 @@ public record FinanceConfig(
 
     public FinanceConfig withSetupInitialized(boolean initialized) {
         return new FinanceConfig(quoteConnectTimeout, quoteReadTimeout,
-            quotePollIntervalMinutes, quotePollDelaySeconds, briefingIntervalMinutes, briefingDelaySeconds,
+            quotePollIntervalMinutes, quotePollDelaySeconds, quoteJitterSeconds, quoteRandomSeed, briefingIntervalMinutes, briefingDelaySeconds,
             briefingEnabled, initialized, marketHolidays, marketEnabled, disabledProviders, language, tradingRules);
     }
 
