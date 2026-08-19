@@ -22,6 +22,7 @@ public final class QuoteRefreshService implements AutoCloseable {
     private final AtomicBoolean closed = new AtomicBoolean();
     private final long refreshMinutes;
     private final Consumer<String> alertConsumer;
+    private final Consumer<com.imyvm.finance.market.QuoteSnapshot> snapshotConsumer;
     private final Set<String> unavailableInstruments = new HashSet<>();
     private boolean sidecarUnavailable;
 
@@ -34,6 +35,12 @@ public final class QuoteRefreshService implements AutoCloseable {
     }
 
     public QuoteRefreshService(QuoteSnapshotStore store, FinanceConfig config, Consumer<String> alertConsumer) {
+        this(store, config, alertConsumer, ignored -> { });
+    }
+
+    public QuoteRefreshService(QuoteSnapshotStore store, FinanceConfig config,
+                               Consumer<String> alertConsumer,
+                               Consumer<com.imyvm.finance.market.QuoteSnapshot> snapshotConsumer) {
         this.store = store;
         this.client = new SidecarClient(
             config.sidecarEndpoint(),
@@ -41,6 +48,7 @@ public final class QuoteRefreshService implements AutoCloseable {
             config.sidecarReadTimeout());
         this.refreshMinutes = config.quoteRefreshMinutes();
         this.alertConsumer = alertConsumer;
+        this.snapshotConsumer = snapshotConsumer;
         this.executor = Executors.newSingleThreadScheduledExecutor(task -> {
             Thread thread = new Thread(task, "imyvm-finance-quotes");
             thread.setDaemon(true);
@@ -67,6 +75,7 @@ public final class QuoteRefreshService implements AutoCloseable {
                 }
 
                 store.save(snapshot);
+                snapshotConsumer.accept(snapshot);
                 notifySidecarRecovery();
                 for (String alert : snapshot.alerts())
                     notifyAlert(alert);

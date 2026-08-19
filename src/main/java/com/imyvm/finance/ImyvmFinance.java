@@ -26,6 +26,11 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 public final class ImyvmFinance implements ModInitializer {
     public static final String MOD_ID = "imyvm_finance";
@@ -40,6 +45,7 @@ public final class ImyvmFinance implements ModInitializer {
     private static final long RETENTION_MILLIS = Duration.ofDays(30).toMillis();
     private static long nextRetentionCleanupAt;
     private static long nextBriefingAt;
+    private static final Map<String, MarketStatus> MARKET_STATUSES = new HashMap<>();
     private static volatile net.minecraft.server.MinecraftServer SERVER;
 
     @Override
@@ -68,7 +74,8 @@ public final class ImyvmFinance implements ModInitializer {
             SERVER = server;
             recoverInterruptedTransactions();
             pruneExpiredData();
-            nextBriefingAt = System.currentTimeMillis() + Duration.ofMinutes(CONFIG.briefingIntervalMinutes()).toMillis();
+            nextBriefingAt = nextBriefingAt(System.currentTimeMillis());
+            sendStartupAnnouncement(server);
             startQuoteRefresh();
         });
         ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -171,7 +178,7 @@ public final class ImyvmFinance implements ModInitializer {
         long now = System.currentTimeMillis();
         if (now < nextBriefingAt || QUOTE_STORE == null || TRADING_STORE == null)
             return;
-        nextBriefingAt = now + Duration.ofMinutes(CONFIG.briefingIntervalMinutes()).toMillis();
+        nextBriefingAt = nextBriefingAt(now);
         if (!CONFIG.briefingEnabled())
             return;
         Instrument[] instruments = Instrument.values();
@@ -196,6 +203,10 @@ public final class ImyvmFinance implements ModInitializer {
         }
         boolean markMovers = leader != null && loser != null
             && leader.quote().changeBps() != loser.quote().changeBps();
+        boolean hasOpenMarket = quotes.stream().anyMatch(quote -> quote != null
+            && quote.quote().status() == MarketStatus.OPEN);
+        if (!hasOpenMarket)
+            return;
         MutableComponent briefing = Component.empty().append(Translator.tr("commands.market.briefing.header"));
         for (String market : new String[]{"CN", "HK", "US", "JP", "KR"}) {
             MutableComponent line = Component.empty().append("\n").append(Translator.tr("commands.market.briefing.market", market));
@@ -264,8 +275,63 @@ public final class ImyvmFinance implements ModInitializer {
         if (QUOTE_STORE == null || QUOTE_REFRESHER != null)
             return;
 
-        QUOTE_REFRESHER = new QuoteRefreshService(QUOTE_STORE, CONFIG, ImyvmFinance::notifyQuoteAlert);
+        QUOTE_REFRESHER = new QuoteRefreshService(
+            QUOTE_STORE, CONFIG, ImyvmFinance::notifyQuoteAlert, ImyvmFinance::handleQuoteSnapshot);
         QUOTE_REFRESHER.start();
+    }
+
+    private static long nextBriefingAt(long now) {
+        ZoneId zone = ZoneId.systemDefault();
+        ZonedDateTime next = Instant.ofEpochMilli(now).atZone(zone)
+            .withMinute(1).withSecond(0).withNano(0);
+        if (next.toInstant().toEpochMilli() <= now)
+            next = next.plusHours(1);
+        return next.toInstant().toEpochMilli();
+    }
+
+    private static void sendStartupAnnouncement(net.minecraft.server.MinecraftServer server) {
+        Component message = Translator.tr("commands.market.notice.startup");
+        for (var player : server.getPlayerList().getPlayers())
+            player.sendSystemMessage(message);
+    }
+
+    private static void handleQuoteSnapshot(com.imyvm.finance.market.QuoteSnapshot snapshot) {
+        net.minecraft.server.MinecraftServer server = SERVER;
+        if (server == null)
+            return;
+        server.execute(() -> updateMarketAnnouncements(server, snapshot));
+    }
+
+    private static void updateMarketAnnouncements(
+        net.minecraft.server.MinecraftServer server,
+        com.imyvm.finance.market.QuoteSnapshot snapshot
+    ) {
+        Map<String, MarketStatus> current = new HashMap<>();
+        for (Instrument instrument : Instrument.values()) {
+            MarketStatus status = current.get(instrument.market());
+            MarketStatus quoteStatus = snapshot.quotes().stream()
+                .filter(quote -> quote.instrument() == instrument)
+                .map(com.imyvm.finance.market.MarketQuote::status)
+                .findFirst()
+                .orElse(MarketStatus.UNAVAILABLE);
+            if (quoteStatus == MarketStatus.OPEN || status == null)
+                current.put(instrument.market(), quoteStatus);
+        }
+        for (Map.Entry<String, MarketStatus> entry : current.entrySet()) {
+            MarketStatus previous = MARKET_STATUSES.put(entry.getKey(), entry.getValue());
+            if (entry.getValue() == MarketStatus.OPEN
+                && (previous == null || previous == MarketStatus.CLOSED))
+                sendMarketEvent(server, "commands.market.notice.opened", entry.getKey());
+            else if (entry.getValue() == MarketStatus.CLOSED && previous == MarketStatus.OPEN)
+                sendMarketEvent(server, "commands.market.notice.closed", entry.getKey());
+        }
+    }
+
+    private static void sendMarketEvent(net.minecraft.server.MinecraftServer server,
+                                        String key, String market) {
+        Component message = Translator.tr(key, market);
+        for (var player : server.getPlayerList().getPlayers())
+            player.sendSystemMessage(message);
     }
 
     private static void notifyQuoteAlert(String alert) {
