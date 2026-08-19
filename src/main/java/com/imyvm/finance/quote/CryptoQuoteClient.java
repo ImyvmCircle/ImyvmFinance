@@ -29,6 +29,8 @@ public final class CryptoQuoteClient {
     private static final URI OKX_ETH_ENDPOINT = URI.create("https://www.okx.com/api/v5/market/ticker?instId=ETH-USDT");
     private static final URI BYBIT_BTC_ENDPOINT = URI.create("https://api.bybit.com/v5/market/tickers?category=spot&symbol=BTCUSDT");
     private static final URI BYBIT_ETH_ENDPOINT = URI.create("https://api.bybit.com/v5/market/tickers?category=spot&symbol=ETHUSDT");
+    private static final URI BITSTAMP_BTC_ENDPOINT = URI.create("https://www.bitstamp.net/api/v2/ticker/btcusd/");
+    private static final URI BITSTAMP_ETH_ENDPOINT = URI.create("https://www.bitstamp.net/api/v2/ticker/ethusd/");
     private static final String COINBASE_BASE = "https://api.exchange.coinbase.com/products/";
     private final HttpClient httpClient;
     private final Duration requestTimeout;
@@ -56,6 +58,12 @@ public final class CryptoQuoteClient {
         CompletableFuture<String> btc = request(BYBIT_BTC_ENDPOINT);
         CompletableFuture<String> eth = request(BYBIT_ETH_ENDPOINT);
         return btc.thenCombine(eth, (btcBody, ethBody) -> parseBybit(btcBody, ethBody, Instant.now()));
+    }
+
+    public CompletableFuture<QuoteSnapshot> fetchBitstamp() {
+        CompletableFuture<String> btc = request(BITSTAMP_BTC_ENDPOINT);
+        CompletableFuture<String> eth = request(BITSTAMP_ETH_ENDPOINT);
+        return btc.thenCombine(eth, (btcBody, ethBody) -> parseBitstamp(btcBody, ethBody, Instant.now()));
     }
 
     public CompletableFuture<QuoteSnapshot> fetchBinance() {
@@ -150,6 +158,13 @@ public final class CryptoQuoteClient {
         BigDecimal last = new BigDecimal(ticker.get("lastPrice").getAsString());
         BigDecimal opening = new BigDecimal(ticker.get("prevPrice24h").getAsString());
         return quote(instrument, instrument.name(), last.toPlainString(), percent(last, opening));
+    }
+
+    public static QuoteSnapshot parseBitstamp(String btcBody, String ethBody, Instant fetchedAt) {
+        List<MarketQuote> quotes = List.of(
+            statsQuote(Instrument.CRYPTO_BTC, btcBody),
+            statsQuote(Instrument.CRYPTO_ETH, ethBody));
+        return snapshot("bitstamp", quotes, fetchedAt);
     }
 
     private static String percent(BigDecimal value, BigDecimal opening) {

@@ -119,6 +119,8 @@ public final class FinanceSelfTest {
         checkEquals(2, okx.quotes().size(), "OKX quote count");
         var bybit = com.imyvm.finance.quote.CryptoQuoteClient.parseBybit("{\"result\":{\"list\":[{\"symbol\":\"BTCUSDT\",\"lastPrice\":\"60000\",\"prevPrice24h\":\"59000\"}]}}", "{\"result\":{\"list\":[{\"symbol\":\"ETHUSDT\",\"lastPrice\":\"3000\",\"prevPrice24h\":\"2900\"}]}}", java.time.Instant.ofEpochMilli(1000));
         checkEquals(2, bybit.quotes().size(), "Bybit quote count");
+        var bitstamp = com.imyvm.finance.quote.CryptoQuoteClient.parseBitstamp("{\"last\":\"60000\",\"open\":\"59000\"}", "{\"last\":\"3000\",\"open\":\"2900\"}", java.time.Instant.ofEpochMilli(1000));
+        checkEquals(2, bitstamp.quotes().size(), "Bitstamp quote count");
     }
 
     private static void directMarketQuoteChecks() {
