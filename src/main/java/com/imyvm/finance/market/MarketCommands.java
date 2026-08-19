@@ -995,7 +995,15 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
 
     private static String value(JsonObject object, String key, String fallback) {
         if (object == null || !object.has(key) || object.get(key).isJsonNull()) return fallback;
-        return object.get(key).getAsString();
+        String value = object.get(key).getAsString();
+        if ("statsSince".equals(key) || key.endsWith("At")) {
+            try {
+                return formatLocalTimestamp(Instant.parse(value).toEpochMilli());
+            } catch (Exception ignored) {
+                return value;
+            }
+        }
+        return value;
     }
 
     private static long number(JsonObject object, String key) {
