@@ -41,6 +41,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class ImyvmFinance implements ModInitializer {
+    private static final long IDLE_INACTIVITY_THRESHOLD_SECONDS = 1800L;
+    private static final long IDLE_STARTUP_GRACE_SECONDS = 3600L;
     public static final String MOD_ID = "imyvm_finance";
     private static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
     private static final AtomicBoolean SETUP_CHECKING = new AtomicBoolean();
@@ -334,8 +336,8 @@ public final class ImyvmFinance implements ModInitializer {
             return;
         long now = System.currentTimeMillis();
         boolean noPlayers = server.getPlayerList().getPlayers().isEmpty();
-        boolean inactiveForHour = now - lastMarketActivityAt >= Duration.ofHours(1).toMillis()
-            && now - serverStartedAt >= Duration.ofHours(1).toMillis();
+        boolean inactiveForHour = now - lastMarketActivityAt >= IDLE_INACTIVITY_THRESHOLD_SECONDS * 1000L
+            && now - serverStartedAt >= IDLE_STARTUP_GRACE_SECONDS * 1000L;
         boolean cnCloseWindow = MarketHours.withinCloseWindow("CN", Instant.ofEpochMilli(now),
             CONFIG.marketHolidays().getOrDefault("CN", java.util.Set.of()), 5);
         boolean idle = isQuoteIdleEligible(noPlayers, inactiveForHour, cnCloseWindow);
@@ -343,6 +345,11 @@ public final class ImyvmFinance implements ModInitializer {
             : noPlayers ? "no players online"
             : inactiveForHour ? "no market command for one hour" : "market active";
         QUOTE_REFRESHER.setIdleMode(idle, reason);
+    }
+
+    static boolean isInactiveForIdle(long uptimeSeconds, long inactiveSeconds) {
+        return uptimeSeconds >= IDLE_STARTUP_GRACE_SECONDS
+            && inactiveSeconds >= IDLE_INACTIVITY_THRESHOLD_SECONDS;
     }
 
     static boolean isQuoteIdleEligible(boolean noPlayers, boolean inactiveForHour, boolean cnCloseWindow) {
@@ -364,8 +371,8 @@ public final class ImyvmFinance implements ModInitializer {
         long uptimeSeconds = serverStartedAt == 0 ? 0 : Math.max(0, (now - serverStartedAt) / 1000L);
         long inactiveSeconds = lastMarketActivityAt == 0 ? 0 : Math.max(0, (now - lastMarketActivityAt) / 1000L);
         boolean noPlayers = SERVER != null && SERVER.getPlayerList().getPlayers().isEmpty();
-        boolean inactiveForHour = uptimeSeconds >= 3600 && inactiveSeconds >= 3600;
-        long secondsUntilIdle = noPlayers ? 0 : Math.max(0, 3600 - inactiveSeconds);
+        boolean inactiveForHour = isInactiveForIdle(uptimeSeconds, inactiveSeconds);
+        long secondsUntilIdle = noPlayers ? 0 : Math.max(0, IDLE_INACTIVITY_THRESHOLD_SECONDS - inactiveSeconds);
         boolean closeWindow = MarketHours.withinCloseWindow("CN", Instant.ofEpochMilli(now),
             CONFIG.marketHolidays().getOrDefault("CN", java.util.Set.of()), 5);
         String mode = QUOTE_REFRESHER != null && QUOTE_REFRESHER.isIdleMode() ? "idle" : "active";

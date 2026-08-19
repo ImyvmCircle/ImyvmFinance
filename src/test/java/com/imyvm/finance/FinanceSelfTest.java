@@ -173,6 +173,9 @@ public final class FinanceSelfTest {
         return ImyvmFinance.isQuoteIdleEligible(true, false, false)
             && ImyvmFinance.isQuoteIdleEligible(false, true, false)
             && !ImyvmFinance.isQuoteIdleEligible(true, false, true)
+            && !ImyvmFinance.isInactiveForIdle(1800L, 1800L)
+            && !ImyvmFinance.isInactiveForIdle(3600L, 1799L)
+            && ImyvmFinance.isInactiveForIdle(3600L, 1800L)
             && !ImyvmFinance.isQuoteIdleEligible(false, false, false);
     }
 
