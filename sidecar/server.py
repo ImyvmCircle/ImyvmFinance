@@ -79,6 +79,7 @@ _calendars: dict[str, Any] = {}
 _cache_lock = threading.Lock()
 _cache: tuple[float, dict[str, Any]] | None = None
 _last_quotes: dict[str, dict[str, str]] = {}
+_last_snapshot: dict[str, Any] | None = None
 _last_market_digest: str | None = None
 _last_market_time = 0
 _unavailable: set[str] = set()
@@ -315,12 +316,15 @@ def _fetch_market_quotes(active: set[str], now: datetime) -> dict[str, dict[str,
                     print(f"[sidecar] provider for {market} switched to {provider}")
                     _active_providers[market] = provider
                 break
+        if expected - market_result.keys():
+            missing = ",".join(sorted(expected - market_result.keys()))
+            print(f"[sidecar] all providers failed for {market}; missing {missing}")
         result.update(market_result)
     return result
 
 
 def _build_snapshot(quotes: dict[str, dict[str, str]], now: datetime) -> dict[str, Any]:
-    global _last_market_digest, _last_market_time, _last_quotes
+    global _last_market_digest, _last_market_time, _last_quotes, _last_snapshot
     _last_quotes.update(quotes)
     statuses = _market_statuses(now)
     for quote_value in _last_quotes.values():
@@ -342,7 +346,7 @@ def _build_snapshot(quotes: dict[str, dict[str, str]], now: datetime) -> dict[st
     alerts.extend("recovered:" + symbol for symbol in sorted(_unavailable & available))
     _unavailable.clear()
     _unavailable.update(failed)
-    return {
+    snapshot = {
         "snapshotId": f"quotes-{timestamp}-{digest}",
         "source": "multi-source",
         "fetchedAt": timestamp,
@@ -350,6 +354,8 @@ def _build_snapshot(quotes: dict[str, dict[str, str]], now: datetime) -> dict[st
         "quotes": ordered,
         "alerts": alerts,
     }
+    _last_snapshot = snapshot
+    return snapshot
 
 
 def fetch_snapshot() -> dict[str, Any]:
@@ -359,6 +365,8 @@ def fetch_snapshot() -> dict[str, Any]:
         fresh = _fetch_market_quotes(active, now)
         if fresh:
             return _build_snapshot(fresh, now)
+        if _last_snapshot is not None:
+            return _last_snapshot
     if _last_quotes:
         return _build_snapshot({}, now)
     raise RuntimeError("all markets are closed and quote cache is empty")
