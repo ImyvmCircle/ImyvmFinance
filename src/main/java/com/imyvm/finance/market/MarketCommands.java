@@ -867,6 +867,36 @@ public final class MarketCommands {
             JsonObject root = JsonParser.parseString(body).getAsJsonObject();
             source.sendSuccess(() -> Translator.tr("commands.market.source.status.header"), false);
             source.sendSuccess(() -> Translator.tr("commands.market.source.status.since", value(root, "statsSince", "-")), false);
+            JsonObject scheduler = root.getAsJsonObject("scheduler");
+            if (scheduler != null) {
+                source.sendSuccess(() -> Translator.tr("commands.market.source.status.scheduler.config",
+                    number(scheduler, "pollIntervalMinutes"), number(scheduler, "pollDelaySeconds"),
+                    number(scheduler, "jitterSeconds"), number(scheduler, "randomSeed")), false);
+                source.sendSuccess(() -> Translator.tr("commands.market.source.status.scheduler.schedule",
+                    value(scheduler, "lastNominalPollAt", "-"), number(scheduler, "lastJitterSeconds"),
+                    value(scheduler, "lastScheduledPollAt", "-"), value(scheduler, "nextNominalPollAt", "-")), false);
+                source.sendSuccess(() -> Translator.tr("commands.market.source.status.scheduler.refresh",
+                    value(scheduler, "lastRefreshStartedAt", "-"), value(scheduler, "lastRefreshCompletedAt", "-"),
+                    value(scheduler, "lastRefreshStatus", "-"), value(scheduler, "lastSnapshotId", "-"),
+                    value(scheduler, "lastRefreshError", "-")), false);
+            }
+            JsonObject announcements = root.getAsJsonObject("announcements");
+            if (announcements != null) {
+                source.sendSuccess(() -> Translator.tr("commands.market.source.status.announcement.startup",
+                    value(announcements, "startupAnnouncementSentAt", "-")), false);
+                source.sendSuccess(() -> Translator.tr("commands.market.source.status.announcement.briefing",
+                    value(announcements, "lastBriefingSentAt", "-"), value(announcements, "nextBriefingAt", "-"),
+                    value(announcements, "lastBriefingSnapshotId", "-")), false);
+                JsonObject markets = announcements.getAsJsonObject("markets");
+                if (markets != null) {
+                    for (String market : new String[]{"CN", "CRYPTO"}) {
+                        JsonObject item = markets.getAsJsonObject(market);
+                        if (item == null) continue;
+                        source.sendSuccess(() -> Translator.tr("commands.market.source.status.announcement.market",
+                            marketLabel(market), value(item, "status", "UNKNOWN"), value(item, "lastEventAt", "-")), false);
+                    }
+                }
+            }
             JsonObject orders = root.getAsJsonObject("providerOrder");
             JsonObject active = root.getAsJsonObject("lastSuccessfulProviders");
             if (orders != null) {

@@ -28,7 +28,15 @@ public final class QuoteRefreshService implements AutoCloseable {
     private final long pollDelaySeconds;
     private final long jitterSeconds;
     private final SplittableRandom random;
-    private long nextNominalPollAtEpochMillis;
+    private final long randomSeed;
+    private volatile long nextNominalPollAtEpochMillis;
+    private volatile long lastNominalPollAtEpochMillis;
+    private volatile long lastJitterSeconds;
+    private volatile long lastScheduledPollAtEpochMillis;
+    private volatile long lastRefreshStartedAtEpochMillis;
+    private volatile long lastRefreshCompletedAtEpochMillis;
+    private volatile String lastRefreshStatus = "idle";
+    private volatile String lastRefreshError;
     private final Consumer<String> alertConsumer;
     private final Consumer<com.imyvm.finance.market.QuoteSnapshot> snapshotConsumer;
     private final Set<String> unavailableInstruments = new HashSet<>();
@@ -58,7 +66,8 @@ public final class QuoteRefreshService implements AutoCloseable {
         this.pollIntervalMinutes = config.quotePollIntervalMinutes();
         this.pollDelaySeconds = config.quotePollDelaySeconds();
         this.jitterSeconds = config.quoteJitterSeconds();
-        this.random = config.quoteRandomSeed() == 0 ? new SplittableRandom() : new SplittableRandom(config.quoteRandomSeed());
+        this.randomSeed = config.quoteRandomSeed();
+        this.random = randomSeed == 0 ? new SplittableRandom() : new SplittableRandom(randomSeed);
         this.alertConsumer = alertConsumer;
         this.snapshotConsumer = snapshotConsumer;
         this.executor = Executors.newSingleThreadScheduledExecutor(task -> {
@@ -99,10 +108,13 @@ public final class QuoteRefreshService implements AutoCloseable {
 
         long nominalPollAt = nextNominalPollAtEpochMillis;
         nextNominalPollAtEpochMillis += intervalMillis;
+        lastNominalPollAtEpochMillis = nominalPollAt;
         long jitterSecondsForNode = jitterSeconds == 0
             ? 0
             : random.nextLong(-jitterSeconds, jitterSeconds + 1);
         long scheduledPollAt = nominalPollAt + jitterSecondsForNode * 1000L;
+        lastJitterSeconds = jitterSecondsForNode;
+        lastScheduledPollAtEpochMillis = scheduledPollAt;
         long delay = Math.max(1000L, scheduledPollAt - now);
         LOGGER.info("Scheduled market quote refresh: nominalAt={} jitterSeconds={} scheduledAt={} delaySeconds={}",
             Instant.ofEpochMilli(nominalPollAt), jitterSecondsForNode, Instant.ofEpochMilli(scheduledPollAt),
@@ -122,6 +134,22 @@ public final class QuoteRefreshService implements AutoCloseable {
         return client.controlStatus();
     }
 
+    public String schedulerStatus() {
+        return "{\"pollIntervalMinutes\":" + pollIntervalMinutes
+            + ",\"pollDelaySeconds\":" + pollDelaySeconds
+            + ",\"jitterSeconds\":" + jitterSeconds
+            + ",\"randomSeed\":" + randomSeed
+            + ",\"lastNominalPollAt\":" + jsonTime(lastNominalPollAtEpochMillis)
+            + ",\"lastJitterSeconds\":" + lastJitterSeconds
+            + ",\"lastScheduledPollAt\":" + jsonTime(lastScheduledPollAtEpochMillis)
+            + ",\"nextNominalPollAt\":" + jsonTime(nextNominalPollAtEpochMillis)
+            + ",\"lastRefreshStartedAt\":" + jsonTime(lastRefreshStartedAtEpochMillis)
+            + ",\"lastRefreshCompletedAt\":" + jsonTime(lastRefreshCompletedAtEpochMillis)
+            + ",\"lastRefreshStatus\":" + jsonString(lastRefreshStatus)
+            + ",\"lastRefreshError\":" + jsonString(lastRefreshError)
+            + ",\"lastSnapshotId\":" + jsonString(lastSnapshotId) + "}";
+    }
+
     public void setMarketEnabled(String market, boolean enabled) {
         client.setMarketEnabled(market, enabled);
     }
@@ -133,18 +161,24 @@ public final class QuoteRefreshService implements AutoCloseable {
     private void refresh() {
         if (closed.get() || !refreshing.compareAndSet(false, true))
             return;
+        lastRefreshStartedAtEpochMillis = System.currentTimeMillis();
+        lastRefreshStatus = "running";
+        lastRefreshError = null;
 
         client.fetch().whenComplete((snapshot, error) -> {
             try {
                 if (closed.get())
                     return;
                 if (error != null) {
+                    lastRefreshStatus = "failed";
+                    lastRefreshError = error.getMessage();
                     LOGGER.warn("Market quote refresh failed: {}", error.getMessage());
                     notifyMarketDataFailure();
                     return;
                 }
 
                 store.save(snapshot);
+                lastRefreshStatus = "success";
                 if (snapshot.alerts().isEmpty() && !snapshot.snapshotId().equals(lastSnapshotId)) {
                     lastSnapshotId = snapshot.snapshotId();
                     snapshotConsumer.accept(snapshot);
@@ -155,8 +189,11 @@ public final class QuoteRefreshService implements AutoCloseable {
                 LOGGER.info("Stored quote snapshot {} with {} quotes",
                     snapshot.snapshotId(), snapshot.quotes().size());
             } catch (Exception exception) {
+                lastRefreshStatus = "failed";
+                lastRefreshError = exception.getMessage();
                 LOGGER.error("Failed to store market quote snapshot", exception);
             } finally {
+                lastRefreshCompletedAtEpochMillis = System.currentTimeMillis();
                 refreshing.set(false);
             }
         });
@@ -188,6 +225,16 @@ public final class QuoteRefreshService implements AutoCloseable {
             if (unavailableInstruments.remove(symbol))
                 alertConsumer.accept(alert);
         }
+    }
+
+    private static String jsonTime(long epochMillis) {
+        return epochMillis == 0 ? "null" : jsonString(Instant.ofEpochMilli(epochMillis).toString());
+    }
+
+    private static String jsonString(String value) {
+        if (value == null)
+            return "null";
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     @Override

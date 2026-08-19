@@ -17,6 +17,8 @@ import com.imyvm.finance.economy.StockEconomySettlement;
 import com.imyvm.finance.quote.QuoteRefreshService;
 import com.imyvm.finance.quote.DirectMarketQuoteClient;
 import com.imyvm.finance.market.QuoteSnapshot;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -51,7 +53,10 @@ public final class ImyvmFinance implements ModInitializer {
     private static long nextRetentionCleanupAt;
     private static long nextBriefingAt = Long.MAX_VALUE;
     private static String lastBriefingSnapshotId;
+    private static long lastBriefingSentAt;
+    private static long startupAnnouncementSentAt;
     private static final Map<String, MarketStatus> MARKET_STATUSES = new HashMap<>();
+    private static final Map<String, Long> MARKET_EVENT_AT = new HashMap<>();
     private static volatile net.minecraft.server.MinecraftServer SERVER;
     private static Path CONFIG_PATH;
 
@@ -81,6 +86,9 @@ public final class ImyvmFinance implements ModInitializer {
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
             SERVER = server;
             MARKET_STATUSES.clear();
+            MARKET_EVENT_AT.clear();
+            lastBriefingSentAt = 0;
+            startupAnnouncementSentAt = 0;
             recoverInterruptedTransactions();
             pruneExpiredData();
             nextBriefingAt = Long.MAX_VALUE;
@@ -98,6 +106,8 @@ public final class ImyvmFinance implements ModInitializer {
             if (!CONFIG.setupInitialized()
                 && handler.getPlayer().createCommandSourceStack().permissions().hasPermission(Permissions.COMMANDS_ADMIN))
                 handler.getPlayer().sendSystemMessage(Translator.tr("commands.market.setup.required"));
+            if (CONFIG.setupInitialized())
+                handler.getPlayer().sendSystemMessage(playerMessage(Translator.tr("commands.market.notice.startup")));
             notifyPendingSettlement(handler.getPlayer());
             notifyPendingMarketAlerts(handler.getPlayer());
         });
@@ -283,6 +293,7 @@ public final class ImyvmFinance implements ModInitializer {
             LOGGER.warn("Failed to load briefing opt-outs", exception);
             briefingOptOuts = java.util.Set.of();
         }
+        lastBriefingSentAt = now;
         for (var player : server.getPlayerList().getPlayers()) {
             if (!briefingOptOuts.contains(player.getUUID()))
                 player.sendSystemMessage(playerMessage(briefing));
@@ -308,7 +319,44 @@ public final class ImyvmFinance implements ModInitializer {
     public static CompletableFuture<String> inspectMarketData(String path) {
         if (QUOTE_REFRESHER == null)
             return CompletableFuture.failedFuture(new IllegalStateException("quote service unavailable"));
-        return CompletableFuture.completedFuture(QUOTE_REFRESHER.providerStatus());
+        try {
+            JsonObject status = JsonParser.parseString(QUOTE_REFRESHER.providerStatus()).getAsJsonObject();
+            status.add("scheduler", JsonParser.parseString(QUOTE_REFRESHER.schedulerStatus()));
+            status.add("announcements", JsonParser.parseString(announcementStatus()));
+            return CompletableFuture.completedFuture(status.toString());
+        } catch (Exception exception) {
+            return CompletableFuture.failedFuture(exception);
+        }
+    }
+
+    private static String announcementStatus() {
+        StringBuilder markets = new StringBuilder("{");
+        boolean first = true;
+        for (String market : new String[]{"CN", "CRYPTO"}) {
+            if (!first) markets.append(',');
+            first = false;
+            MarketStatus status = MARKET_STATUSES.get(market);
+            markets.append(jsonString(market)).append(":{\"status\":")
+                .append(jsonString(status == null ? "UNKNOWN" : status.name()))
+                .append(",\"lastEventAt\":")
+                .append(jsonTime(MARKET_EVENT_AT.getOrDefault(market, 0L))).append('}');
+        }
+        markets.append('}');
+        return "{\"startupAnnouncementSentAt\":" + jsonTime(startupAnnouncementSentAt)
+            + ",\"lastBriefingSentAt\":" + jsonTime(lastBriefingSentAt)
+            + ",\"nextBriefingAt\":" + jsonTime(nextBriefingAt)
+            + ",\"lastBriefingSnapshotId\":" + jsonString(lastBriefingSnapshotId)
+            + ",\"markets\":" + markets + "}";
+    }
+
+    private static String jsonTime(long epochMillis) {
+        return epochMillis == 0 || epochMillis == Long.MAX_VALUE
+            ? "null" : jsonString(Instant.ofEpochMilli(epochMillis).toString());
+    }
+
+    private static String jsonString(String value) {
+        if (value == null) return "null";
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     public static CompletableFuture<String> controlMarketData(String path) {
@@ -380,6 +428,7 @@ public final class ImyvmFinance implements ModInitializer {
     }
 
     private static void sendStartupAnnouncement(net.minecraft.server.MinecraftServer server) {
+        startupAnnouncementSentAt = System.currentTimeMillis();
         Component message = Translator.tr("commands.market.notice.startup");
         for (var player : server.getPlayerList().getPlayers())
             player.sendSystemMessage(playerMessage(message));
@@ -432,6 +481,7 @@ public final class ImyvmFinance implements ModInitializer {
     private static void sendMarketEvent(net.minecraft.server.MinecraftServer server,
                                         String key, String market) {
         Component message = Translator.tr(key, marketLabel(market));
+        MARKET_EVENT_AT.put(market, System.currentTimeMillis());
         for (var player : server.getPlayerList().getPlayers())
             player.sendSystemMessage(playerMessage(message));
     }

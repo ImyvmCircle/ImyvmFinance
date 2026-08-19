@@ -165,5 +165,11 @@
   "imyvm_finance.commands.market.source.status.provider": "  §f§l{0}§r §7requests §e{1}§7, failures §c{2} §7(§e{3}%§7); {4} §8last request {5}, success {6}, failure {7}",
   "imyvm_finance.commands.market.source.status.backoff": "§ebackoff, §f{0}§e seconds remaining",
   "imyvm_finance.commands.market.source.status.ready": "§aavailable",
+  "imyvm_finance.commands.market.source.status.scheduler.config": "§6schedule: §7every §e{0}§7 minutes, node second §e{1}§7, random ±§e{2}§7 seconds, seed §f{3}",
+  "imyvm_finance.commands.market.source.status.scheduler.schedule": "§7nodes: nominal §8{0} §7| offset §e{1}§7 seconds | planned §8{2} §7| next nominal §8{3}",
+  "imyvm_finance.commands.market.source.status.scheduler.refresh": "§7request: start §8{0} §7| finish §8{1} §7| result §f{2} §7| snapshot §f{3} §7| error §c{4}",
+  "imyvm_finance.commands.market.source.status.announcement.startup": "§6startup notice: §7last sent §8{0}",
+  "imyvm_finance.commands.market.source.status.announcement.briefing": "§6briefing: §7last sent §8{0} §7| next planned §8{1} §7| snapshot §f{2}",
+  "imyvm_finance.commands.market.source.status.announcement.market": "§7{0}: status §f{1} §7| last announcement §8{2}",
   "imyvm_finance.commands.market.list.market": "§6§l--- {0} ---§r"
 }

@@ -165,5 +165,11 @@
   "imyvm_finance.commands.market.source.status.provider": "  §f§l{0}§r §7请求 §e{1} §7次，失败 §c{2} §7次（§e{3}%§7）；{4} §8最近请求 {5}，成功 {6}，异常 {7}",
   "imyvm_finance.commands.market.source.status.backoff": "§e退避中，剩余 §f{0}§e 秒",
   "imyvm_finance.commands.market.source.status.ready": "§a当前可用",
+  "imyvm_finance.commands.market.source.status.scheduler.config": "§6调度：§7每 §e{0}§7 分钟，节点第 §e{1}§7 秒，随机 ±§e{2}§7 秒，seed §f{3}",
+  "imyvm_finance.commands.market.source.status.scheduler.schedule": "§7节点：名义 §8{0} §7| 偏移 §e{1}§7 秒 | 计划 §8{2} §7| 下一名义节点 §8{3}",
+  "imyvm_finance.commands.market.source.status.scheduler.refresh": "§7请求：开始 §8{0} §7| 完成 §8{1} §7| 结果 §f{2} §7| 快照 §f{3} §7| 错误 §c{4}",
+  "imyvm_finance.commands.market.source.status.announcement.startup": "§6启动公告：§7最近发送 §8{0}",
+  "imyvm_finance.commands.market.source.status.announcement.briefing": "§6简报：§7上次发送 §8{0} §7| 下次计划 §8{1} §7| 快照 §f{2}",
+  "imyvm_finance.commands.market.source.status.announcement.market": "§7{0}：状态 §f{1} §7| 最近公告 §8{2}",
   "imyvm_finance.commands.market.list.market": "§6§l--- {0} ---§r"
 }
