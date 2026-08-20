@@ -63,7 +63,7 @@ public final class SimulationSnapshotBuilder {
                 MarketQuote next;
                 history = SimulatedQuoteGenerator.selectEligible(history, intervalMillis);
                 if (history.size() == 5) {
-                    next = SimulatedQuoteGenerator.next(instrument, history, previous.get().quote(), seed, sessionId, iteration, sessionFunction.getValue());
+                    next = SimulatedQuoteGenerator.next(instrument, history, previous.get().quote(), seed, sessionId, iteration, intervalMillis, sessionFunction.getValue());
                     store.recordSimulationNode(sessionId, nodeTime, instrument.symbol(), history.stream().map(StoredQuote::source).distinct().collect(java.util.stream.Collectors.joining(",")), previous.get().quote().priceScaled(), next.changeBps(), next.priceScaled());
                 } else {
                     MarketQuote old = previous.get().quote();

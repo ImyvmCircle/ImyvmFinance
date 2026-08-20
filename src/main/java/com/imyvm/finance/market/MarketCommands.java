@@ -1977,7 +1977,7 @@ private static String formatMovingAverage(List<Long> prices) {
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.input", history.getLast().source(), formula), false);
             for (int iteration = 1; iteration <= nodes; iteration++) {
                 timestamp += interval;
-                current = com.imyvm.finance.quote.SimulatedQuoteGenerator.next(instrument, history, current, previewSeed, timestamp, iteration, formula);
+                current = com.imyvm.finance.quote.SimulatedQuoteGenerator.next(instrument, history, current, previewSeed, timestamp, iteration, interval, formula);
                 long previewTime = timestamp;
                 MarketQuote preview = current;
                 int previewIteration = iteration;

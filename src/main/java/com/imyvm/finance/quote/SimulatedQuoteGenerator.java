@@ -45,12 +45,17 @@ public final class SimulatedQuoteGenerator {
 
     public static MarketQuote next(Instrument instrument, List<StoredQuote> history,
                                    MarketQuote previous, long seed, long sessionId, int iteration) {
-        return next(instrument, history, previous, seed, sessionId, iteration, SimulationFormula.DEFAULT);
+        return next(instrument, history, previous, seed, sessionId, iteration, history.get(1).nodeTimeEpochMillis() - history.get(0).nodeTimeEpochMillis(), SimulationFormula.DEFAULT);
     }
 
     public static MarketQuote next(Instrument instrument, List<StoredQuote> history,
                                    MarketQuote previous, long seed, long sessionId, int iteration, String formulaText) {
-        history = selectEligible(history, history.get(1).nodeTimeEpochMillis() - history.get(0).nodeTimeEpochMillis());
+        return next(instrument, history, previous, seed, sessionId, iteration, history.get(1).nodeTimeEpochMillis() - history.get(0).nodeTimeEpochMillis(), formulaText);
+    }
+
+    public static MarketQuote next(Instrument instrument, List<StoredQuote> history,
+                                   MarketQuote previous, long seed, long sessionId, int iteration, long intervalMillis, String formulaText) {
+        history = selectEligible(history, intervalMillis);
         if (history.size() != 5)
             throw new IllegalArgumentException("five consecutive real quote nodes are required");
         List<Double> returns = new ArrayList<>();
