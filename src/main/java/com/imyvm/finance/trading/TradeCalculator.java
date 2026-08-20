@@ -26,12 +26,6 @@ public final class TradeCalculator {
             throw new TradeValidationException(
                 "commands.market.trade.market_not_open",
                 storedQuote.quote().instrument().label());
-        if (storedQuote.marketTimeEpochMillis() > nowEpochMillis
-            || nowEpochMillis - storedQuote.marketTimeEpochMillis() > rules.maxQuoteAgeMillis())
-            throw new TradeValidationException(
-                "commands.market.trade.quote_stale",
-                storedQuote.quote().instrument().label());
-
         Instrument instrument = storedQuote.quote().instrument();
         BigDecimal indexPrice = BigDecimal.valueOf(storedQuote.quote().priceScaled(), 4);
         BigDecimal shares = BigDecimal.valueOf(units).divide(UNIT_SCALE);

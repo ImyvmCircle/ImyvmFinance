@@ -6,6 +6,8 @@ import com.imyvm.finance.storage.StoredQuote;
 import com.imyvm.finance.storage.StoredOrder;
 import com.imyvm.finance.storage.StoredTrade;
 import com.imyvm.finance.storage.StoredPosition;
+import com.imyvm.finance.storage.SimulationSessionView;
+import com.imyvm.finance.storage.SimulationNodeView;
 import com.imyvm.finance.economy.EconomySettlementResult;
 import com.imyvm.finance.economy.StockEconomySettlement;
 import com.imyvm.finance.quote.MarketHours;
@@ -209,16 +211,38 @@ public final class MarketCommands {
                     .then(Commands.argument("dates", StringArgumentType.greedyString())
                         .executes(MarketCommands::configureHoliday))));
 
+        var quoteHistory = Commands.literal("quote-history")
+            .requires(CommandSourceStack::isPlayer)
+            .then(Commands.argument("symbol", StringArgumentType.word()).suggests(MarketCommands::suggestInstruments)
+                .executes(context -> quoteHistory(context, 1L))
+                .then(Commands.argument("page", LongArgumentType.longArg(1))
+                    .executes(context -> quoteHistory(context, LongArgumentType.getLong(context, "page")))));
+
+        var simulation = Commands.literal("simulation")
+            .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
+            .then(Commands.literal("function")
+                .then(Commands.literal("list").executes(MarketCommands::simulationFunctionList))
+                .then(Commands.literal("add").then(Commands.argument("id", StringArgumentType.word()).executes(context -> simulationFunctionAdd(context, false))))
+                .then(Commands.literal("update").then(Commands.argument("id", StringArgumentType.word()).executes(context -> simulationFunctionAdd(context, true))))
+                .then(Commands.literal("delete").then(Commands.argument("id", StringArgumentType.word()).executes(MarketCommands::simulationFunctionDelete))))
+            .then(Commands.literal("sessions").executes(context -> simulationSessions(context, 1L))
+                .then(Commands.argument("page", LongArgumentType.longArg(1)).executes(context -> simulationSessions(context, LongArgumentType.getLong(context, "page")))))
+            .then(Commands.literal("nodes").then(Commands.argument("session", LongArgumentType.longArg(1))
+                .executes(context -> simulationNodes(context, LongArgumentType.getLong(context, "session"), 1L))
+                .then(Commands.argument("page", LongArgumentType.longArg(1)).executes(context -> simulationNodes(context, LongArgumentType.getLong(context, "session"), LongArgumentType.getLong(context, "page"))))));
+
         var market = dispatcher.register(Commands.literal("imyvm-market")
             .executes(MarketCommands::help)
             .then(help)
             .then(setup)
+            .then(simulation)
             .then(Commands.literal("list")
                 .executes(MarketCommands::list))
             .then(Commands.literal("quote")
                 .then(Commands.argument("symbol", StringArgumentType.word())
                     .suggests(MarketCommands::suggestInstruments)
                     .executes(MarketCommands::quote)))
+            .then(quoteHistory)
             .then(buy)
             .then(sell)
             .then(estimate)
@@ -336,7 +360,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                 rules.dailyBuyLimit(), rules.dailySellLimit(), rules.positionValueLimit()), false);
         context.getSource().sendSuccess(
             () -> Translator.tr("commands.market.rules.timing",
-                rules.sellCooldownMillis() / 60000, rules.maxQuoteAgeMillis() / 60000), false);
+                rules.sellCooldownMillis() / 60000), false);
         return Command.SINGLE_SUCCESS;
     }
 
@@ -502,6 +526,24 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         } catch (Exception exception) {
             return failUnexpected(context.getSource(), "positions", exception);
         }
+    }
+
+    private static int quoteHistory(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, long page) {
+        if (!requireInitialized(context.getSource())) return 0;
+        sendPlayerDisclaimer(context.getSource());
+        Instrument instrument = Instrument.fromSymbol(StringArgumentType.getString(context, "symbol"));
+        if (instrument == null) { context.getSource().sendFailure(Translator.tr("commands.market.quote.unknown_symbol")); return 0; }
+        if (ImyvmFinance.QUOTE_STORE == null) { context.getSource().sendFailure(Translator.tr("commands.market.quote.storage_unavailable")); return 0; }
+        try {
+            long total = ImyvmFinance.QUOTE_STORE.quoteHistoryCount(instrument);
+            long pageCount = Math.max(1L, (total + 9L) / 10L);
+            if (page > pageCount) { context.getSource().sendFailure(Translator.tr("commands.market.positions.page_unavailable", pageCount)); return 0; }
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.quote_history.header", instrumentLabel(instrument), total, page, pageCount), false);
+            for (StoredQuote quote : ImyvmFinance.QUOTE_STORE.findQuoteHistory(instrument, 10, (int) ((page - 1L) * 10L)))
+                context.getSource().sendSuccess(() -> Translator.tr("commands.market.quote_history.item", formatPrice(quote.quote().priceScaled()), formatPercent(quote.quote().changeBps()), quote.quote().status(), Instant.ofEpochMilli(quote.nodeTimeEpochMillis())), false);
+            sendPageFooter(context, "/imyvm-market quote-history " + instrument.commandForm(), page, pageCount);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) { return failUnexpected(context.getSource(), "quote history", exception); }
     }
 
     private static int history(
@@ -916,9 +958,10 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
     private static void renderSourceStatus(CommandSourceStack source, String body) {
         try {
             JsonObject root = JsonParser.parseString(body).getAsJsonObject();
+            JsonObject schedulerStatus = root.getAsJsonObject("scheduler");
             source.sendSuccess(() -> Translator.tr("commands.market.source.status.header"), false);
             source.sendSuccess(() -> Translator.tr("commands.market.source.status.since", value(root, "statsSince", "-")), false);
-            String outages = root.has("marketOutages") ? root.get("marketOutages").toString().replace("\"", "").replace("[", "").replace("]", "") : "";
+            String outages = schedulerStatus != null && schedulerStatus.has("simulationMarkets") ? schedulerStatus.get("simulationMarkets").toString().replace("\"", "").replace("[", "").replace("]", "") : "";
             source.sendSuccess(() -> Translator.tr("commands.market.source.status.outage", outages.isEmpty() ? "-" : outages), false);
             String enabled = Translator.tr("commands.market.source.status.enabled").getString();
             String paused = Translator.tr("commands.market.source.status.paused").getString();
@@ -1034,7 +1077,8 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
     private static String quoteControlStatus(JsonObject root, String market, String active, String closed, String outage) {
         if (hasArrayValue(root, "closedMarkets", market))
             return closed;
-        return hasArrayValue(root, "marketOutages", market) ? outage : active;
+        JsonObject scheduler = root.getAsJsonObject("scheduler");
+        return scheduler != null && hasArrayValue(scheduler, "simulationMarkets", market) ? outage : active;
     }
 
     private static boolean hasArrayValue(JsonObject object, String key, String value) {
@@ -1880,4 +1924,57 @@ private static String formatMovingAverage(List<Long> prices) {
         return total.divide(BigDecimal.valueOf(prices.size()), 4, RoundingMode.HALF_UP)
             .stripTrailingZeros().toPlainString();
     }
+    private static int simulationFunctionList(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (ImyvmFinance.QUOTE_STORE == null) return 0;
+        try {
+            for (var entry : ImyvmFinance.QUOTE_STORE.findSimulationFunctions().entrySet())
+                context.getSource().sendSuccess(() -> Component.literal(entry.getKey() + " - " + entry.getValue()), false);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation function list", exception); }
+    }
+
+    private static int simulationFunctionAdd(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, boolean update) {
+        String id = StringArgumentType.getString(context, "id");
+        if (!id.matches("[a-z0-9_-]{3,64}")) { context.getSource().sendFailure(Translator.tr("commands.market.simulation.function.invalid")); return 0; }
+        if (ImyvmFinance.QUOTE_STORE == null) return 0;
+        try {
+            ImyvmFinance.QUOTE_STORE.upsertSimulationFunction(id, "robust_seeded_walk");
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.function.changed", update ? "updated" : "added", id), true);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation function save", exception); }
+    }
+
+    private static int simulationFunctionDelete(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        String id = StringArgumentType.getString(context, "id");
+        if ("robust_seeded_walk".equals(id)) { context.getSource().sendFailure(Translator.tr("commands.market.simulation.function.protected")); return 0; }
+        if (ImyvmFinance.QUOTE_STORE == null) return 0;
+        try { ImyvmFinance.QUOTE_STORE.deleteSimulationFunction(id); context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.function.changed", "deleted", id), true); return Command.SINGLE_SUCCESS; }
+        catch (Exception exception) { return failUnexpected(context.getSource(), "simulation function delete", exception); }
+    }
+
+
+    private static int simulationSessions(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, long page) {
+        if (ImyvmFinance.QUOTE_STORE == null) return 0;
+        try {
+            var rows = ImyvmFinance.QUOTE_STORE.findSimulationSessions(10, (int) ((page - 1) * 10));
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.sessions.header", page), false);
+            for (SimulationSessionView row : rows) {
+                Component item = Translator.tr("commands.market.simulation.sessions.item", row.sessionId(), row.market(), row.status(), Instant.ofEpochMilli(row.startedAt()), row.endedAt() == null ? "active" : ((row.endedAt() - row.startedAt()) / 1000) + "s", row.functionId(), row.seed())
+                    .copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation nodes " + row.sessionId() + " 1")));
+                context.getSource().sendSuccess(() -> item, false);
+            }
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation sessions", exception); }
+    }
+
+    private static int simulationNodes(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, long sessionId, long page) {
+        if (ImyvmFinance.QUOTE_STORE == null) return 0;
+        try {
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.nodes.header", sessionId, page), false);
+            for (SimulationNodeView row : ImyvmFinance.QUOTE_STORE.findSimulationNodes(sessionId, 10, (int) ((page - 1) * 10)))
+                context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.nodes.item", row.symbol(), Instant.ofEpochMilli(row.nodeTime()), row.inputSource(), row.previousPrice(), row.newPrice(), row.fluctuationBps()), false);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation nodes", exception); }
+    }
+
 }

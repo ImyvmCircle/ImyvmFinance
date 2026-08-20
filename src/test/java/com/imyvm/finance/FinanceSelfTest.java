@@ -37,6 +37,7 @@ public final class FinanceSelfTest {
         configChecks();
         translationChecks();
         cryptoQuoteChecks();
+        simulationChecks();
         directMarketQuoteChecks();
         marketHoursChecks();
         storageChecks();
@@ -198,7 +199,7 @@ public final class FinanceSelfTest {
         check(!(Boolean) isBackedOff.invoke(singleProvider, "CN:only"),
             "provider entered backoff after one failure");
         var outages = com.imyvm.finance.quote.DirectMarketQuoteClient.class
-            .getDeclaredField("marketOutages");
+            .getDeclaredField("probingMarkets");
         outages.setAccessible(true);
         ((java.util.Set<String>) outages.get(singleProvider)).add("CN");
         checkEquals(java.util.List.of("only"), providersForAttempt.invoke(singleProvider, "CN"),
@@ -270,15 +271,8 @@ public final class FinanceSelfTest {
             "same-price", "test", 2_000L, 1_000L,
             new com.imyvm.finance.market.MarketQuote(
                 Instrument.CN_000001, "SSE", 10_000L, 0L, MarketStatus.OPEN));
-        TradeCalculator.estimate(TradeSide.BUY, quote, 1L, 1_000L + TradingRules.DEFAULT.maxQuoteAgeMillis(),
-            TradingRules.DEFAULT);
-        try {
-            TradeCalculator.estimate(TradeSide.BUY, quote, 1L, 1_001L + TradingRules.DEFAULT.maxQuoteAgeMillis(),
-                TradingRules.DEFAULT);
-            throw new AssertionError("unchanged market quote was treated as fresh");
-        } catch (TradeValidationException expected) {
-            checkEquals("commands.market.trade.quote_stale", expected.messageKey(), "market time freshness");
-        }
+        TradeCalculator.estimate(TradeSide.BUY, quote, 1L, 1_000L + TradingRules.DEFAULT.maxQuoteAgeMillis(), TradingRules.DEFAULT);
+        TradeCalculator.estimate(TradeSide.BUY, quote, 1L, 1_001L + TradingRules.DEFAULT.maxQuoteAgeMillis(), TradingRules.DEFAULT);
     }
 
     private static void quoteScheduleChecks() {
@@ -533,4 +527,27 @@ public final class FinanceSelfTest {
             });
         }
     }
+    private static void simulationChecks() {
+        var history = new java.util.ArrayList<com.imyvm.finance.storage.StoredQuote>();
+        for (int index = 0; index < 5; index++) {
+            long price = 10_000L + index * 100L;
+            history.add(new com.imyvm.finance.storage.StoredQuote("sim-" + index, "test", index * 180_000L,
+                index * 180_000L, index * 180_000L,
+                new com.imyvm.finance.market.MarketQuote(com.imyvm.finance.market.Instrument.CN_000001,
+                    "SSE", price, 100L, com.imyvm.finance.market.MarketStatus.OPEN)));
+        }
+        check(com.imyvm.finance.quote.SimulatedQuoteGenerator.eligible(history, 180_000L),
+            "five consecutive real nodes were not eligible");
+        var previous = history.getLast().quote();
+        var first = com.imyvm.finance.quote.SimulatedQuoteGenerator.next(
+            com.imyvm.finance.market.Instrument.CN_000001, history, previous, 7L, 9L, 1);
+        var second = com.imyvm.finance.quote.SimulatedQuoteGenerator.next(
+            com.imyvm.finance.market.Instrument.CN_000001, history, previous, 7L, 9L, 1);
+        checkEquals(first.priceScaled(), second.priceScaled(), "simulation seed reproducibility");
+        check(first.origin() == com.imyvm.finance.market.QuoteOrigin.SIMULATED,
+            "simulation origin was not recorded");
+        check(!com.imyvm.finance.quote.SimulatedQuoteGenerator.eligible(history, 60_000L),
+            "wrong node interval was accepted");
+    }
+
 }
