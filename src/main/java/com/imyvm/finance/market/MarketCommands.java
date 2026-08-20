@@ -69,6 +69,9 @@ public final class MarketCommands {
     ) {
     }
 
+    private record LeaderboardRow(UUID playerId, String name, long value) {
+    }
+
     private MarketCommands() {
     }
 
@@ -248,6 +251,8 @@ public final class MarketCommands {
                         .then(Commands.argument("nodeTime", LongArgumentType.longArg(1))
                             .executes(MarketCommands::simulationInputs)))));
 
+        var leaderboard = Commands.literal("leaderboard").executes(MarketCommands::leaderboard);
+
         var market = dispatcher.register(Commands.literal("imyvm-market")
             .executes(MarketCommands::help)
             .then(help)
@@ -271,6 +276,7 @@ public final class MarketCommands {
             .then(rules)
             .then(briefing)
             .then(positions)
+            .then(leaderboard)
             .then(history)
             .then(pending));
         dispatcher.register(Commands.literal("mkt").redirect(market));
@@ -285,7 +291,7 @@ public final class MarketCommands {
         source.sendSuccess(() -> Translator.tr("commands.market.help.intro"), false);
         source.sendSuccess(() -> Translator.tr("commands.market.help.symbol_hint"), false);
         for (String entry : new String[]{
-            "list", "quote", "buy", "estimate", "sell", "positions", "history", "rules", "briefing", "setup", "help"
+            "list", "quote", "buy", "estimate", "sell", "positions", "leaderboard", "history", "rules", "briefing", "setup", "help"
         })
             source.sendSuccess(() -> Translator.tr("commands.market.help.command." + entry), false);
         if (source.permissions().hasPermission(Permissions.COMMANDS_ADMIN)) {
@@ -466,6 +472,60 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         return 0;
     }
 
+    private static int leaderboard(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (!requireInitialized(context.getSource()) || ImyvmFinance.TRADING_STORE == null || ImyvmFinance.QUOTE_STORE == null)
+            return 0;
+        try {
+            java.util.List<LeaderboardRow> holdings = new java.util.ArrayList<>();
+            java.util.List<LeaderboardRow> realized = new java.util.ArrayList<>();
+            java.util.List<LeaderboardRow> unrealized = new java.util.ArrayList<>();
+            java.util.List<LeaderboardRow> combined = new java.util.ArrayList<>();
+            for (UUID playerId : ImyvmFinance.TRADING_STORE.findPlayerIds()) {
+                long marketValue = 0;
+                long cost = 0;
+                for (long offset = 0; ; offset += 100L) {
+                    java.util.List<StoredPosition> page = ImyvmFinance.TRADING_STORE.findPositions(playerId, 100L, offset);
+                    for (StoredPosition position : page) {
+                        Optional<StoredQuote> quote = ImyvmFinance.QUOTE_STORE.findLatest(position.instrument());
+                        if (quote.isEmpty()) continue;
+                        long value = BigDecimal.valueOf(quote.get().quote().priceScaled(), 4)
+                            .multiply(BigDecimal.valueOf(position.remainingUnits()))
+                            .divide(BigDecimal.TEN, 0, RoundingMode.FLOOR).longValueExact();
+                        marketValue += value;
+                        cost += position.positionValue() + position.buyFee();
+                    }
+                    if (page.size() < 100) break;
+                }
+                long realizedValue = ImyvmFinance.TRADING_STORE.realizedProfit(playerId);
+                long unrealizedValue = marketValue - cost;
+                ServerPlayer onlinePlayer = context.getSource().getServer().getPlayerList().getPlayer(playerId);
+                String name = onlinePlayer == null ? playerId.toString().substring(0, 8) : onlinePlayer.getGameProfile().name();
+                holdings.add(new LeaderboardRow(playerId, name, marketValue));
+                realized.add(new LeaderboardRow(playerId, name, realizedValue));
+                unrealized.add(new LeaderboardRow(playerId, name, unrealizedValue));
+                combined.add(new LeaderboardRow(playerId, name, realizedValue + unrealizedValue));
+            }
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.leaderboard.header"), false);
+            sendLeaderboard(context, "commands.market.leaderboard.holdings", holdings);
+            sendLeaderboard(context, "commands.market.leaderboard.realized", realized);
+            sendLeaderboard(context, "commands.market.leaderboard.unrealized", unrealized);
+            sendLeaderboard(context, "commands.market.leaderboard.combined", combined);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) {
+            return failUnexpected(context.getSource(), "leaderboard", exception);
+        }
+    }
+
+    private static void sendLeaderboard(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, String titleKey, java.util.List<LeaderboardRow> rows) {
+        rows.sort(java.util.Comparator.comparingLong(LeaderboardRow::value).reversed().thenComparing(LeaderboardRow::name));
+        context.getSource().sendSuccess(() -> Translator.tr(titleKey), false);
+        for (int index = 0; index < Math.min(5, rows.size()); index++) {
+            LeaderboardRow row = rows.get(index);
+            int rank = index + 1;
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.leaderboard.item", rank, row.name(), row.value()), false);
+        }
+    }
+
     private static int positions(
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
         long page
@@ -510,7 +570,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                                 .divide(BigDecimal.TEN, 0, RoundingMode.FLOOR)
                                 .longValueExact();
                             currentValue = Long.toString(value);
-                            profitLoss = Long.toString(value - position.positionValue());
+                            profitLoss = Long.toString(value - position.positionValue() - position.buyFee());
                         }
                     } catch (Exception ignored) {
                     }
@@ -520,7 +580,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                     instrumentLabel(position.instrument()),
                     availableUnits,
                     position.frozenUnits(),
-                    position.positionValue(),
+                    position.positionValue() + position.buyFee(),
                     currentValue,
                     profitLoss,
                     formatLocalTimestamp(position.boughtAtEpochMillis()),
@@ -1647,7 +1707,11 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                 .multiply(BigDecimal.valueOf(estimate.units()))
                 .divide(BigDecimal.valueOf(position.remainingUnits()), 0, RoundingMode.FLOOR)
                 .longValueExact();
-            long soldProfitLoss = estimate.settlementAmount() - soldCostBasis;
+            long soldBuyFee = BigDecimal.valueOf(position.buyFee())
+                .multiply(BigDecimal.valueOf(estimate.units()))
+                .divide(BigDecimal.valueOf(position.remainingUnits()), 0, RoundingMode.FLOOR)
+                .longValueExact();
+            long soldProfitLoss = estimate.settlementAmount() - soldCostBasis - soldBuyFee;
 
             if (!confirmed) {
                 String command = "/imyvm-market confirm " + createConfirmation(

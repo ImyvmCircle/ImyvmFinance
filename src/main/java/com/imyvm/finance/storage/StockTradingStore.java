@@ -73,7 +73,7 @@ public final class StockTradingStore implements AutoCloseable {
                     state TEXT NOT NULL
                 )
                 """);
-            ensureColumn(statement, "closed_at", "closed_at INTEGER");
+            ensureColumn(statement, "stock_positions", "closed_at", "closed_at INTEGER");
             statement.execute("""
                 CREATE TABLE IF NOT EXISTS stock_trades (
                     trade_id TEXT PRIMARY KEY,
@@ -87,9 +87,17 @@ public final class StockTradingStore implements AutoCloseable {
                     gross_amount INTEGER NOT NULL,
                     fee_amount INTEGER NOT NULL,
                     settlement_amount INTEGER NOT NULL,
+                    realized_profit INTEGER NOT NULL DEFAULT 0,
                     snapshot_id TEXT NOT NULL,
                     state TEXT NOT NULL,
                     created_at INTEGER NOT NULL
+                )
+                """);
+            ensureColumn(statement, "stock_trades", "realized_profit", "realized_profit INTEGER NOT NULL DEFAULT 0");
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS leaderboard_daily_notices (
+                    notice_date TEXT PRIMARY KEY,
+                    announced_at INTEGER NOT NULL
                 )
                 """);
             statement.execute("""
@@ -137,15 +145,15 @@ public final class StockTradingStore implements AutoCloseable {
         }
     }
 
-    private static void ensureColumn(Statement statement, String name, String definition)
+    private static void ensureColumn(Statement statement, String table, String name, String definition)
         throws SQLException {
-        try (ResultSet columns = statement.executeQuery("PRAGMA table_info(stock_positions)")) {
+        try (ResultSet columns = statement.executeQuery("PRAGMA table_info(" + table + ")")) {
             while (columns.next()) {
                 if (name.equals(columns.getString("name")))
                     return;
             }
         }
-        statement.execute("ALTER TABLE stock_positions ADD COLUMN " + definition);
+        statement.execute("ALTER TABLE " + table + " ADD COLUMN " + definition);
     }
 
     public static StockTradingStore open(Path databasePath) throws Exception {
@@ -413,7 +421,7 @@ public final class StockTradingStore implements AutoCloseable {
     public synchronized java.util.Optional<StoredPosition> findPosition(UUID positionId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
             SELECT position_id, player_id, symbol, remaining_units, frozen_units,
-                   position_value, buy_snapshot_id, bought_at, earliest_sell_at, state
+                   position_value, buy_fee, buy_snapshot_id, bought_at, earliest_sell_at, state
             FROM stock_positions
             WHERE position_id = ?
             """)) {
@@ -431,6 +439,7 @@ public final class StockTradingStore implements AutoCloseable {
                     result.getLong("remaining_units"),
                     result.getLong("frozen_units"),
                     result.getLong("position_value"),
+                    result.getLong("buy_fee"),
                     result.getString("buy_snapshot_id"),
                     result.getLong("bought_at"),
                     result.getLong("earliest_sell_at"),
@@ -461,7 +470,7 @@ public final class StockTradingStore implements AutoCloseable {
 
         try (PreparedStatement statement = connection.prepareStatement("""
             SELECT position_id, player_id, symbol, remaining_units, frozen_units,
-                   position_value, buy_snapshot_id, bought_at, earliest_sell_at, state
+                   position_value, buy_fee, buy_snapshot_id, bought_at, earliest_sell_at, state
             FROM stock_positions
             WHERE player_id = ? AND state IN (?, ?, ?)
             ORDER BY bought_at ASC
@@ -486,6 +495,7 @@ public final class StockTradingStore implements AutoCloseable {
                         result.getLong("remaining_units"),
                         result.getLong("frozen_units"),
                         result.getLong("position_value"),
+                        result.getLong("buy_fee"),
                         result.getString("buy_snapshot_id"),
                         result.getLong("bought_at"),
                         result.getLong("earliest_sell_at"),
@@ -699,30 +709,40 @@ public final class StockTradingStore implements AutoCloseable {
                 throw new SQLException("stock position is not frozen for this sale");
             long remainingUnits = position.remainingUnits() - units;
             long frozenUnits = position.frozenUnits() - units;
-            long positionValue = remainingUnits == 0
-                ? 0
-                : BigDecimal.valueOf(position.positionValue())
-                    .multiply(BigDecimal.valueOf(remainingUnits))
-                    .divide(BigDecimal.valueOf(position.remainingUnits()), 0, RoundingMode.FLOOR)
-                    .longValueExact();
+            long positionValue = remainingUnits == 0 ? 0 : BigDecimal.valueOf(position.positionValue())
+                .multiply(BigDecimal.valueOf(remainingUnits))
+                .divide(BigDecimal.valueOf(position.remainingUnits()), 0, RoundingMode.FLOOR).longValueExact();
+            long buyFee = remainingUnits == 0 ? 0 : BigDecimal.valueOf(position.buyFee())
+                .multiply(BigDecimal.valueOf(remainingUnits))
+                .divide(BigDecimal.valueOf(position.remainingUnits()), 0, RoundingMode.FLOOR).longValueExact();
+            long soldCost = position.positionValue() - positionValue;
+            long soldBuyFee = position.buyFee() - buyFee;
             try (PreparedStatement statement = connection.prepareStatement("""
                 UPDATE stock_positions
-                SET remaining_units = ?, frozen_units = ?, position_value = ?, state = ?,
+                SET remaining_units = ?, frozen_units = ?, position_value = ?, buy_fee = ?, state = ?,
                     closed_at = CASE WHEN ? = 0 THEN ? ELSE closed_at END
                 WHERE position_id = ? AND frozen_units >= ?
                 """)) {
                 statement.setLong(1, remainingUnits);
                 statement.setLong(2, frozenUnits);
                 statement.setLong(3, positionValue);
-                statement.setString(4, remainingUnits == 0 ? StockOrderState.CLOSED.name() : StockOrderState.ACTIVE.name());
-                statement.setLong(5, remainingUnits);
-                statement.setLong(6, System.currentTimeMillis());
-                statement.setString(7, positionId.toString());
-                statement.setLong(8, units);
+                statement.setLong(4, buyFee);
+                statement.setString(5, remainingUnits == 0 ? StockOrderState.CLOSED.name() : StockOrderState.ACTIVE.name());
+                statement.setLong(6, remainingUnits);
+                statement.setLong(7, System.currentTimeMillis());
+                statement.setString(8, positionId.toString());
+                statement.setLong(9, units);
                 if (statement.executeUpdate() != 1)
                     throw new SQLException("stock position changed concurrently");
             }
             updateOrderState(transactionId, StockOrderState.ACTIVE);
+            try (PreparedStatement statement = connection.prepareStatement("UPDATE stock_trades SET realized_profit = settlement_amount - ? - ? WHERE transaction_id = ? AND side = ?")) {
+                statement.setLong(1, soldCost);
+                statement.setLong(2, soldBuyFee);
+                statement.setString(3, transactionId.toString());
+                statement.setString(4, TradeSide.SELL.name());
+                statement.executeUpdate();
+            }
             updateTradeState(transactionId, StockTradeState.CONFIRMED);
             connection.commit();
         } catch (SQLException | RuntimeException exception) {
@@ -874,6 +894,36 @@ public final class StockTradingStore implements AutoCloseable {
             try (ResultSet result = statement.executeQuery()) {
                 return result.next() ? result.getLong(1) : 0L;
             }
+        }
+    }
+
+    public synchronized java.util.List<UUID> findPlayerIds() throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT DISTINCT player_id FROM stock_positions WHERE state IN (?, ?, ?) UNION SELECT DISTINCT player_id FROM stock_trades WHERE side = ? AND state = ?")) {
+            statement.setString(1, StockOrderState.ACTIVE.name());
+            statement.setString(2, StockOrderState.PENDING_FINANCE.name());
+            statement.setString(3, StockOrderState.PENDING_MANUAL.name());
+            statement.setString(4, TradeSide.SELL.name());
+            statement.setString(5, StockTradeState.CONFIRMED.name());
+            List<UUID> ids = new ArrayList<>();
+            try (ResultSet result = statement.executeQuery()) { while (result.next()) ids.add(UUID.fromString(result.getString(1))); }
+            return ids;
+        }
+    }
+
+    public synchronized long realizedProfit(UUID playerId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT COALESCE(SUM(realized_profit), 0) FROM stock_trades WHERE player_id = ? AND side = ? AND state = ?")) {
+            statement.setString(1, playerId.toString());
+            statement.setString(2, TradeSide.SELL.name());
+            statement.setString(3, StockTradeState.CONFIRMED.name());
+            try (ResultSet result = statement.executeQuery()) { return result.next() ? result.getLong(1) : 0L; }
+        }
+    }
+
+    public synchronized boolean claimLeaderboardNotice(String date) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("INSERT OR IGNORE INTO leaderboard_daily_notices(notice_date, announced_at) VALUES (?, ?)")) {
+            statement.setString(1, date);
+            statement.setLong(2, System.currentTimeMillis());
+            return statement.executeUpdate() == 1;
         }
     }
 

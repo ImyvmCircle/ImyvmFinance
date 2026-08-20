@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -119,6 +120,7 @@ public final class ImyvmFinance implements ModInitializer {
                 handler.getPlayer().sendSystemMessage(Translator.tr("commands.market.setup.required"));
             if (CONFIG.setupInitialized())
                 handler.getPlayer().sendSystemMessage(playerMessage(Translator.tr("commands.market.notice.startup")));
+            maybeAnnounceLeaderboard(server);
             notifyPendingSettlement(handler.getPlayer());
             notifyPendingMarketAlerts(handler.getPlayer());
         });
@@ -197,6 +199,17 @@ public final class ImyvmFinance implements ModInitializer {
             TRADING_STORE.pruneBefore(cutoff);
         } catch (Exception exception) {
             LOGGER.error("Failed to prune expired finance data", exception);
+        }
+    }
+
+    private static void maybeAnnounceLeaderboard(net.minecraft.server.MinecraftServer server) {
+        if (TRADING_STORE == null || server.getPlayerList().getPlayerCount() < 4) return;
+        try {
+            String date = LocalDate.now(CONFIG.zoneId()).toString();
+            if (TRADING_STORE.claimLeaderboardNotice(date))
+                server.getPlayerList().broadcastSystemMessage(Translator.tr("commands.market.leaderboard.daily_notice"), false);
+        } catch (Exception exception) {
+            LOGGER.error("Failed to announce leaderboard", exception);
         }
     }
 

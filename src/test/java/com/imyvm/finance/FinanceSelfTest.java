@@ -425,6 +425,8 @@ public final class FinanceSelfTest {
             checkEquals(60L, active.remainingUnits(), "remaining units");
             checkEquals(0L, active.frozenUnits(), "released frozen units");
             checkEquals(StockOrderState.ACTIVE, active.state(), "active position state");
+            checkEquals(12L, active.buyFee(), "remaining buy fee");
+            checkEquals(-56L, trading.realizedProfit(player), "realized partial-sale profit");
 
             UUID manualOrderId = UUID.randomUUID();
             UUID manualTransactionId = UUID.randomUUID();

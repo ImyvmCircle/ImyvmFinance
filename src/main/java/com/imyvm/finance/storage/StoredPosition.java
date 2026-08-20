@@ -12,6 +12,7 @@ public record StoredPosition(
     long remainingUnits,
     long frozenUnits,
     long positionValue,
+    long buyFee,
     String buySnapshotId,
     long boughtAtEpochMillis,
     long earliestSellAtEpochMillis,
