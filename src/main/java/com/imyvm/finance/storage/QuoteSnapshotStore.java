@@ -254,6 +254,14 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         return Map.entry("robust_seeded_walk", SimulationFormula.DEFAULT);
     }
 
+    public synchronized long simulationSessionCount() throws SQLException {
+        try (Statement statement = connection.createStatement(); ResultSet row = statement.executeQuery("SELECT COUNT(*) FROM simulation_sessions")) { row.next(); return row.getLong(1); }
+    }
+
+    public synchronized long simulationNodeTotal(long sessionId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT COUNT(*) FROM simulation_nodes WHERE session_id = ?")) { statement.setLong(1, sessionId); try (ResultSet row = statement.executeQuery()) { row.next(); return row.getLong(1); } }
+    }
+
     public synchronized List<SimulationSessionView> findSimulationSessions(int limit, int offset) throws SQLException {
         List<SimulationSessionView> result = new ArrayList<>();
         try (PreparedStatement statement = connection.prepareStatement("SELECT session_id, market, started_at, ended_at, function_id, function_formula, seed, status FROM simulation_sessions ORDER BY started_at DESC LIMIT ? OFFSET ?")) {
