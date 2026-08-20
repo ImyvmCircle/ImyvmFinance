@@ -558,6 +558,19 @@ public final class FinanceSelfTest {
             "simulation origin was not recorded");
         check(!com.imyvm.finance.quote.SimulatedQuoteGenerator.eligible(history, 60_000L),
             "wrong node interval was accepted");
+        var mixed = new java.util.ArrayList<com.imyvm.finance.storage.StoredQuote>();
+        for (int index = 0; index < 5; index++)
+            mixed.add(new com.imyvm.finance.storage.StoredQuote("long-" + index, "run", index * 720_000L, index * 720_000L, index * 720_000L,
+                new com.imyvm.finance.market.MarketQuote(com.imyvm.finance.market.Instrument.CN_000001, "SSE", 10_000L + index * 100L, index % 2 == 0 ? 80L : -60L, com.imyvm.finance.market.MarketStatus.OPEN)));
+        for (int index = 0; index < 5; index++) {
+            long timestamp = 2_880_000L + index * 180_000L + (index == 1 ? 15_000L : 0L);
+            mixed.add(new com.imyvm.finance.storage.StoredQuote("short-" + index, "run", timestamp, timestamp, timestamp,
+                new com.imyvm.finance.market.MarketQuote(com.imyvm.finance.market.Instrument.CN_000001, "SSE", 11_000L + index * 90L, index % 2 == 0 ? 120L : -100L, com.imyvm.finance.market.MarketStatus.OPEN)));
+        }
+        var selected = com.imyvm.finance.quote.SimulatedQuoteGenerator.selectEligible(mixed, 180_000L);
+        checkEquals(5, selected.size(), "jittered three-minute window was not selected");
+        checkEquals(2_880_000L, selected.getFirst().nodeTimeEpochMillis(), "twelve-minute window was selected");
+        check(com.imyvm.finance.quote.SimulatedQuoteGenerator.selectEligible(mixed.subList(0, 5), 180_000L).isEmpty(), "twelve-minute data was accepted");
     }
 
 }
