@@ -59,13 +59,14 @@ public final class QuoteSnapshotStore implements AutoCloseable {
                 )
                 """);
             try { statement.execute("ALTER TABLE simulation_functions ADD COLUMN active INTEGER NOT NULL DEFAULT 0"); } catch (SQLException ignored) { }
+            try { statement.execute("ALTER TABLE simulation_sessions ADD COLUMN function_formula TEXT NOT NULL DEFAULT 'CLAMP(DRIFT_BPS + VOLATILITY_BPS * RANDOM, -MAX_MOVE_BPS, MAX_MOVE_BPS)'"); } catch (SQLException ignored) { }
             statement.execute("INSERT OR IGNORE INTO simulation_functions(function_id, function_type, updated_at) VALUES ('robust_seeded_walk', 'CLAMP(DRIFT_BPS + VOLATILITY_BPS * RANDOM, -MAX_MOVE_BPS, MAX_MOVE_BPS)', strftime('%s', 'now'))");
             statement.execute("UPDATE simulation_functions SET function_type = 'CLAMP(DRIFT_BPS + VOLATILITY_BPS * RANDOM, -MAX_MOVE_BPS, MAX_MOVE_BPS)' WHERE function_id = 'robust_seeded_walk' AND function_type = 'robust_seeded_walk'");
             statement.execute("UPDATE simulation_functions SET active = 1 WHERE function_id = 'robust_seeded_walk' AND NOT EXISTS (SELECT 1 FROM simulation_functions WHERE active = 1)");
             statement.execute("""
                 CREATE TABLE IF NOT EXISTS simulation_sessions (
                     session_id INTEGER PRIMARY KEY, market TEXT NOT NULL, started_at INTEGER NOT NULL,
-                    ended_at INTEGER, function_id TEXT NOT NULL, seed INTEGER NOT NULL, status TEXT NOT NULL
+                    ended_at INTEGER, function_id TEXT NOT NULL, function_formula TEXT NOT NULL, seed INTEGER NOT NULL, status TEXT NOT NULL
                 )
                 """);
             statement.execute("""
@@ -195,10 +196,10 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         try (PreparedStatement statement = connection.prepareStatement("DELETE FROM simulation_functions WHERE function_id = ? AND function_id <> 'robust_seeded_walk'")) { statement.setString(1, id); statement.executeUpdate(); }
     }
 
-    public synchronized void beginSimulation(long sessionId, String market, long startedAt, String functionId, long seed) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("INSERT OR IGNORE INTO simulation_sessions(session_id, market, started_at, function_id, seed, status) VALUES (?, ?, ?, ?, ?, 'ACTIVE')")) {
+    public synchronized void beginSimulation(long sessionId, String market, long startedAt, String functionId, String formula, long seed) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("INSERT OR IGNORE INTO simulation_sessions(session_id, market, started_at, function_id, function_formula, seed, status) VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE')")) {
             statement.setLong(1, sessionId); statement.setString(2, market); statement.setLong(3, startedAt);
-            statement.setString(4, functionId); statement.setLong(5, seed); statement.executeUpdate();
+            statement.setString(4, functionId); statement.setString(5, formula); statement.setLong(6, seed); statement.executeUpdate();
         }
     }
 
@@ -221,11 +222,19 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         }
     }
 
+    public synchronized Map.Entry<String, String> simulationFunctionForSession(long sessionId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT function_id, function_formula FROM simulation_sessions WHERE session_id = ?")) {
+            statement.setLong(1, sessionId);
+            try (ResultSet row = statement.executeQuery()) { if (row.next()) return Map.entry(row.getString(1), row.getString(2)); }
+        }
+        return Map.entry("robust_seeded_walk", SimulationFormula.DEFAULT);
+    }
+
     public synchronized List<SimulationSessionView> findSimulationSessions(int limit, int offset) throws SQLException {
         List<SimulationSessionView> result = new ArrayList<>();
-        try (PreparedStatement statement = connection.prepareStatement("SELECT session_id, market, started_at, ended_at, function_id, seed, status FROM simulation_sessions ORDER BY started_at DESC LIMIT ? OFFSET ?")) {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT session_id, market, started_at, ended_at, function_id, function_formula, seed, status FROM simulation_sessions ORDER BY started_at DESC LIMIT ? OFFSET ?")) {
             statement.setInt(1, limit); statement.setInt(2, offset);
-            try (ResultSet rows = statement.executeQuery()) { while (rows.next()) result.add(new SimulationSessionView(rows.getLong(1), rows.getString(2), rows.getLong(3), rows.getObject(4) == null ? null : rows.getLong(4), rows.getString(5), rows.getLong(6), rows.getString(7))); }
+            try (ResultSet rows = statement.executeQuery()) { while (rows.next()) result.add(new SimulationSessionView(rows.getLong(1), rows.getString(2), rows.getLong(3), rows.getObject(4) == null ? null : rows.getLong(4), rows.getString(5), rows.getString(6), rows.getLong(7), rows.getString(8))); }
         }
         return result;
     }

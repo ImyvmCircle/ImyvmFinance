@@ -31,7 +31,6 @@ public final class SimulationSnapshotBuilder {
 
         Map<Instrument, MarketQuote> quotes = new HashMap<>();
         Map.Entry<String, String> activeFunction = store.activeSimulationFunction();
-        String simulationFormula = activeFunction.getValue();
         if (fetched != null)
             for (MarketQuote quote : fetched.quotes())
                 if (!failedMarkets.contains(quote.instrument().market()))
@@ -41,9 +40,10 @@ public final class SimulationSnapshotBuilder {
         for (String market : failedMarkets) {
             Long existingSession = sessionStarts.get(market);
             long sessionId = existingSession == null ? now : existingSession;
+            Map.Entry<String, String> sessionFunction = existingSession == null ? activeFunction : store.simulationFunctionForSession(sessionId);
             if (existingSession == null) {
                 sessionStarts.put(market, sessionId);
-                store.beginSimulation(sessionId, market, sessionId, activeFunction.getKey(), seed);
+                store.beginSimulation(sessionId, market, sessionId, sessionFunction.getKey(), sessionFunction.getValue(), seed);
             }
             int iteration = (int) store.simulationNodeCount(sessionId) + 1;
             for (Instrument instrument : Instrument.values()) {
@@ -53,19 +53,22 @@ public final class SimulationSnapshotBuilder {
                 if (previous.isEmpty())
                     continue;
                 if (previous.get().quote().status() != MarketStatus.OPEN) {
-                    quotes.put(instrument, previous.get().quote());
+                    MarketQuote old = previous.get().quote();
+                    quotes.put(instrument, old);
+                    store.recordSimulationNode(sessionId, nodeTime, instrument.symbol(), previous.get().source(), old.priceScaled(), 0, old.priceScaled());
                     continue;
                 }
                 List<StoredQuote> history = store.findRecentRealQuotes(instrument, 120);
                 MarketQuote next;
                 history = SimulatedQuoteGenerator.selectEligible(history, intervalMillis);
                 if (history.size() == 5) {
-                    next = SimulatedQuoteGenerator.next(instrument, history, previous.get().quote(), seed, sessionId, iteration, simulationFormula);
+                    next = SimulatedQuoteGenerator.next(instrument, history, previous.get().quote(), seed, sessionId, iteration, sessionFunction.getValue());
                     store.recordSimulationNode(sessionId, nodeTime, instrument.symbol(), history.getLast().source(), previous.get().quote().priceScaled(), next.changeBps(), next.priceScaled());
                 } else {
                     MarketQuote old = previous.get().quote();
-                    next = new MarketQuote(instrument, old.name(), old.priceScaled(), old.changeBps(),
+                    next = new MarketQuote(instrument, old.name(), old.priceScaled(), 0,
                         MarketStatus.UNAVAILABLE, QuoteOrigin.SIMULATED);
+                    store.recordSimulationNode(sessionId, nodeTime, instrument.symbol(), previous.get().source(), old.priceScaled(), 0, old.priceScaled());
                 }
                 quotes.put(instrument, next);
             }

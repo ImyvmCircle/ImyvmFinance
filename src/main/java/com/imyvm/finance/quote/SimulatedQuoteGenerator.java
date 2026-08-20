@@ -59,7 +59,7 @@ public final class SimulatedQuoteGenerator {
         double drift = median(returns);
         double deviation = median(returns.stream().map(value -> Math.abs(value - drift)).toList()) * 1.4826;
         double maxMove = Math.max(0.0001, returns.stream().mapToDouble(Math::abs).max().orElse(0.0001) * 1.5);
-        long mixedSeed = seed ^ (sessionId * 0x9E3779B97F4A7C15L) ^ ((long) instrument.ordinal() * 0xBF58476D1CE4E5B9L) ^ iteration;
+        long mixedSeed = seed ^ ((long) instrument.ordinal() * 0xBF58476D1CE4E5B9L) ^ iteration;
         SplittableRandom random = new SplittableRandom(mixedSeed);
         double triangular = (random.nextDouble() + random.nextDouble()) - 1.0;
         double move = SimulationFormula.parse(formulaText).eval(java.util.Map.of(
