@@ -271,7 +271,7 @@ public final class ImyvmFinance implements ModInitializer {
                                 "/imyvm-market estimate " + instrument.commandForm() + " " + TRADING_RULES.minUnits()))
                             .withHoverEvent(new HoverEvent.ShowText(Translator.tr("commands.market.briefing.buy_hint")))
                             .withUnderlined(true));
-                    line.append(Translator.tr("commands.market.briefing.item", name,
+                    line.append("\n").append(Translator.tr("commands.market.briefing.item", name,
                         formatPrice(quote.quote().priceScaled()), formatPercent(quote.quote().changeBps()),
                         briefingStatus(quote, tradable)));
                 } catch (Exception exception) {
