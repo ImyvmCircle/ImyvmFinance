@@ -1936,8 +1936,11 @@ private static String formatMovingAverage(List<Long> prices) {
     private static int simulationFunctionList(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         if (ImyvmFinance.QUOTE_STORE == null) return 0;
         try {
-            for (var entry : ImyvmFinance.QUOTE_STORE.findSimulationFunctions().entrySet())
-                context.getSource().sendSuccess(() -> Component.literal(entry.getKey() + " - " + entry.getValue()), false);
+            for (var entry : ImyvmFinance.QUOTE_STORE.findSimulationFunctions().entrySet()) {
+                var function = ImyvmFinance.QUOTE_STORE.findSimulationFunction(entry.getKey()).orElse(null);
+                String prefix = function != null && function.active() ? "§a§l[ACTIVE]§r " : "§7[stored]§r ";
+                context.getSource().sendSuccess(() -> Component.literal(prefix + entry.getKey() + " §e" + entry.getValue()), false);
+            }
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation function list", exception); }
     }
@@ -2029,7 +2032,8 @@ private static String formatMovingAverage(List<Long> prices) {
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.header", sessionId), false);
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.summary", row.market(), row.status(), Instant.ofEpochMilli(row.startedAt()), ((end - row.startedAt()) / 1000) + "s", row.functionId(), row.seed(), nodeCount), false);
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.formula", row.formula()), false);
-            context.getSource().sendSuccess(() -> Component.literal("/imyvm-market simulation nodes " + sessionId + " 1"), false);
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.nodes_link").copy()
+                .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation nodes " + sessionId + " 1"))), false);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation session", exception); }
     }
@@ -2045,7 +2049,7 @@ private static String formatMovingAverage(List<Long> prices) {
             for (SimulationSessionView row : rows) {
                 long end = row.endedAt() == null ? System.currentTimeMillis() : row.endedAt();
                 Component item = Translator.tr("commands.market.simulation.sessions.item", row.sessionId(), row.market(), row.status(), Instant.ofEpochMilli(row.startedAt()), ((end - row.startedAt()) / 1000) + "s", row.functionId(), row.seed())
-                    .copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation nodes " + row.sessionId() + " 1")));
+                    .copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation session " + row.sessionId())));
                 context.getSource().sendSuccess(() -> item, false);
             }
             sendPageFooter(context, "/imyvm-market simulation sessions", page, pageCount);
