@@ -71,7 +71,7 @@ public final class DirectMarketQuoteClient {
     }
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays) {
-        this(connectTimeout, requestTimeout, marketHolidays, Map.of("CN", true, "CRYPTO", true), Set.of(), Map.of("CN", List.of("eastmoney", "sina", "tencent"), "CRYPTO", List.of("binance", "coinbase", "kraken", "okx", "bybit", "bitstamp")), 15);
+        this(connectTimeout, requestTimeout, marketHolidays, Map.of("CN", true, "CRYPTO", true), Set.of(), Map.of("CN", List.of("eastmoney", "sina", "tencent"), "CRYPTO", List.of("binance", "mexc", "bitget")), 15);
     }
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays, Map<String, Boolean> marketEnabled, Set<String> disabledProviders, Map<String, List<String>> providerOrder) {
@@ -190,11 +190,8 @@ public final class DirectMarketQuoteClient {
             try {
                 var result = switch (provider) {
                     case "binance" -> cryptoClient.fetchBinance().join();
-                    case "coinbase" -> cryptoClient.fetchCoinbase().join();
-                    case "kraken" -> cryptoClient.fetchKraken().join();
-                    case "okx" -> cryptoClient.fetchOkx().join();
-                    case "bybit" -> cryptoClient.fetchBybit().join();
-                    case "bitstamp" -> cryptoClient.fetchBitstamp().join();
+                    case "mexc" -> cryptoClient.fetchMexc().join();
+                    case "bitget" -> cryptoClient.fetchBitget().join();
                     default -> throw new IllegalArgumentException("unknown crypto provider: " + provider);
                 };
                 activeProviders.put("CRYPTO", provider);

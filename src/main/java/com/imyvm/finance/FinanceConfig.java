@@ -56,7 +56,7 @@ public record FinanceConfig(
             Map.of(),
             Map.of("CN", true, "CRYPTO", true),
             Set.of(),
-            Map.of("CN", java.util.List.of("eastmoney", "sina", "tencent"), "CRYPTO", java.util.List.of("binance", "coinbase", "kraken", "okx", "bybit", "bitstamp")),
+            Map.of("CN", java.util.List.of("eastmoney", "sina", "tencent"), "CRYPTO", java.util.List.of("binance", "mexc", "bitget")),
             "zh_cn",
             "Asia/Shanghai",
             TradingRules.DEFAULT);
@@ -178,7 +178,7 @@ public record FinanceConfig(
     private static Map<String, java.util.List<String>> parseProviderOrder(Properties properties) {
         Map<String, java.util.List<String>> defaults = Map.of(
             "CN", java.util.List.of("eastmoney", "sina", "tencent"),
-            "CRYPTO", java.util.List.of("binance", "coinbase", "kraken", "okx", "bybit", "bitstamp"));
+            "CRYPTO", java.util.List.of("binance", "mexc", "bitget"));
         Map<String, java.util.List<String>> result = new HashMap<>();
         for (Map.Entry<String, java.util.List<String>> entry : defaults.entrySet()) {
             java.util.List<String> providers = new ArrayList<>();
