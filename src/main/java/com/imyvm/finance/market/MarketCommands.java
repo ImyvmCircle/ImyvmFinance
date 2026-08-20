@@ -235,6 +235,7 @@ public final class MarketCommands {
                         .then(Commands.argument("formula", StringArgumentType.greedyString()).executes(MarketCommands::simulationPreview)))))
             .then(Commands.literal("sessions").executes(context -> simulationSessions(context, 1L))
                 .then(Commands.argument("page", LongArgumentType.longArg(1)).executes(context -> simulationSessions(context, LongArgumentType.getLong(context, "page")))))
+            .then(Commands.literal("session").then(Commands.argument("session", LongArgumentType.longArg(1)).executes(MarketCommands::simulationSession)))
             .then(Commands.literal("nodes").then(Commands.argument("session", LongArgumentType.longArg(1))
                 .executes(context -> simulationNodes(context, LongArgumentType.getLong(context, "session"), 1L))
                 .then(Commands.argument("page", LongArgumentType.longArg(1)).executes(context -> simulationNodes(context, LongArgumentType.getLong(context, "session"), LongArgumentType.getLong(context, "page"))))));
@@ -2019,6 +2020,20 @@ private static String formatMovingAverage(List<Long> prices) {
     }
 
 
+    private static int simulationSession(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        try {
+            long sessionId = LongArgumentType.getLong(context, "session");
+            var row = ImyvmFinance.QUOTE_STORE.findSimulationSession(sessionId).orElseThrow(() -> new IllegalArgumentException("unknown session"));
+            long end = row.endedAt() == null ? System.currentTimeMillis() : row.endedAt();
+            long nodeCount = ImyvmFinance.QUOTE_STORE.simulationNodeTotal(sessionId);
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.header", sessionId), false);
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.summary", row.market(), row.status(), Instant.ofEpochMilli(row.startedAt()), ((end - row.startedAt()) / 1000) + "s", row.functionId(), row.seed(), nodeCount), false);
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.formula", row.formula()), false);
+            context.getSource().sendSuccess(() -> Component.literal("/imyvm-market simulation nodes " + sessionId + " 1"), false);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation session", exception); }
+    }
+
     private static int simulationSessions(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, long page) {
         if (ImyvmFinance.QUOTE_STORE == null) return 0;
         try {
@@ -2046,7 +2061,7 @@ private static String formatMovingAverage(List<Long> prices) {
             if (page > pageCount) { context.getSource().sendFailure(Translator.tr("commands.market.positions.page_unavailable", pageCount)); return 0; }
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.nodes.header", sessionId, page, pageCount), false);
             for (SimulationNodeView row : ImyvmFinance.QUOTE_STORE.findSimulationNodes(sessionId, 10, (int) ((page - 1) * 10)))
-                context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.nodes.item", row.symbol(), Instant.ofEpochMilli(row.nodeTime()), row.inputSource(), row.previousPrice(), row.newPrice(), row.fluctuationBps()), false);
+                context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.nodes.item", row.symbol(), Instant.ofEpochMilli(row.nodeTime()), row.inputSource(), formatPrice(row.previousPrice()), formatPrice(row.newPrice()), row.fluctuationBps()), false);
             sendPageFooter(context, "/imyvm-market simulation nodes " + sessionId, page, pageCount);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation nodes", exception); }

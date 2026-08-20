@@ -262,6 +262,16 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         return Map.entry("robust_seeded_walk", SimulationFormula.DEFAULT);
     }
 
+    public synchronized Optional<SimulationSessionView> findSimulationSession(long sessionId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT session_id, market, started_at, ended_at, function_id, function_formula, seed, status FROM simulation_sessions WHERE session_id = ?")) {
+            statement.setLong(1, sessionId);
+            try (ResultSet rows = statement.executeQuery()) {
+                if (rows.next()) return Optional.of(new SimulationSessionView(rows.getLong(1), rows.getString(2), rows.getLong(3), rows.getObject(4) == null ? null : rows.getLong(4), rows.getString(5), rows.getString(6), rows.getLong(7), rows.getString(8)));
+            }
+        }
+        return Optional.empty();
+    }
+
     public synchronized long simulationSessionCount() throws SQLException {
         try (Statement statement = connection.createStatement(); ResultSet row = statement.executeQuery("SELECT COUNT(*) FROM simulation_sessions")) { row.next(); return row.getLong(1); }
     }
