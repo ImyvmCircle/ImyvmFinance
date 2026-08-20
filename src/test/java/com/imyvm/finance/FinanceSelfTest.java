@@ -146,7 +146,7 @@ public final class FinanceSelfTest {
         checkEquals(2, bitstamp.quotes().size(), "Bitstamp quote count");
     }
 
-    private static void directMarketQuoteChecks() {
+    private static void directMarketQuoteChecks() throws Exception {
         var quote = com.imyvm.finance.quote.DirectMarketQuoteClient.parseYahoo(
             "{\"chart\":{\"result\":[{\"meta\":{\"regularMarketPrice\":\"3000\",\"previousClose\":\"3010\"}}]}}",
             com.imyvm.finance.market.Instrument.CN_000001);
@@ -158,6 +158,36 @@ public final class FinanceSelfTest {
             java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(1)).controlStatus();
         check(status.contains("lastSuccessfulProviders") && status.contains("providerStats") && status.contains("statsSince"),
             "provider status missing runtime monitoring fields: " + status);
+
+        var singleProvider = new com.imyvm.finance.quote.DirectMarketQuoteClient(
+            java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(1), java.util.Map.of(),
+            java.util.Map.of("CN", true, "CRYPTO", false), java.util.Set.of(),
+            java.util.Map.of("CN", java.util.List.of("only")), 1);
+        var recordAttempt = com.imyvm.finance.quote.DirectMarketQuoteClient.class
+            .getDeclaredMethod("recordAttempt", String.class);
+        var recordFailure = com.imyvm.finance.quote.DirectMarketQuoteClient.class
+            .getDeclaredMethod("recordFailure", String.class, Exception.class);
+        var providersForAttempt = com.imyvm.finance.quote.DirectMarketQuoteClient.class
+            .getDeclaredMethod("providersForAttempt", String.class);
+        var isBackedOff = com.imyvm.finance.quote.DirectMarketQuoteClient.class
+            .getDeclaredMethod("isBackedOff", String.class);
+        recordAttempt.setAccessible(true);
+        recordFailure.setAccessible(true);
+        providersForAttempt.setAccessible(true);
+        isBackedOff.setAccessible(true);
+        recordAttempt.invoke(singleProvider, "CN:only");
+        recordFailure.invoke(singleProvider, "CN:only", new Exception("first"));
+        check(!(Boolean) isBackedOff.invoke(singleProvider, "CN:only"),
+            "provider entered backoff after one failure");
+        var outages = com.imyvm.finance.quote.DirectMarketQuoteClient.class
+            .getDeclaredField("marketOutages");
+        outages.setAccessible(true);
+        ((java.util.Set<String>) outages.get(singleProvider)).add("CN");
+        checkEquals(java.util.List.of("only"), providersForAttempt.invoke(singleProvider, "CN"),
+            "single provider should retry itself after one failure");
+        recordFailure.invoke(singleProvider, "CN:only", new Exception("second"));
+        check(((String) singleProvider.controlStatus()).contains("\"backoffSecondsRemaining\":"),
+            "provider did not enter backoff after two failures");
     }
 
     private static void marketHoursChecks() {

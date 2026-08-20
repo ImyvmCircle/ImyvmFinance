@@ -273,6 +273,10 @@ public final class DirectMarketQuoteClient {
         failureCounts.computeIfAbsent(provider, ignored -> new AtomicLong()).incrementAndGet();
         lastFailureAt.computeIfAbsent(provider, ignored -> new AtomicLong()).set(System.currentTimeMillis());
         long failures = consecutiveFailures.computeIfAbsent(provider, ignored -> new AtomicLong()).incrementAndGet();
+        if (failures < 2) {
+            lastErrors.put(provider, exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage());
+            return;
+        }
         long multiplier = 1L << Math.min(failures - 1, 2);
         long cooldown = Math.min(providerBackoffMillis * multiplier, providerBackoffMillis * 4);
         backoffUntil.computeIfAbsent(provider, ignored -> new AtomicLong()).set(System.currentTimeMillis() + cooldown);
