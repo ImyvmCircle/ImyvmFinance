@@ -108,7 +108,9 @@ public final class FinanceSelfTest {
             "Chinese BTC instrument name was not localized");
         check(MarketCommands.instrumentLabel(Instrument.CRYPTO_ETH).getString().contains("煤气罐"),
             "Chinese ETH instrument name was not localized");
-        check(Translator.tr("commands.market.disclaimer").getString().contains("[提示]"),
+        check(Translator.tr("commands.market.disclaimer").getString().contains("[模拟警告]")
+            && Translator.tr("commands.market.list.notice").getString().contains("模拟")
+            && Translator.tr("commands.market.briefing.buy_hint").getString().contains("模拟"),
             "Chinese player notice translation missing");
         String briefingHeader = Translator.tr("commands.market.briefing.header", "2026-08-19 20:00:00 +08:00 Asia/Taipei").getString();
         check(briefingHeader.contains("2026-08-19 20:00:00") && !briefingHeader.contains("{0}"),

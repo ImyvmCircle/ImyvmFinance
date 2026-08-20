@@ -1299,7 +1299,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                             instrumentTradingEnabled = ImyvmFinance.TRADING_STORE.isTradingEnabled(instrument);
                         }
                         tradable = marketOpen && globalTradingEnabled && marketTradingEnabled && instrumentTradingEnabled;
-                        status = listStatus(value, marketOpen, globalTradingEnabled, marketTradingEnabled, instrumentTradingEnabled);
+                        status = listMarketStatus(value);
                         price = formatPrice(value.quote().priceScaled());
                         change = formatColoredPercent(value.quote().changeBps());
                         changeAmount = formatColoredChangeAmount(value.quote());
@@ -1379,16 +1379,8 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         return Command.SINGLE_SUCCESS;
     }
 
-    private static Component listStatus(StoredQuote quote, boolean marketOpen, boolean globalTradingEnabled, boolean marketTradingEnabled, boolean instrumentTradingEnabled) {
-        if (!marketOpen)
-            return Translator.tr("commands.market.list.status." + quote.quote().status().name().toLowerCase());
-        if (!globalTradingEnabled)
-            return Translator.tr("commands.market.list.status.global_paused");
-        if (!marketTradingEnabled)
-            return Translator.tr("commands.market.list.status.market_paused");
-        if (!instrumentTradingEnabled)
-            return Translator.tr("commands.market.list.status.instrument_paused");
-        return Translator.tr("commands.market.list.status.open");
+    private static Component listMarketStatus(StoredQuote quote) {
+        return Translator.tr("commands.market.briefing.status." + quote.quote().status().name().toLowerCase());
     }
 
     private static Component marketStatus(StoredQuote quote, boolean tradable) {
