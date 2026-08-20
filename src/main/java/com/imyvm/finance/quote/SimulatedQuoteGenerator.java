@@ -9,86 +9,47 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.SplittableRandom;
 
 public final class SimulatedQuoteGenerator {
-    private SimulatedQuoteGenerator() {
-    }
-    private static boolean matchesInterval(long actual, long expected) {
-        long tolerance = Math.max(45_000L, expected / 4L);
-        return Math.abs(actual - expected) <= tolerance;
+    public record Step(MarketQuote quote, double trendState, long randomBps, long trendBps) { }
+
+    private SimulatedQuoteGenerator() { }
+
+    public static long intervalToleranceMillis(long expected) { return Math.max(45_000L, expected / 4L); }
+
+    public static Step nextStep(Instrument instrument, MarketQuote previous, long seed, int iteration, int factor,
+                               double trendState, String formulaText) {
+        SplittableRandom random = new SplittableRandom(seed ^ ((long) instrument.ordinal() * 0xBF58476D1CE4E5B9L) ^ iteration);
+        double triangular = random.nextDouble() + random.nextDouble() - 1.0;
+        boolean crypto = "CRYPTO".equals(instrument.market());
+        long volatilityBps = crypto ? 35L : 8L;
+        long maxMoveBps = crypto ? 250L : 60L;
+        long targetBps = switch (factor) {
+            case 5 -> 10L;
+            case 4 -> 4L;
+            case 3 -> 0L;
+            case 2 -> -4L;
+            case 1 -> -10L;
+            default -> 0L;
+        };
+        double shock = random.nextDouble() < 0.0008
+            ? (random.nextBoolean() ? 1 : -1) * (crypto ? 12.0 : 4.0) : 0.0;
+        double nextTrendState = clamp(trendState * 0.999 + shock + triangular * 0.02, -40.0, 40.0);
+        long trendBps = Math.round(targetBps + nextTrendState);
+        double moveBps = SimulationFormula.compile(formulaText).eval(Map.of(
+            "PREV_PRICE", (double) previous.priceScaled(), "PREV_LOG_RETURN", previous.changeBps() / 10_000.0,
+            "DRIFT_BPS", (double) trendBps, "TREND_BPS", (double) trendBps,
+            "VOLATILITY_BPS", (double) volatilityBps, "MAX_MOVE_BPS", (double) maxMoveBps,
+            "RANDOM", triangular, "ITERATION", (double) iteration, "HISTORY_COUNT", 0.0));
+        moveBps = clamp(moveBps, -maxMoveBps, maxMoveBps);
+        long price = Math.max(0L, BigDecimal.valueOf(previous.priceScaled() * Math.exp(moveBps / 10_000.0))
+            .setScale(0, RoundingMode.HALF_UP).longValue());
+        MarketQuote quote = new MarketQuote(instrument, previous.name(), price,
+            BigDecimal.valueOf(moveBps).setScale(0, RoundingMode.HALF_UP).longValue(), previous.status(), QuoteOrigin.SIMULATED);
+        return new Step(quote, nextTrendState, Math.round(triangular * volatilityBps), trendBps);
     }
 
-    public static List<StoredQuote> selectEligible(List<StoredQuote> history, long intervalMillis) {
-        if (history == null || history.size() < 5) return List.of();
-        for (int start = 0; start + 5 <= history.size(); start++) {
-            List<StoredQuote> window = history.subList(start, start + 5);
-            boolean valid = true;
-            for (int index = 1; index < 5; index++) {
-                if (!matchesInterval(window.get(index).nodeTimeEpochMillis() - window.get(index - 1).nodeTimeEpochMillis(), intervalMillis)
-                    || window.get(index).quote().origin() != QuoteOrigin.REAL) { valid = false; break; }
-            }
-            if (valid && window.getFirst().quote().origin() == QuoteOrigin.REAL) return List.copyOf(window);
-        }
-        return List.of();
-    }
-
-
-    public static boolean eligible(List<StoredQuote> history, long intervalMillis) {
-        if (history == null || history.size() < 5)
-            return false;
-        for (int index = 1; index < 5; index++) {
-            long previous = history.get(index - 1).nodeTimeEpochMillis();
-            long current = history.get(index).nodeTimeEpochMillis();
-            if (!matchesInterval(current - previous, intervalMillis))
-                return false;
-            if (history.get(index).quote().origin() != QuoteOrigin.REAL)
-                return false;
-        }
-        return history.getFirst().quote().origin() == QuoteOrigin.REAL;
-    }
-
-    public static MarketQuote next(Instrument instrument, List<StoredQuote> history,
-                                   MarketQuote previous, long seed, long sessionId, int iteration) {
-        return next(instrument, history, previous, seed, sessionId, iteration, history.get(1).nodeTimeEpochMillis() - history.get(0).nodeTimeEpochMillis(), SimulationFormula.DEFAULT);
-    }
-
-    public static MarketQuote next(Instrument instrument, List<StoredQuote> history,
-                                   MarketQuote previous, long seed, long sessionId, int iteration, String formulaText) {
-        return next(instrument, history, previous, seed, sessionId, iteration, history.get(1).nodeTimeEpochMillis() - history.get(0).nodeTimeEpochMillis(), formulaText);
-    }
-
-    public static MarketQuote next(Instrument instrument, List<StoredQuote> history,
-                                   MarketQuote previous, long seed, long sessionId, int iteration, long intervalMillis, String formulaText) {
-        history = selectEligible(history, intervalMillis);
-        if (history.size() != 5)
-            throw new IllegalArgumentException("five consecutive real quote nodes are required");
-        List<Double> returns = new ArrayList<>();
-        for (int index = 1; index < 5; index++)
-            returns.add(Math.log((double) history.get(index).quote().priceScaled() / history.get(index - 1).quote().priceScaled()));
-        double drift = median(returns);
-        double deviation = median(returns.stream().map(value -> Math.abs(value - drift)).toList()) * 1.4826;
-        double maxMove = Math.max(0.0001, returns.stream().mapToDouble(Math::abs).max().orElse(0.0001) * 1.5);
-        long mixedSeed = seed ^ ((long) instrument.ordinal() * 0xBF58476D1CE4E5B9L) ^ iteration;
-        SplittableRandom random = new SplittableRandom(mixedSeed);
-        double triangular = (random.nextDouble() + random.nextDouble()) - 1.0;
-        double move = SimulationFormula.compile(formulaText).eval(java.util.Map.of(
-            "PREV_PRICE", (double) previous.priceScaled(), "PREV_LOG_RETURN", previous.origin() == QuoteOrigin.SIMULATED ? previous.changeBps() : returns.getLast() * 10_000.0,
-            "DRIFT_BPS", drift * 10_000.0, "VOLATILITY_BPS", deviation * 10_000.0,
-            "MAX_MOVE_BPS", maxMove * 10_000.0, "RANDOM", triangular,
-            "ITERATION", (double) iteration, "HISTORY_COUNT", (double) history.size()));
-        move = Math.max(-maxMove, Math.min(maxMove, move / 10_000.0));
-        double price = previous.priceScaled() * Math.exp(move);
-        long scaled = Math.max(0L, BigDecimal.valueOf(price).setScale(0, RoundingMode.HALF_UP).longValue());
-        long changeBps = BigDecimal.valueOf(move * 10_000.0).setScale(0, RoundingMode.HALF_UP).longValue();
-        return new MarketQuote(instrument, previous.name(), scaled, changeBps,
-            previous.status(), QuoteOrigin.SIMULATED);
-    }
-
-    private static double median(List<Double> values) {
-        List<Double> sorted = new ArrayList<>(values);
-        sorted.sort(Double::compareTo);
-        int middle = sorted.size() / 2;
-        return sorted.size() % 2 == 0 ? (sorted.get(middle - 1) + sorted.get(middle)) / 2.0 : sorted.get(middle);
-    }
+    private static double clamp(double value, double minimum, double maximum) { return Math.max(minimum, Math.min(maximum, value)); }
 }

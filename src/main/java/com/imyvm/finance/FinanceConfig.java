@@ -34,6 +34,7 @@ public record FinanceConfig(
     Map<String, Boolean> marketEnabled,
     Set<String> disabledProviders,
     Map<String, java.util.List<String>> providerOrder,
+    Map<String, Long> simulationDefaultPrices,
     String language,
     String timeZone,
     TradingRules tradingRules
@@ -57,6 +58,8 @@ public record FinanceConfig(
             Map.of("CN", true, "CRYPTO", true),
             Set.of(),
             Map.of("CN", java.util.List.of("eastmoney", "sina", "tencent"), "CRYPTO", java.util.List.of("binance", "mexc", "bitget")),
+            Map.of("CN:000001", 30_000_000L, "CN:399001", 30_000_000L, "CN:399006", 30_000_000L,
+                "CN:000300", 40_000_000L, "CN:000905", 50_000_000L, "CRYPTO:BTCUSDT", 600_000_000L, "CRYPTO:ETHUSDT", 30_000_000L),
             "zh_cn",
             "Asia/Shanghai",
             TradingRules.DEFAULT);
@@ -88,6 +91,8 @@ public record FinanceConfig(
                     Long.toString(defaults.quoteProviderBackoffMinutes()));
                 properties.setProperty("quote.random-seed",
                     Long.toString(defaults.quoteRandomSeed()));
+                for (var entry : defaults.simulationDefaultPrices().entrySet())
+                    properties.setProperty("simulation.default-price." + entry.getKey(), java.math.BigDecimal.valueOf(entry.getValue(), 4).stripTrailingZeros().toPlainString());
                 properties.setProperty("briefing.interval-minutes",
                     Long.toString(defaults.briefingIntervalMinutes()));
                 properties.setProperty("briefing.delay-seconds",
@@ -106,6 +111,17 @@ public record FinanceConfig(
                 properties.setProperty("trading.min-units", "1");
                 properties.store(writer, "ImyvmFinance settings");
             }
+        }
+        boolean simulationDefaultsAdded = false;
+        for (var entry : defaults.simulationDefaultPrices().entrySet()) {
+            String key = "simulation.default-price." + entry.getKey();
+            if (!properties.containsKey(key)) {
+                properties.setProperty(key, java.math.BigDecimal.valueOf(entry.getValue(), 4).stripTrailingZeros().toPlainString());
+                simulationDefaultsAdded = true;
+            }
+        }
+        if (simulationDefaultsAdded) {
+            try (Writer writer = Files.newBufferedWriter(path)) { properties.store(writer, "ImyvmFinance settings"); }
         }
 
         return new FinanceConfig(
@@ -127,6 +143,7 @@ public record FinanceConfig(
             parseMarketEnabled(properties),
             parseDisabledProviders(properties),
             parseProviderOrder(properties),
+            parseSimulationDefaultPrices(properties, defaults.simulationDefaultPrices()),
             properties.getProperty("language", defaults.language()).trim(),
             parseTimeZone(properties, "time-zone", defaults.timeZone()),
             new TradingRules(
@@ -147,7 +164,7 @@ public record FinanceConfig(
     public FinanceConfig withSetupInitialized(boolean initialized) {
         return new FinanceConfig(quoteConnectTimeout, quoteReadTimeout,
             quotePollIntervalMinutes, quoteIdlePollIntervalMinutes, quotePollDelaySeconds, quoteJitterSeconds, quoteProviderBackoffMinutes, quoteRandomSeed, briefingIntervalMinutes, briefingDelaySeconds,
-            briefingEnabled, initialized, marketHolidays, marketEnabled, disabledProviders, providerOrder, language, timeZone, tradingRules);
+            briefingEnabled, initialized, marketHolidays, marketEnabled, disabledProviders, providerOrder, simulationDefaultPrices, language, timeZone, tradingRules);
     }
 
     public static void writeMarketEnabled(Path path, String market, boolean enabled) throws IOException {
@@ -234,6 +251,19 @@ public record FinanceConfig(
         try (Writer writer = Files.newBufferedWriter(path)) {
             properties.store(writer, "ImyvmFinance settings");
         }
+    }
+
+    private static Map<String, Long> parseSimulationDefaultPrices(Properties properties, Map<String, Long> defaults) {
+        Map<String, Long> result = new HashMap<>(defaults);
+        for (String key : defaults.keySet()) {
+            String value = properties.getProperty("simulation.default-price." + key);
+            if (value == null) continue;
+            try {
+                long scaled = new java.math.BigDecimal(value.trim()).movePointRight(4).longValueExact();
+                if (scaled > 0) result.put(key, scaled);
+            } catch (RuntimeException ignored) { }
+        }
+        return Map.copyOf(result);
     }
 
     private static Map<String, Set<LocalDate>> parseHolidays(Properties properties) {

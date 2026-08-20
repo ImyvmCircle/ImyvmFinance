@@ -64,6 +64,8 @@ public final class FinanceSelfTest {
             check(!defaults.setupInitialized(), "setup defaults incomplete");
             checkEquals("zh_cn", defaults.language(), "default language");
             checkEquals("Asia/Shanghai", defaults.timeZone(), "default time zone");
+            checkEquals(30_000_000L, defaults.simulationDefaultPrices().get("CN:000001"), "default simulation point");
+            checkEquals(600_000_000L, defaults.simulationDefaultPrices().get("CRYPTO:BTCUSDT"), "default crypto simulation point");
             check(defaults.briefingEnabled(), "default briefing enabled");
             checkEquals(15L * 60 * 1000, defaults.tradingRules().maxQuoteAgeMillis(), "default quote age");
 
@@ -166,6 +168,11 @@ public final class FinanceSelfTest {
     private static void simulationFormulaChecks() {
         check(com.imyvm.finance.quote.SimulationFormula.compile(com.imyvm.finance.quote.SimulationFormula.DEFAULT) != null, "default simulation formula did not compile");
         check(com.imyvm.finance.quote.SimulationFormula.parse("LN(10) + LOG10(100) + LOG2(8) + LOGN(16, 2)") != null, "logarithm formula did not compile");
+        check(com.imyvm.finance.quote.SimulationFormula.parse(com.imyvm.finance.quote.SimulationFormula.STABLE) != null, "stable preset formula did not compile");
+        var rising = com.imyvm.finance.quote.SimulatedQuoteGenerator.nextStep(Instrument.CN_000001, new MarketQuote(Instrument.CN_000001, "SSE", 30_000_000L, 0, MarketStatus.OPEN), 7L, 1, 5, 0, com.imyvm.finance.quote.SimulationFormula.DEFAULT);
+        var falling = com.imyvm.finance.quote.SimulatedQuoteGenerator.nextStep(Instrument.CN_000001, new MarketQuote(Instrument.CN_000001, "SSE", 30_000_000L, 0, MarketStatus.OPEN), 7L, 1, 1, 0, com.imyvm.finance.quote.SimulationFormula.DEFAULT);
+        check(rising.trendBps() > falling.trendBps(), "trend factor did not control long-term direction");
+        check(rising.quote().priceScaled() != falling.quote().priceScaled(), "trend factor did not affect simulation price");
         try { com.imyvm.finance.quote.SimulationFormula.parse("LN(-1)"); throw new AssertionError("invalid logarithm formula was accepted"); }
         catch (IllegalArgumentException expected) { }
         try { com.imyvm.finance.quote.SimulationFormula.parse("LOGN(10, 1)"); throw new AssertionError("invalid logarithm base was accepted"); }
@@ -328,6 +335,12 @@ public final class FinanceSelfTest {
         QuoteSnapshotStore quotes = null;
         try {
             Path database = directory.resolve("finance.db");
+            Class.forName("org.sqlite.JDBC");
+            try (var legacy = java.sql.DriverManager.getConnection("jdbc:sqlite:" + database);
+                 var statement = legacy.createStatement()) {
+                statement.execute("CREATE TABLE simulation_sessions (session_id INTEGER PRIMARY KEY, market TEXT NOT NULL, started_at INTEGER NOT NULL, ended_at INTEGER, function_id TEXT NOT NULL, seed INTEGER NOT NULL, status TEXT NOT NULL)");
+                statement.execute("CREATE TABLE simulation_nodes (session_id INTEGER NOT NULL, node_time INTEGER NOT NULL, symbol TEXT NOT NULL, previous_price INTEGER NOT NULL, fluctuation_bps INTEGER NOT NULL, new_price INTEGER NOT NULL, PRIMARY KEY (session_id, node_time, symbol))");
+            }
             trading = StockTradingStore.open(database);
             transactions = StockTransactionStore.open(database);
             quotes = QuoteSnapshotStore.open(database);
@@ -337,6 +350,26 @@ public final class FinanceSelfTest {
             var recentPrices = quotes.findRecentPrices(Instrument.CN_000001, 5);
             checkEquals(5, recentPrices.size(), "MA5 history count");
             checkEquals(10_400L, recentPrices.getFirst(), "MA5 newest price");
+            quotes.beginSimulation(123L, "CN", 100L, "robust_seeded_walk", com.imyvm.finance.quote.SimulationFormula.DEFAULT, 9L, 180_000L, 45_000L);
+            quotes.recordSimulationNode(123L, 200L, "CN:000001", "test", 10_000L, 100L, 10_100L);
+            var session = quotes.findSimulationSession(123L).orElseThrow();
+            check(session.sessionUuid() != null && !session.sessionUuid().isBlank(), "simulation session UUID was not migrated or persisted");
+            checkEquals(180_000L, session.intervalMillis(), "simulation interval was not persisted");
+            checkEquals(45_000L, session.intervalToleranceMillis(), "simulation interval tolerance was not persisted");
+            quotes.setSimulationFactor("CN:000001", 5);
+            checkEquals(5, quotes.simulationFactor("CN:000001"), "simulation factor was not persisted");
+            checkEquals(5, quotes.simulationFactorForSession(123L, "CN:000001", 5), "session factor was not frozen");
+            checkEquals(5, quotes.simulationFactorForSession(123L, "CN:000001", 1), "session factor changed after freeze");
+            quotes.saveSimulationState(123L, "CN:000001", 2.5, 7);
+            checkEquals(7, quotes.findSimulationState(123L, "CN:000001").orElseThrow().iteration(), "simulation trend state was not persisted");
+            var node = quotes.findSimulationNodes(123L, 10, 0).getFirst();
+            check(Math.abs(node.logReturn() - Math.log(10_100.0 / 10_000.0)) < 1.0e-12, "simulation log return was not persisted from actual prices");
+            var coldStart = com.imyvm.finance.quote.SimulationSnapshotBuilder.build(null, quotes, 1_000L, 180_000L, 7L,
+                FinanceConfig.defaults().simulationDefaultPrices(), new java.util.HashMap<>()).orElseThrow();
+            check(coldStart.quotes().stream().anyMatch(quote -> quote.instrument() == Instrument.CRYPTO_BTC && quote.priceScaled() > 0),
+                "simulation did not use configured default point for a missing last quote");
+            check(coldStart.quotes().stream().allMatch(quote -> quote.origin() == com.imyvm.finance.market.QuoteOrigin.SIMULATED),
+                "cold-start simulation leaked a real quote origin");
 
             check(trading.isGlobalTradingEnabled(), "global trading defaults enabled");
             check(trading.isTradingEnabled(Instrument.CN_000001), "instrument trading defaults enabled");
@@ -538,39 +571,15 @@ public final class FinanceSelfTest {
         }
     }
     private static void simulationChecks() {
-        var history = new java.util.ArrayList<com.imyvm.finance.storage.StoredQuote>();
-        for (int index = 0; index < 5; index++) {
-            long price = 10_000L + index * 100L;
-            history.add(new com.imyvm.finance.storage.StoredQuote("sim-" + index, "test", index * 180_000L,
-                index * 180_000L, index * 180_000L,
-                new com.imyvm.finance.market.MarketQuote(com.imyvm.finance.market.Instrument.CN_000001,
-                    "SSE", price, 100L, com.imyvm.finance.market.MarketStatus.OPEN)));
-        }
-        check(com.imyvm.finance.quote.SimulatedQuoteGenerator.eligible(history, 180_000L),
-            "five consecutive real nodes were not eligible");
-        var previous = history.getLast().quote();
-        var first = com.imyvm.finance.quote.SimulatedQuoteGenerator.next(
-            com.imyvm.finance.market.Instrument.CN_000001, history, previous, 7L, 9L, 1);
-        var second = com.imyvm.finance.quote.SimulatedQuoteGenerator.next(
-            com.imyvm.finance.market.Instrument.CN_000001, history, previous, 7L, 99L, 1);
-        checkEquals(first.priceScaled(), second.priceScaled(), "simulation seed reproducibility");
-        check(first.origin() == com.imyvm.finance.market.QuoteOrigin.SIMULATED,
-            "simulation origin was not recorded");
-        check(!com.imyvm.finance.quote.SimulatedQuoteGenerator.eligible(history, 60_000L),
-            "wrong node interval was accepted");
-        var mixed = new java.util.ArrayList<com.imyvm.finance.storage.StoredQuote>();
-        for (int index = 0; index < 5; index++)
-            mixed.add(new com.imyvm.finance.storage.StoredQuote("long-" + index, "run", index * 720_000L, index * 720_000L, index * 720_000L,
-                new com.imyvm.finance.market.MarketQuote(com.imyvm.finance.market.Instrument.CN_000001, "SSE", 10_000L + index * 100L, index % 2 == 0 ? 80L : -60L, com.imyvm.finance.market.MarketStatus.OPEN)));
-        for (int index = 0; index < 5; index++) {
-            long timestamp = 2_880_000L + index * 180_000L + (index == 1 ? 15_000L : 0L);
-            mixed.add(new com.imyvm.finance.storage.StoredQuote("short-" + index, "run", timestamp, timestamp, timestamp,
-                new com.imyvm.finance.market.MarketQuote(com.imyvm.finance.market.Instrument.CN_000001, "SSE", 11_000L + index * 90L, index % 2 == 0 ? 120L : -100L, com.imyvm.finance.market.MarketStatus.OPEN)));
-        }
-        var selected = com.imyvm.finance.quote.SimulatedQuoteGenerator.selectEligible(mixed, 180_000L);
-        checkEquals(5, selected.size(), "jittered three-minute window was not selected");
-        checkEquals(2_880_000L, selected.getFirst().nodeTimeEpochMillis(), "twelve-minute window was selected");
-        check(com.imyvm.finance.quote.SimulatedQuoteGenerator.selectEligible(mixed.subList(0, 5), 180_000L).isEmpty(), "twelve-minute data was accepted");
+        var previous = new MarketQuote(Instrument.CN_000001, "SSE", 30_000_000L, 0, MarketStatus.OPEN);
+        var first = com.imyvm.finance.quote.SimulatedQuoteGenerator.nextStep(Instrument.CN_000001, previous, 7L, 1, 5, 0, com.imyvm.finance.quote.SimulationFormula.DEFAULT);
+        var second = com.imyvm.finance.quote.SimulatedQuoteGenerator.nextStep(Instrument.CN_000001, previous, 7L, 1, 5, 0, com.imyvm.finance.quote.SimulationFormula.DEFAULT);
+        checkEquals(first.quote().priceScaled(), second.quote().priceScaled(), "simulation seed reproducibility");
+        check(first.quote().origin() == com.imyvm.finance.market.QuoteOrigin.SIMULATED, "simulation origin was not recorded");
+        var falling = com.imyvm.finance.quote.SimulatedQuoteGenerator.nextStep(Instrument.CN_000001, previous, 7L, 1, 1, 0, com.imyvm.finance.quote.SimulationFormula.DEFAULT);
+        check(first.trendBps() > falling.trendBps(), "trend factor did not control long-term direction");
+        check(first.quote().priceScaled() != falling.quote().priceScaled(), "trend factor did not affect simulation price");
+        check(com.imyvm.finance.quote.SimulatedQuoteGenerator.intervalToleranceMillis(180_000L) == 45_000L, "simulation interval tolerance changed unexpectedly");
     }
 
 }

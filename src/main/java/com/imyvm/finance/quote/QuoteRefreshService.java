@@ -47,6 +47,7 @@ public final class QuoteRefreshService implements AutoCloseable {
     private final SplittableRandom random;
     private final long randomSeed;
     private final long simulationSeed;
+    private final java.util.Map<String, Long> simulationDefaultPrices;
     private final long pollIntervalMillis;
     private final java.util.Map<String, Long> simulationStartedAt = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile long nextNominalPollAtEpochMillis;
@@ -86,6 +87,7 @@ public final class QuoteRefreshService implements AutoCloseable {
         this.pollIntervalMinutes = config.quotePollIntervalMinutes();
         this.pollIntervalMillis = pollIntervalMinutes * 60_000L;
         this.simulationSeed = config.quoteRandomSeed();
+        this.simulationDefaultPrices = config.simulationDefaultPrices();
         this.idlePollIntervalMinutes = config.quoteIdlePollIntervalMinutes();
         this.pollDelaySeconds = config.quotePollDelaySeconds();
         this.jitterSeconds = config.quoteJitterSeconds();
@@ -261,8 +263,8 @@ public final class QuoteRefreshService implements AutoCloseable {
                     notifyMarketDataFailure();
                     try {
                         java.util.Optional<QuoteSnapshot> simulated = SimulationSnapshotBuilder.build(null, store,
-                            lastNominalPollAtEpochMillis == 0 ? System.currentTimeMillis() : lastNominalPollAtEpochMillis,
-                            pollIntervalMillis, simulationSeed, simulationStartedAt);
+                            lastScheduledPollAtEpochMillis == 0 ? System.currentTimeMillis() : lastScheduledPollAtEpochMillis,
+                            pollIntervalMillis, simulationSeed, simulationDefaultPrices, simulationStartedAt);
                         if (simulated.isPresent()) {
                             store.save(simulated.get());
                             lastRefreshStatus = "simulated";
@@ -281,8 +283,8 @@ public final class QuoteRefreshService implements AutoCloseable {
                 }
 
                 snapshot = SimulationSnapshotBuilder.build(snapshot, store,
-                    lastNominalPollAtEpochMillis == 0 ? System.currentTimeMillis() : lastNominalPollAtEpochMillis,
-                    pollIntervalMillis, simulationSeed, simulationStartedAt).orElse(snapshot);
+                    lastScheduledPollAtEpochMillis == 0 ? System.currentTimeMillis() : lastScheduledPollAtEpochMillis,
+                    pollIntervalMillis, simulationSeed, simulationDefaultPrices, simulationStartedAt).orElse(snapshot);
                 if (snapshot.alerts().stream().noneMatch(alert -> alert.startsWith("failed:market:"))) {
                     long recoveredAt = System.currentTimeMillis();
                     for (long sessionId : simulationStartedAt.values()) store.finishSimulation(sessionId, recoveredAt);
