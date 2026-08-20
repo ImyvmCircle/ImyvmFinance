@@ -80,6 +80,7 @@ public final class QuoteSnapshotStore implements AutoCloseable {
                 CREATE INDEX IF NOT EXISTS market_quotes_symbol_idx
                 ON market_quotes(symbol)
                 """);
+            statement.execute("UPDATE simulation_sessions SET ended_at = COALESCE(ended_at, started_at), status = 'ABORTED' WHERE status = 'ACTIVE'");
         }
     }
 

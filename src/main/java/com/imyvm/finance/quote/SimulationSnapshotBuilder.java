@@ -39,11 +39,11 @@ public final class SimulationSnapshotBuilder {
         long now = System.currentTimeMillis();
         for (String market : failedMarkets) {
             Long existingSession = sessionStarts.get(market);
-            long sessionId = existingSession == null ? now : existingSession;
+            long sessionId = existingSession == null ? simulationSessionId(now, market) : existingSession;
             Map.Entry<String, String> sessionFunction = existingSession == null ? activeFunction : store.simulationFunctionForSession(sessionId);
             if (existingSession == null) {
                 sessionStarts.put(market, sessionId);
-                store.beginSimulation(sessionId, market, sessionId, sessionFunction.getKey(), sessionFunction.getValue(), seed);
+                store.beginSimulation(sessionId, market, now, sessionFunction.getKey(), sessionFunction.getValue(), seed);
             }
             int iteration = (int) store.simulationNodeCount(sessionId) + 1;
             for (Instrument instrument : Instrument.values()) {
@@ -80,6 +80,10 @@ public final class SimulationSnapshotBuilder {
             "simulated-" + nodeTime,
             fetched == null ? "simulated" : fetched.source(),
             now, nodeTime, new ArrayList<>(quotes.values()), alerts, nodeTime));
+    }
+
+    private static long simulationSessionId(long startedAt, String market) {
+        return startedAt * 10L + ("CRYPTO".equals(market) ? 2L : 1L);
     }
 
     private static Set<String> failedMarkets(QuoteSnapshot snapshot) {
