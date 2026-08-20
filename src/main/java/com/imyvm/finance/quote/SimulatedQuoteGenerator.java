@@ -14,13 +14,18 @@ import java.util.SplittableRandom;
 public final class SimulatedQuoteGenerator {
     private SimulatedQuoteGenerator() {
     }
+    private static boolean matchesInterval(long actual, long expected) {
+        long tolerance = Math.max(45_000L, expected / 4L);
+        return Math.abs(actual - expected) <= tolerance;
+    }
+
     public static List<StoredQuote> selectEligible(List<StoredQuote> history, long intervalMillis) {
         if (history == null || history.size() < 5) return List.of();
         for (int start = 0; start + 5 <= history.size(); start++) {
             List<StoredQuote> window = history.subList(start, start + 5);
             boolean valid = true;
             for (int index = 1; index < 5; index++) {
-                if (window.get(index).nodeTimeEpochMillis() - window.get(index - 1).nodeTimeEpochMillis() != intervalMillis
+                if (!matchesInterval(window.get(index).nodeTimeEpochMillis() - window.get(index - 1).nodeTimeEpochMillis(), intervalMillis)
                     || window.get(index).quote().origin() != QuoteOrigin.REAL) { valid = false; break; }
             }
             if (valid && window.getFirst().quote().origin() == QuoteOrigin.REAL) return List.copyOf(window);
@@ -35,7 +40,7 @@ public final class SimulatedQuoteGenerator {
         for (int index = 1; index < 5; index++) {
             long previous = history.get(index - 1).nodeTimeEpochMillis();
             long current = history.get(index).nodeTimeEpochMillis();
-            if (current - previous != intervalMillis)
+            if (!matchesInterval(current - previous, intervalMillis))
                 return false;
             if (history.get(index).quote().origin() != QuoteOrigin.REAL)
                 return false;

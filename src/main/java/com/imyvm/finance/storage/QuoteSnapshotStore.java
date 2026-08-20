@@ -51,6 +51,7 @@ public final class QuoteSnapshotStore implements AutoCloseable {
                 )
                 """);
             try { statement.execute("ALTER TABLE market_snapshots ADD COLUMN node_time INTEGER NOT NULL DEFAULT 0"); } catch (SQLException ignored) { }
+            statement.execute("UPDATE market_snapshots SET node_time = market_time WHERE node_time = 0");
             try { statement.execute("ALTER TABLE market_quotes ADD COLUMN quote_origin TEXT NOT NULL DEFAULT 'REAL'"); } catch (SQLException ignored) { }
             try { statement.execute("ALTER TABLE simulation_nodes ADD COLUMN input_source TEXT NOT NULL DEFAULT 'REAL'"); } catch (SQLException ignored) { }
             statement.execute("""
