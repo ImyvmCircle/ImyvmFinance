@@ -174,6 +174,18 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         return result;
     }
 
+    public synchronized Optional<SimulationFunctionView> findSimulationFunction(String id) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT function_id, function_type, active, updated_at FROM simulation_functions WHERE function_id = ?")) {
+            statement.setString(1, id);
+            try (ResultSet row = statement.executeQuery()) { if (row.next()) return Optional.of(new SimulationFunctionView(row.getString(1), row.getString(2), row.getInt(3) != 0, row.getLong(4))); }
+        }
+        return Optional.empty();
+    }
+
+    public synchronized boolean simulationFunctionExists(String id) throws SQLException {
+        return findSimulationFunction(id).isPresent();
+    }
+
     public synchronized Map.Entry<String, String> activeSimulationFunction() throws SQLException {
         try (Statement statement = connection.createStatement(); ResultSet rows = statement.executeQuery("SELECT function_id, function_type FROM simulation_functions WHERE active = 1 LIMIT 1")) {
             if (rows.next()) return Map.entry(rows.getString(1), rows.getString(2));
@@ -182,8 +194,20 @@ public final class QuoteSnapshotStore implements AutoCloseable {
     }
 
     public synchronized void activateSimulationFunction(String id) throws SQLException {
-        connection.createStatement().executeUpdate("UPDATE simulation_functions SET active = 0");
-        try (PreparedStatement statement = connection.prepareStatement("UPDATE simulation_functions SET active = 1 WHERE function_id = ?")) { statement.setString(1, id); if (statement.executeUpdate() == 0) throw new IllegalArgumentException("unknown function"); }
+        boolean oldAutoCommit = connection.getAutoCommit();
+        try {
+            connection.setAutoCommit(false);
+            try (PreparedStatement check = connection.prepareStatement("SELECT 1 FROM simulation_functions WHERE function_id = ?")) {
+                check.setString(1, id);
+                try (ResultSet row = check.executeQuery()) { if (!row.next()) throw new IllegalArgumentException("unknown function"); }
+            }
+            try (Statement statement = connection.createStatement()) { statement.executeUpdate("UPDATE simulation_functions SET active = 0"); }
+            try (PreparedStatement statement = connection.prepareStatement("UPDATE simulation_functions SET active = 1 WHERE function_id = ?")) { statement.setString(1, id); statement.executeUpdate(); }
+            connection.commit();
+        } catch (SQLException | RuntimeException exception) {
+            connection.rollback();
+            throw exception;
+        } finally { connection.setAutoCommit(oldAutoCommit); }
     }
 
     public synchronized void upsertSimulationFunction(String id, String type) throws SQLException {
@@ -193,7 +217,7 @@ public final class QuoteSnapshotStore implements AutoCloseable {
     }
 
     public synchronized void deleteSimulationFunction(String id) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("DELETE FROM simulation_functions WHERE function_id = ? AND function_id <> 'robust_seeded_walk'")) { statement.setString(1, id); statement.executeUpdate(); }
+        try (PreparedStatement statement = connection.prepareStatement("DELETE FROM simulation_functions WHERE function_id = ? AND function_id <> 'robust_seeded_walk' AND active = 0")) { statement.setString(1, id); if (statement.executeUpdate() == 0) throw new IllegalArgumentException("function is missing, default, or active"); }
     }
 
     public synchronized void beginSimulation(long sessionId, String market, long startedAt, String functionId, String formula, long seed) throws SQLException {

@@ -223,6 +223,7 @@ public final class MarketCommands {
             .then(Commands.literal("help").executes(MarketCommands::simulationFunctionSyntax))
             .then(Commands.literal("function")
                 .then(Commands.literal("list").executes(MarketCommands::simulationFunctionList))
+                .then(Commands.literal("show").then(Commands.argument("id", StringArgumentType.word()).executes(MarketCommands::simulationFunctionShow)))
                 .then(Commands.literal("use").then(Commands.argument("id", StringArgumentType.word()).executes(MarketCommands::simulationFunctionUse)))
                 .then(Commands.literal("syntax").executes(MarketCommands::simulationFunctionSyntax))
                 .then(Commands.literal("add").then(Commands.argument("id", StringArgumentType.word()).then(Commands.argument("formula", StringArgumentType.greedyString()).executes(context -> simulationFunctionAdd(context, false)))))
@@ -1940,6 +1941,16 @@ private static String formatMovingAverage(List<Long> prices) {
         } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation function list", exception); }
     }
 
+    private static int simulationFunctionShow(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        try {
+            String id = StringArgumentType.getString(context, "id");
+            var function = ImyvmFinance.QUOTE_STORE.findSimulationFunction(id).orElseThrow(() -> new IllegalArgumentException("unknown function"));
+            context.getSource().sendSuccess(() -> Component.literal("id=" + function.id() + " active=" + function.active() + " updatedAt=" + Instant.ofEpochMilli(function.updatedAt())), false);
+            context.getSource().sendSuccess(() -> Component.literal("formula=" + function.formula()), false);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation function show", exception); }
+    }
+
     private static int simulationFunctionUse(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         try { ImyvmFinance.QUOTE_STORE.activateSimulationFunction(StringArgumentType.getString(context, "id")); context.getSource().sendSuccess(() -> Component.literal("simulation function activated"), true); return Command.SINGLE_SUCCESS; }
         catch (Exception exception) { return failUnexpected(context.getSource(), "simulation function activate", exception); }
@@ -1986,6 +1997,8 @@ private static String formatMovingAverage(List<Long> prices) {
         if (ImyvmFinance.QUOTE_STORE == null) return 0;
         try {
             com.imyvm.finance.quote.SimulationFormula.parse(formula);
+            boolean exists = ImyvmFinance.QUOTE_STORE.simulationFunctionExists(id);
+            if ((!update && exists) || (update && !exists)) throw new IllegalArgumentException(update ? "function does not exist" : "function already exists");
             ImyvmFinance.QUOTE_STORE.upsertSimulationFunction(id, formula);
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.function.changed", update ? "updated" : "added", id), true);
             return Command.SINGLE_SUCCESS;
