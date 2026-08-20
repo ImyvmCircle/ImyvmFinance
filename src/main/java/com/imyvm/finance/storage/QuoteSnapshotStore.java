@@ -241,6 +241,13 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         }
     }
 
+    public synchronized long simulationNodeCount(long sessionId, String symbol) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT COUNT(*) FROM simulation_nodes WHERE session_id = ? AND symbol = ?")) {
+            statement.setLong(1, sessionId); statement.setString(2, symbol);
+            try (ResultSet result = statement.executeQuery()) { result.next(); return result.getLong(1); }
+        }
+    }
+
     public synchronized long simulationNodeCount(long sessionId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("SELECT COUNT(*) FROM simulation_nodes WHERE session_id = ?")) {
             statement.setLong(1, sessionId); try (ResultSet result = statement.executeQuery()) { result.next(); return result.getLong(1); }

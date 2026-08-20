@@ -45,16 +45,17 @@ public final class SimulationSnapshotBuilder {
                 sessionStarts.put(market, sessionId);
                 store.beginSimulation(sessionId, market, now, sessionFunction.getKey(), sessionFunction.getValue(), seed);
             }
-            int iteration = (int) store.simulationNodeCount(sessionId) + 1;
             for (Instrument instrument : Instrument.values()) {
                 if (!instrument.market().equals(market))
                     continue;
                 Optional<StoredQuote> previous = store.findLatest(instrument);
                 if (previous.isEmpty())
                     continue;
+                int iteration = (int) store.simulationNodeCount(sessionId, instrument.symbol()) + 1;
                 if (previous.get().quote().status() != MarketStatus.OPEN) {
                     MarketQuote old = previous.get().quote();
-                    quotes.put(instrument, old);
+                    MarketQuote simulated = new MarketQuote(instrument, old.name(), old.priceScaled(), 0, old.status(), QuoteOrigin.SIMULATED);
+                    quotes.put(instrument, simulated);
                     store.recordSimulationNode(sessionId, nodeTime, instrument.symbol(), previous.get().source(), old.priceScaled(), 0, old.priceScaled());
                     continue;
                 }
@@ -63,7 +64,7 @@ public final class SimulationSnapshotBuilder {
                 history = SimulatedQuoteGenerator.selectEligible(history, intervalMillis);
                 if (history.size() == 5) {
                     next = SimulatedQuoteGenerator.next(instrument, history, previous.get().quote(), seed, sessionId, iteration, sessionFunction.getValue());
-                    store.recordSimulationNode(sessionId, nodeTime, instrument.symbol(), history.getLast().source(), previous.get().quote().priceScaled(), next.changeBps(), next.priceScaled());
+                    store.recordSimulationNode(sessionId, nodeTime, instrument.symbol(), history.stream().map(StoredQuote::source).distinct().collect(java.util.stream.Collectors.joining(",")), previous.get().quote().priceScaled(), next.changeBps(), next.priceScaled());
                 } else {
                     MarketQuote old = previous.get().quote();
                     next = new MarketQuote(instrument, old.name(), old.priceScaled(), 0,

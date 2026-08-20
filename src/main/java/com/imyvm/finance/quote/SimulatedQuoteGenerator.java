@@ -63,7 +63,7 @@ public final class SimulatedQuoteGenerator {
         SplittableRandom random = new SplittableRandom(mixedSeed);
         double triangular = (random.nextDouble() + random.nextDouble()) - 1.0;
         double move = SimulationFormula.parse(formulaText).eval(java.util.Map.of(
-            "PREV_PRICE", (double) previous.priceScaled(), "PREV_LOG_RETURN", returns.getLast() * 10_000.0,
+            "PREV_PRICE", (double) previous.priceScaled(), "PREV_LOG_RETURN", previous.origin() == QuoteOrigin.SIMULATED ? previous.changeBps() : returns.getLast() * 10_000.0,
             "DRIFT_BPS", drift * 10_000.0, "VOLATILITY_BPS", deviation * 10_000.0,
             "MAX_MOVE_BPS", maxMove * 10_000.0, "RANDOM", triangular,
             "ITERATION", (double) iteration, "HISTORY_COUNT", (double) history.size()));
