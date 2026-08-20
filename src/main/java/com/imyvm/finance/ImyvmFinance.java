@@ -246,18 +246,6 @@ public final class ImyvmFinance implements ModInitializer {
                 quotes.add(null);
             }
         }
-        StoredQuote leader = null;
-        StoredQuote loser = null;
-        for (StoredQuote quote : quotes) {
-            if (quote == null)
-                continue;
-            if (leader == null || quote.quote().changeBps() > leader.quote().changeBps())
-                leader = quote;
-            if (loser == null || quote.quote().changeBps() < loser.quote().changeBps())
-                loser = quote;
-        }
-        boolean markMovers = leader != null && loser != null
-            && leader.quote().changeBps() != loser.quote().changeBps();
         boolean hasOpenMarket = quotes.stream().anyMatch(quote -> quote != null
             && quote.quote().status() == MarketStatus.OPEN);
         if (!hasOpenMarket)
@@ -283,14 +271,9 @@ public final class ImyvmFinance implements ModInitializer {
                                 "/imyvm-market estimate " + instrument.commandForm() + " " + TRADING_RULES.minUnits()))
                             .withHoverEvent(new HoverEvent.ShowText(Translator.tr("commands.market.briefing.buy_hint")))
                             .withUnderlined(true));
-                    Component mover = Component.empty();
-                    if (markMovers && quote == leader)
-                        mover = Translator.tr("commands.market.briefing.leader");
-                    else if (markMovers && quote == loser)
-                        mover = Translator.tr("commands.market.briefing.loser");
                     line.append(Translator.tr("commands.market.briefing.item", name,
                         formatPrice(quote.quote().priceScaled()), formatPercent(quote.quote().changeBps()),
-                        briefingStatus(quote, tradable), mover));
+                        briefingStatus(quote, tradable)));
                 } catch (Exception exception) {
                     LOGGER.warn("Failed to prepare market briefing for {}", instrument.symbol(), exception);
                 }

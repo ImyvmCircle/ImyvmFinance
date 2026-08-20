@@ -920,6 +920,31 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
             source.sendSuccess(() -> Translator.tr("commands.market.source.status.since", value(root, "statsSince", "-")), false);
             String outages = root.has("marketOutages") ? root.get("marketOutages").toString().replace("\"", "").replace("[", "").replace("]", "") : "";
             source.sendSuccess(() -> Translator.tr("commands.market.source.status.outage", outages.isEmpty() ? "-" : outages), false);
+            String enabled = Translator.tr("commands.market.source.status.enabled").getString();
+            String paused = Translator.tr("commands.market.source.status.paused").getString();
+            String activeState = Translator.tr("commands.market.source.status.active").getString();
+            String closed = Translator.tr("commands.market.source.status.closed").getString();
+            String outage = Translator.tr("commands.market.source.status.outage_state").getString();
+            String globalTrading = enabled;
+            String cnTrading = enabled;
+            String cryptoTrading = enabled;
+            if (ImyvmFinance.TRADING_STORE != null) {
+                try {
+                    globalTrading = ImyvmFinance.TRADING_STORE.isGlobalTradingEnabled() ? enabled : paused;
+                    cnTrading = ImyvmFinance.TRADING_STORE.isMarketTradingEnabled("CN") ? enabled : paused;
+                    cryptoTrading = ImyvmFinance.TRADING_STORE.isMarketTradingEnabled("CRYPTO") ? enabled : paused;
+                } catch (Exception ignored) {
+                    globalTrading = cnTrading = cryptoTrading = "-";
+                }
+            }
+            final String finalGlobalTrading = globalTrading;
+            final String finalCnTrading = cnTrading;
+            final String finalCryptoTrading = cryptoTrading;
+            source.sendSuccess(() -> Translator.tr("commands.market.source.status.trading",
+                finalGlobalTrading, marketLabel("CN"), finalCnTrading, marketLabel("CRYPTO"), finalCryptoTrading), false);
+            source.sendSuccess(() -> Translator.tr("commands.market.source.status.quote",
+                marketLabel("CN"), quoteControlStatus(root, "CN", activeState, closed, outage),
+                marketLabel("CRYPTO"), quoteControlStatus(root, "CRYPTO", activeState, closed, outage)), false);
             JsonObject activity = root.getAsJsonObject("activity");
             if (activity != null) {
                 source.sendSuccess(() -> Translator.tr("commands.market.source.status.activity",
@@ -1006,6 +1031,20 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         return value;
     }
 
+    private static String quoteControlStatus(JsonObject root, String market, String active, String closed, String outage) {
+        if (hasArrayValue(root, "closedMarkets", market))
+            return closed;
+        return hasArrayValue(root, "marketOutages", market) ? outage : active;
+    }
+
+    private static boolean hasArrayValue(JsonObject object, String key, String value) {
+        if (object == null || !object.has(key) || !object.get(key).isJsonArray())
+            return false;
+        for (var item : object.getAsJsonArray(key))
+            if (value.equals(item.getAsString()))
+                return true;
+        return false;
+    }
     private static long number(JsonObject object, String key) {
         try { return object == null ? 0 : object.get(key).getAsLong(); }
         catch (Exception ignored) { return 0; }
@@ -1250,12 +1289,17 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                     Optional<StoredQuote> stored = ImyvmFinance.QUOTE_STORE.findLatest(instrument);
                     if (stored.isPresent()) {
                         StoredQuote value = stored.get();
-                        boolean enabled = value.quote().status() == MarketStatus.OPEN;
-                        if (enabled && ImyvmFinance.TRADING_STORE != null)
-                            enabled = ImyvmFinance.TRADING_STORE.isGlobalTradingEnabled()
-                                && ImyvmFinance.TRADING_STORE.isTradingEnabled(instrument);
-                        tradable = enabled;
-                        status = marketStatus(value, enabled);
+                        boolean marketOpen = value.quote().status() == MarketStatus.OPEN;
+                        boolean globalTradingEnabled = true;
+                        boolean marketTradingEnabled = true;
+                        boolean instrumentTradingEnabled = true;
+                        if (marketOpen && ImyvmFinance.TRADING_STORE != null) {
+                            globalTradingEnabled = ImyvmFinance.TRADING_STORE.isGlobalTradingEnabled();
+                            marketTradingEnabled = ImyvmFinance.TRADING_STORE.isMarketTradingEnabled(instrument.market());
+                            instrumentTradingEnabled = ImyvmFinance.TRADING_STORE.isTradingEnabled(instrument);
+                        }
+                        tradable = marketOpen && globalTradingEnabled && marketTradingEnabled && instrumentTradingEnabled;
+                        status = listStatus(value, marketOpen, globalTradingEnabled, marketTradingEnabled, instrumentTradingEnabled);
                         price = formatPrice(value.quote().priceScaled());
                         change = formatColoredPercent(value.quote().changeBps());
                         changeAmount = formatColoredChangeAmount(value.quote());
@@ -1267,7 +1311,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                 }
             }
             Component item = Translator.tr(
-                "commands.market.list.item", instrumentLabel(instrument), price, change, changeAmount, movingAverage, changeReference).copy();
+                "commands.market.list.item", instrumentLabel(instrument), price, change, changeAmount, movingAverage, changeReference, status).copy();
             if (tradable)
                 item = item.copy().withStyle(style -> style
                     .withClickEvent(new ClickEvent.RunCommand(
@@ -1333,6 +1377,18 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                 status),
             false);
         return Command.SINGLE_SUCCESS;
+    }
+
+    private static Component listStatus(StoredQuote quote, boolean marketOpen, boolean globalTradingEnabled, boolean marketTradingEnabled, boolean instrumentTradingEnabled) {
+        if (!marketOpen)
+            return Translator.tr("commands.market.list.status." + quote.quote().status().name().toLowerCase());
+        if (!globalTradingEnabled)
+            return Translator.tr("commands.market.list.status.global_paused");
+        if (!marketTradingEnabled)
+            return Translator.tr("commands.market.list.status.market_paused");
+        if (!instrumentTradingEnabled)
+            return Translator.tr("commands.market.list.status.instrument_paused");
+        return Translator.tr("commands.market.list.status.open");
     }
 
     private static Component marketStatus(StoredQuote quote, boolean tradable) {

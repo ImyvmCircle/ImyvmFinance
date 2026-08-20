@@ -117,13 +117,13 @@ public final class FinanceSelfTest {
             "command-form symbol without colon did not resolve");
         check(Instrument.fromSymbol("cn:000001") == Instrument.CN_000001,
             "display-form symbol did not resolve");
-        String rendered = Translator.tr("commands.market.list.item", "CN:000001", "3000", "1.25%", "37.50", "2990", "日内").getString();
+        String rendered = Translator.tr("commands.market.list.item", "CN:000001", "3000", "1.25%", "37.50", "2990", "日内", "可交易").getString();
         check(rendered.contains("CN:000001") && rendered.contains("3000") && rendered.contains("1.25%") && rendered.contains("2990"),
             "zh_cn translation did not interpolate arguments: " + rendered);
         check(!rendered.contains("{0}") && !rendered.contains("imyvm_finance."),
             "zh_cn translation leaked placeholder or key: " + rendered);
         Translator.setLanguage("en_us");
-        String english = Translator.tr("commands.market.list.item", "CN:000001", "3000", "1.25%", "37.50", "2990", "intraday").getString();
+        String english = Translator.tr("commands.market.list.item", "CN:000001", "3000", "1.25%", "37.50", "2990", "intraday", "TRADABLE").getString();
         check(english.contains("CN:000001") && english.contains("3000") && english.contains("2990") && !english.contains("{0}"),
             "en_us translation did not interpolate arguments: " + english);
     }

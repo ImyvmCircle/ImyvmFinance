@@ -139,7 +139,7 @@ public final class DirectMarketQuoteClient {
         boolean probing = marketOutages.contains("CN");
         List<String> providers = providersForAttempt("CN");
         if (probing)
-            LOGGER.info("Market recovery probe: market=CN provider={}", providers.isEmpty() ? "none" : providers.getFirst());
+            LOGGER.info("Market outage retry: market=CN provider={}", providers.isEmpty() ? "none" : providers.getFirst());
         for (String provider : providers) {
             if (disabledProviders.contains("CN:" + provider)) continue;
             String statsKey = "CN:" + provider;
@@ -177,7 +177,7 @@ public final class DirectMarketQuoteClient {
         boolean probing = marketOutages.contains("CRYPTO");
         List<String> providers = providersForAttempt("CRYPTO");
         if (probing)
-            LOGGER.info("Market recovery probe: market=CRYPTO provider={}", providers.isEmpty() ? "none" : providers.getFirst());
+            LOGGER.info("Market outage retry: market=CRYPTO provider={}", providers.isEmpty() ? "none" : providers.getFirst());
         for (String provider : providers) {
             if (disabledProviders.contains("CRYPTO:" + provider)) continue;
             String statsKey = "CRYPTO:" + provider;
