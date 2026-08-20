@@ -228,6 +228,10 @@ public final class MarketCommands {
                 .then(Commands.literal("add").then(Commands.argument("id", StringArgumentType.word()).then(Commands.argument("formula", StringArgumentType.greedyString()).executes(context -> simulationFunctionAdd(context, false)))))
                 .then(Commands.literal("update").then(Commands.argument("id", StringArgumentType.word()).then(Commands.argument("formula", StringArgumentType.greedyString()).executes(context -> simulationFunctionAdd(context, true)))))
                 .then(Commands.literal("delete").then(Commands.argument("id", StringArgumentType.word()).executes(MarketCommands::simulationFunctionDelete))))
+            .then(Commands.literal("preview")
+                .then(Commands.argument("symbol", StringArgumentType.word()).suggests(MarketCommands::suggestInstruments)
+                    .then(Commands.argument("nodes", LongArgumentType.longArg(1, 20))
+                        .then(Commands.argument("formula", StringArgumentType.greedyString()).executes(MarketCommands::simulationPreview)))))
             .then(Commands.literal("sessions").executes(context -> simulationSessions(context, 1L))
                 .then(Commands.argument("page", LongArgumentType.longArg(1)).executes(context -> simulationSessions(context, LongArgumentType.getLong(context, "page")))))
             .then(Commands.literal("nodes").then(Commands.argument("session", LongArgumentType.longArg(1))
@@ -1939,6 +1943,33 @@ private static String formatMovingAverage(List<Long> prices) {
     private static int simulationFunctionUse(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         try { ImyvmFinance.QUOTE_STORE.activateSimulationFunction(StringArgumentType.getString(context, "id")); context.getSource().sendSuccess(() -> Component.literal("simulation function activated"), true); return Command.SINGLE_SUCCESS; }
         catch (Exception exception) { return failUnexpected(context.getSource(), "simulation function activate", exception); }
+    }
+
+    private static int simulationPreview(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        if (ImyvmFinance.QUOTE_STORE == null) return 0;
+        Instrument instrument = Instrument.fromSymbol(StringArgumentType.getString(context, "symbol"));
+        long nodes = LongArgumentType.getLong(context, "nodes");
+        String formula = StringArgumentType.getString(context, "formula");
+        if (instrument == null) { context.getSource().sendFailure(Translator.tr("commands.market.quote.unknown_symbol")); return 0; }
+        try {
+            com.imyvm.finance.quote.SimulationFormula.parse(formula);
+            StoredQuote latest = ImyvmFinance.QUOTE_STORE.findLatest(instrument).orElseThrow(() -> new IllegalArgumentException("no quote history"));
+            List<StoredQuote> history = ImyvmFinance.QUOTE_STORE.findRecentRealQuotes(instrument, 120);
+            if (history.size() < 5) throw new IllegalArgumentException("five consecutive real quote nodes are required");
+            long interval = ImyvmFinance.CONFIG.quotePollIntervalMinutes() * 60_000L;
+            long timestamp = Math.max(System.currentTimeMillis(), latest.nodeTimeEpochMillis());
+            MarketQuote current = latest.quote();
+            context.getSource().sendSuccess(() -> Component.literal("simulation preview (theoretical only; no state changed)"), false);
+            for (int iteration = 1; iteration <= nodes; iteration++) {
+                timestamp += interval;
+                current = com.imyvm.finance.quote.SimulatedQuoteGenerator.next(instrument, history, current, ImyvmFinance.CONFIG.quoteRandomSeed(), timestamp, iteration, formula);
+                long previewTime = timestamp;
+                MarketQuote preview = current;
+                context.getSource().sendSuccess(() -> Component.literal(previewTime + " " + Instant.ofEpochMilli(previewTime) + " " + formatPrice(preview.priceScaled()) + " change=" + formatPercent(preview.changeBps())), false);
+            }
+            return Command.SINGLE_SUCCESS;
+        } catch (IllegalArgumentException exception) { context.getSource().sendFailure(Component.literal("preview rejected: " + exception.getMessage())); return 0;
+        } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation preview", exception); }
     }
 
     private static int simulationFunctionSyntax(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
