@@ -15,6 +15,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public final class QuoteSnapshotStore implements AutoCloseable {
@@ -31,7 +32,8 @@ public final class QuoteSnapshotStore implements AutoCloseable {
                     snapshot_id TEXT PRIMARY KEY,
                     source TEXT NOT NULL,
                     fetched_at INTEGER NOT NULL,
-                    market_time INTEGER NOT NULL
+                    market_time INTEGER NOT NULL,
+                    node_time INTEGER NOT NULL
                 )
                 """);
             statement.execute("""
@@ -42,8 +44,31 @@ public final class QuoteSnapshotStore implements AutoCloseable {
                     price_scaled INTEGER NOT NULL,
                     change_bps INTEGER NOT NULL,
                     market_status TEXT NOT NULL,
+                    quote_origin TEXT NOT NULL DEFAULT 'REAL',
                     PRIMARY KEY (snapshot_id, symbol),
                     FOREIGN KEY (snapshot_id) REFERENCES market_snapshots(snapshot_id)
+                )
+                """);
+            try { statement.execute("ALTER TABLE market_snapshots ADD COLUMN node_time INTEGER NOT NULL DEFAULT 0"); } catch (SQLException ignored) { }
+            try { statement.execute("ALTER TABLE market_quotes ADD COLUMN quote_origin TEXT NOT NULL DEFAULT 'REAL'"); } catch (SQLException ignored) { }
+            try { statement.execute("ALTER TABLE simulation_nodes ADD COLUMN input_source TEXT NOT NULL DEFAULT 'REAL'"); } catch (SQLException ignored) { }
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS simulation_functions (
+                    function_id TEXT PRIMARY KEY, function_type TEXT NOT NULL, updated_at INTEGER NOT NULL
+                )
+                """);
+            statement.execute("INSERT OR IGNORE INTO simulation_functions(function_id, function_type, updated_at) VALUES ('robust_seeded_walk', 'robust_seeded_walk', strftime('%s', 'now'))");
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS simulation_sessions (
+                    session_id INTEGER PRIMARY KEY, market TEXT NOT NULL, started_at INTEGER NOT NULL,
+                    ended_at INTEGER, function_id TEXT NOT NULL, seed INTEGER NOT NULL, status TEXT NOT NULL
+                )
+                """);
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS simulation_nodes (
+                    session_id INTEGER NOT NULL, node_time INTEGER NOT NULL, symbol TEXT NOT NULL,
+                    previous_price INTEGER NOT NULL, fluctuation_bps INTEGER NOT NULL, new_price INTEGER NOT NULL, input_source TEXT NOT NULL DEFAULT 'REAL',
+                    PRIMARY KEY (session_id, node_time, symbol), FOREIGN KEY (session_id) REFERENCES simulation_sessions(session_id)
                 )
                 """);
             statement.execute("""
@@ -67,20 +92,21 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         try {
             try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT OR IGNORE INTO market_snapshots
-                    (snapshot_id, source, fetched_at, market_time)
-                VALUES (?, ?, ?, ?)
+                    (snapshot_id, source, fetched_at, market_time, node_time)
+                VALUES (?, ?, ?, ?, ?)
                 """)) {
                 statement.setString(1, snapshot.snapshotId());
                 statement.setString(2, snapshot.source());
                 statement.setLong(3, snapshot.fetchedAtEpochMillis());
                 statement.setLong(4, snapshot.marketTimeEpochMillis());
+                statement.setLong(5, snapshot.nodeTimeEpochMillis());
                 statement.executeUpdate();
             }
 
             try (PreparedStatement statement = connection.prepareStatement("""
                 INSERT OR IGNORE INTO market_quotes
-                    (snapshot_id, symbol, name, price_scaled, change_bps, market_status)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (snapshot_id, symbol, name, price_scaled, change_bps, market_status, quote_origin)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """)) {
                 for (MarketQuote quote : snapshot.quotes()) {
                     statement.setString(1, snapshot.snapshotId());
@@ -89,6 +115,7 @@ public final class QuoteSnapshotStore implements AutoCloseable {
                     statement.setLong(4, quote.priceScaled());
                     statement.setLong(5, quote.changeBps());
                     statement.setString(6, quote.status().name());
+                    statement.setString(7, quote.origin().name());
                     statement.addBatch();
                 }
                 statement.executeBatch();
@@ -104,8 +131,8 @@ public final class QuoteSnapshotStore implements AutoCloseable {
 
     public synchronized Optional<StoredQuote> findLatest(Instrument instrument) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
-            SELECT s.snapshot_id, s.source, s.fetched_at, s.market_time,
-                   q.name, q.price_scaled, q.change_bps, q.market_status
+            SELECT s.snapshot_id, s.source, s.fetched_at, s.market_time, s.node_time,
+                   q.name, q.price_scaled, q.change_bps, q.market_status, q.quote_origin
             FROM market_quotes q
             JOIN market_snapshots s ON s.snapshot_id = q.snapshot_id
             WHERE q.symbol = ?
@@ -122,13 +149,131 @@ public final class QuoteSnapshotStore implements AutoCloseable {
                     result.getString("source"),
                     result.getLong("fetched_at"),
                     result.getLong("market_time"),
+                    result.getLong("node_time"),
                     new MarketQuote(
                         instrument,
                         result.getString("name"),
                         result.getLong("price_scaled"),
                         result.getLong("change_bps"),
-                        MarketStatus.parse(result.getString("market_status")))));
+                        MarketStatus.parse(result.getString("market_status")),
+                        com.imyvm.finance.market.QuoteOrigin.valueOf(result.getString("quote_origin")))));
             }
+        }
+    }
+
+    public synchronized Map<String, String> findSimulationFunctions() throws SQLException {
+        Map<String, String> result = new java.util.LinkedHashMap<>();
+        try (Statement statement = connection.createStatement(); ResultSet rows = statement.executeQuery("SELECT function_id, function_type FROM simulation_functions ORDER BY function_id")) {
+            while (rows.next()) result.put(rows.getString(1), rows.getString(2));
+        }
+        return result;
+    }
+
+    public synchronized void upsertSimulationFunction(String id, String type) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("INSERT INTO simulation_functions(function_id, function_type, updated_at) VALUES (?, ?, ?) ON CONFLICT(function_id) DO UPDATE SET function_type = excluded.function_type, updated_at = excluded.updated_at")) {
+            statement.setString(1, id); statement.setString(2, type); statement.setLong(3, System.currentTimeMillis()); statement.executeUpdate();
+        }
+    }
+
+    public synchronized void deleteSimulationFunction(String id) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("DELETE FROM simulation_functions WHERE function_id = ? AND function_id <> 'robust_seeded_walk'")) { statement.setString(1, id); statement.executeUpdate(); }
+    }
+
+    public synchronized void beginSimulation(long sessionId, String market, long startedAt, String functionId, long seed) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("INSERT OR IGNORE INTO simulation_sessions(session_id, market, started_at, function_id, seed, status) VALUES (?, ?, ?, ?, ?, 'ACTIVE')")) {
+            statement.setLong(1, sessionId); statement.setString(2, market); statement.setLong(3, startedAt);
+            statement.setString(4, functionId); statement.setLong(5, seed); statement.executeUpdate();
+        }
+    }
+
+    public synchronized void recordSimulationNode(long sessionId, long nodeTime, String symbol, String inputSource, long previousPrice, long fluctuationBps, long newPrice) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("INSERT OR REPLACE INTO simulation_nodes(session_id, node_time, symbol, input_source, previous_price, fluctuation_bps, new_price) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+            statement.setLong(1, sessionId); statement.setLong(2, nodeTime); statement.setString(3, symbol); statement.setString(4, inputSource);
+            statement.setLong(5, previousPrice); statement.setLong(6, fluctuationBps); statement.setLong(7, newPrice); statement.executeUpdate();
+        }
+    }
+
+    public synchronized void finishSimulation(long sessionId, long endedAt) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("UPDATE simulation_sessions SET ended_at = ?, status = 'RECOVERED' WHERE session_id = ? AND status = 'ACTIVE'")) {
+            statement.setLong(1, endedAt); statement.setLong(2, sessionId); statement.executeUpdate();
+        }
+    }
+
+    public synchronized long simulationNodeCount(long sessionId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT COUNT(*) FROM simulation_nodes WHERE session_id = ?")) {
+            statement.setLong(1, sessionId); try (ResultSet result = statement.executeQuery()) { result.next(); return result.getLong(1); }
+        }
+    }
+
+    public synchronized List<SimulationSessionView> findSimulationSessions(int limit, int offset) throws SQLException {
+        List<SimulationSessionView> result = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement("SELECT session_id, market, started_at, ended_at, function_id, seed, status FROM simulation_sessions ORDER BY started_at DESC LIMIT ? OFFSET ?")) {
+            statement.setInt(1, limit); statement.setInt(2, offset);
+            try (ResultSet rows = statement.executeQuery()) { while (rows.next()) result.add(new SimulationSessionView(rows.getLong(1), rows.getString(2), rows.getLong(3), rows.getObject(4) == null ? null : rows.getLong(4), rows.getString(5), rows.getLong(6), rows.getString(7))); }
+        }
+        return result;
+    }
+
+    public synchronized List<SimulationNodeView> findSimulationNodes(long sessionId, int limit, int offset) throws SQLException {
+        List<SimulationNodeView> result = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement("SELECT session_id, node_time, symbol, input_source, previous_price, fluctuation_bps, new_price FROM simulation_nodes WHERE session_id = ? ORDER BY node_time DESC, symbol LIMIT ? OFFSET ?")) {
+            statement.setLong(1, sessionId); statement.setInt(2, limit); statement.setInt(3, offset);
+            try (ResultSet rows = statement.executeQuery()) { while (rows.next()) result.add(new SimulationNodeView(rows.getLong(1), rows.getLong(2), rows.getString(3), rows.getString(4), rows.getLong(5), rows.getLong(6), rows.getLong(7))); }
+        }
+        return result;
+    }
+
+    public synchronized long quoteHistoryCount(Instrument instrument) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT COUNT(*) FROM market_quotes WHERE symbol = ?")) {
+            statement.setString(1, instrument.symbol());
+            try (ResultSet result = statement.executeQuery()) { result.next(); return result.getLong(1); }
+        }
+    }
+
+    public synchronized List<StoredQuote> findQuoteHistory(Instrument instrument, int limit, int offset) throws SQLException {
+        if (limit <= 0 || offset < 0) return List.of();
+        try (PreparedStatement statement = connection.prepareStatement("""
+            SELECT s.snapshot_id, s.source, s.fetched_at, s.market_time, s.node_time,
+                   q.name, q.price_scaled, q.change_bps, q.market_status, q.quote_origin
+            FROM market_quotes q JOIN market_snapshots s ON s.snapshot_id = q.snapshot_id
+            WHERE q.symbol = ? ORDER BY s.node_time DESC, s.fetched_at DESC LIMIT ? OFFSET ?
+            """)) {
+            statement.setString(1, instrument.symbol());
+            statement.setInt(2, limit);
+            statement.setInt(3, offset);
+            List<StoredQuote> result = new ArrayList<>();
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) result.add(new StoredQuote(rows.getString("snapshot_id"), rows.getString("source"),
+                    rows.getLong("fetched_at"), rows.getLong("market_time"), rows.getLong("node_time"),
+                    new MarketQuote(instrument, rows.getString("name"), rows.getLong("price_scaled"),
+                        rows.getLong("change_bps"), MarketStatus.parse(rows.getString("market_status")),
+                        com.imyvm.finance.market.QuoteOrigin.valueOf(rows.getString("quote_origin")))));
+            }
+            return result;
+        }
+    }
+
+    public synchronized List<StoredQuote> findRecentRealQuotes(Instrument instrument, int limit) throws SQLException {
+        if (limit <= 0) return List.of();
+        try (PreparedStatement statement = connection.prepareStatement("""
+            SELECT s.snapshot_id, s.source, s.fetched_at, s.market_time, s.node_time,
+                   q.name, q.price_scaled, q.change_bps, q.market_status, q.quote_origin
+            FROM market_quotes q JOIN market_snapshots s ON s.snapshot_id = q.snapshot_id
+            WHERE q.symbol = ? AND q.quote_origin = 'REAL'
+            ORDER BY s.node_time DESC LIMIT ?
+            """)) {
+            statement.setString(1, instrument.symbol());
+            statement.setInt(2, limit);
+            List<StoredQuote> result = new ArrayList<>();
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) result.add(new StoredQuote(rows.getString("snapshot_id"), rows.getString("source"),
+                    rows.getLong("fetched_at"), rows.getLong("market_time"), rows.getLong("node_time"),
+                    new MarketQuote(instrument, rows.getString("name"), rows.getLong("price_scaled"),
+                        rows.getLong("change_bps"), MarketStatus.parse(rows.getString("market_status")),
+                        com.imyvm.finance.market.QuoteOrigin.REAL)));
+            }
+            java.util.Collections.reverse(result);
+            return result;
         }
     }
 
@@ -157,7 +302,7 @@ public final class QuoteSnapshotStore implements AutoCloseable {
     public synchronized Optional<StoredQuote> find(Instrument instrument, String snapshotId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
             SELECT s.snapshot_id, s.source, s.fetched_at, s.market_time,
-                   q.name, q.price_scaled, q.change_bps, q.market_status
+                   q.name, q.price_scaled, q.change_bps, q.market_status, q.quote_origin
             FROM market_quotes q
             JOIN market_snapshots s ON s.snapshot_id = q.snapshot_id
             WHERE q.symbol = ? AND s.snapshot_id = ?
@@ -170,8 +315,10 @@ public final class QuoteSnapshotStore implements AutoCloseable {
                 return Optional.of(new StoredQuote(
                     result.getString("snapshot_id"), result.getString("source"),
                     result.getLong("fetched_at"), result.getLong("market_time"),
+                    result.getLong("node_time"),
                     new MarketQuote(instrument, result.getString("name"), result.getLong("price_scaled"),
-                        result.getLong("change_bps"), MarketStatus.parse(result.getString("market_status")))));
+                        result.getLong("change_bps"), MarketStatus.parse(result.getString("market_status")),
+                        com.imyvm.finance.market.QuoteOrigin.valueOf(result.getString("quote_origin")))));
             }
         }
     }

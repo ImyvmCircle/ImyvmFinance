@@ -8,8 +8,13 @@ public record QuoteSnapshot(
     long fetchedAtEpochMillis,
     long marketTimeEpochMillis,
     List<MarketQuote> quotes,
-    List<String> alerts
+    List<String> alerts,
+    long nodeTimeEpochMillis
 ) {
+    public QuoteSnapshot(String snapshotId, String source, long fetchedAtEpochMillis,
+                         long marketTimeEpochMillis, List<MarketQuote> quotes, List<String> alerts) {
+        this(snapshotId, source, fetchedAtEpochMillis, marketTimeEpochMillis, quotes, alerts, marketTimeEpochMillis);
+    }
     public QuoteSnapshot {
         if (snapshotId == null || snapshotId.isBlank())
             throw new IllegalArgumentException("snapshotId is required");

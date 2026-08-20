@@ -7,6 +7,11 @@ public record StoredQuote(
     String source,
     long fetchedAtEpochMillis,
     long marketTimeEpochMillis,
+    long nodeTimeEpochMillis,
     MarketQuote quote
 ) {
+    public StoredQuote(String snapshotId, String source, long fetchedAtEpochMillis,
+                       long marketTimeEpochMillis, MarketQuote quote) {
+        this(snapshotId, source, fetchedAtEpochMillis, marketTimeEpochMillis, marketTimeEpochMillis, quote);
+    }
 }
