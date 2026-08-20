@@ -1970,13 +1970,17 @@ private static String formatMovingAverage(List<Long> prices) {
             long interval = ImyvmFinance.CONFIG.quotePollIntervalMinutes() * 60_000L;
             long timestamp = Math.max(System.currentTimeMillis(), latest.nodeTimeEpochMillis());
             MarketQuote current = latest.quote();
-            context.getSource().sendSuccess(() -> Component.literal("simulation preview (theoretical only; no state changed)"), false);
+            long previewSeed = ImyvmFinance.CONFIG.quoteRandomSeed();
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.header"), false);
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.config", instrument.symbol(), nodes, previewSeed, Instant.ofEpochMilli(latest.nodeTimeEpochMillis())), false);
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.input", history.getLast().source(), formula), false);
             for (int iteration = 1; iteration <= nodes; iteration++) {
                 timestamp += interval;
-                current = com.imyvm.finance.quote.SimulatedQuoteGenerator.next(instrument, history, current, ImyvmFinance.CONFIG.quoteRandomSeed(), timestamp, iteration, formula);
+                current = com.imyvm.finance.quote.SimulatedQuoteGenerator.next(instrument, history, current, previewSeed, timestamp, iteration, formula);
                 long previewTime = timestamp;
                 MarketQuote preview = current;
-                context.getSource().sendSuccess(() -> Component.literal(previewTime + " " + Instant.ofEpochMilli(previewTime) + " " + formatPrice(preview.priceScaled()) + " change=" + formatPercent(preview.changeBps())), false);
+                int previewIteration = iteration;
+                context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.item", previewIteration, Instant.ofEpochMilli(previewTime), formatPrice(preview.priceScaled()), formatPercent(preview.changeBps())), false);
             }
             return Command.SINGLE_SUCCESS;
         } catch (IllegalArgumentException exception) { context.getSource().sendFailure(Component.literal("preview rejected: " + exception.getMessage())); return 0;

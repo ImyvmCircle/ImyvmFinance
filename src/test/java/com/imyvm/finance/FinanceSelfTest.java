@@ -542,7 +542,7 @@ public final class FinanceSelfTest {
         var first = com.imyvm.finance.quote.SimulatedQuoteGenerator.next(
             com.imyvm.finance.market.Instrument.CN_000001, history, previous, 7L, 9L, 1);
         var second = com.imyvm.finance.quote.SimulatedQuoteGenerator.next(
-            com.imyvm.finance.market.Instrument.CN_000001, history, previous, 7L, 9L, 1);
+            com.imyvm.finance.market.Instrument.CN_000001, history, previous, 7L, 99L, 1);
         checkEquals(first.priceScaled(), second.priceScaled(), "simulation seed reproducibility");
         check(first.origin() == com.imyvm.finance.market.QuoteOrigin.SIMULATED,
             "simulation origin was not recorded");
