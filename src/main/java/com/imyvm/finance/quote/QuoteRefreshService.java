@@ -2,6 +2,12 @@ package com.imyvm.finance.quote;
 
 import com.imyvm.finance.storage.QuoteSnapshotStore;
 import com.imyvm.finance.FinanceConfig;
+import com.imyvm.finance.market.Instrument;
+import com.imyvm.finance.market.MarketQuote;
+import com.imyvm.finance.market.MarketStatus;
+import com.imyvm.finance.market.QuoteOrigin;
+import com.imyvm.finance.market.QuoteSnapshot;
+import com.imyvm.finance.storage.StoredQuote;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -40,6 +46,9 @@ public final class QuoteRefreshService implements AutoCloseable {
     private final long jitterSeconds;
     private final SplittableRandom random;
     private final long randomSeed;
+    private final long simulationSeed;
+    private final long pollIntervalMillis;
+    private final java.util.Map<String, Long> simulationStartedAt = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile long nextNominalPollAtEpochMillis;
     private volatile long lastNominalPollAtEpochMillis;
     private volatile long lastJitterSeconds;
@@ -75,6 +84,8 @@ public final class QuoteRefreshService implements AutoCloseable {
             config.quoteReadTimeout(),
             config.marketHolidays(), config.marketEnabled(), config.disabledProviders(), config.providerOrder(), config.quoteProviderBackoffMinutes());
         this.pollIntervalMinutes = config.quotePollIntervalMinutes();
+        this.pollIntervalMillis = pollIntervalMinutes * 60_000L;
+        this.simulationSeed = config.quoteRandomSeed();
         this.idlePollIntervalMinutes = config.quoteIdlePollIntervalMinutes();
         this.pollDelaySeconds = config.quotePollDelaySeconds();
         this.jitterSeconds = config.quoteJitterSeconds();
@@ -204,7 +215,8 @@ public final class QuoteRefreshService implements AutoCloseable {
             + ",\"lastRefreshCompletedAt\":" + jsonTime(lastRefreshCompletedAtEpochMillis)
             + ",\"lastRefreshStatus\":" + jsonString(lastRefreshStatus)
             + ",\"lastRefreshError\":" + jsonString(lastRefreshError)
-            + ",\"lastSnapshotId\":" + jsonString(lastSnapshotId) + "}";
+            + ",\"lastSnapshotId\":" + jsonString(lastSnapshotId)
+            + ",\"simulationMarkets\":" + jsonSimulationMarkets() + "}";
     }
 
     public void clearProviderBackoff() {
@@ -247,13 +259,39 @@ public final class QuoteRefreshService implements AutoCloseable {
                     lastRefreshError = cause.getMessage();
                     LOGGER.warn("Market quote refresh failed: {}", cause.getMessage());
                     notifyMarketDataFailure();
-                    created.completeExceptionally(cause);
+                    try {
+                        java.util.Optional<QuoteSnapshot> simulated = SimulationSnapshotBuilder.build(null, store,
+                            lastNominalPollAtEpochMillis == 0 ? System.currentTimeMillis() : lastNominalPollAtEpochMillis,
+                            pollIntervalMillis, simulationSeed, simulationStartedAt);
+                        if (simulated.isPresent()) {
+                            store.save(simulated.get());
+                            lastRefreshStatus = "simulated";
+                            if (!simulated.get().snapshotId().equals(lastSnapshotId)) {
+                                lastSnapshotId = simulated.get().snapshotId();
+                                snapshotConsumer.accept(simulated.get());
+                            }
+                            created.complete(simulated.get());
+                        } else {
+                            created.completeExceptionally(cause);
+                        }
+                    } catch (Exception simulationError) {
+                        created.completeExceptionally(simulationError);
+                    }
                     return;
                 }
 
+                snapshot = SimulationSnapshotBuilder.build(snapshot, store,
+                    lastNominalPollAtEpochMillis == 0 ? System.currentTimeMillis() : lastNominalPollAtEpochMillis,
+                    pollIntervalMillis, simulationSeed, simulationStartedAt).orElse(snapshot);
+                if (snapshot.alerts().stream().noneMatch(alert -> alert.startsWith("failed:market:"))) {
+                    long recoveredAt = System.currentTimeMillis();
+                    for (long sessionId : simulationStartedAt.values()) store.finishSimulation(sessionId, recoveredAt);
+                    simulationStartedAt.clear();
+                }
                 store.save(snapshot);
                 lastRefreshStatus = "success";
-                if (snapshot.alerts().isEmpty() && !snapshot.snapshotId().equals(lastSnapshotId)) {
+                if (!snapshot.snapshotId().equals(lastSnapshotId)
+                    && (snapshot.alerts().isEmpty() || snapshot.quotes().stream().anyMatch(quote -> quote.origin() == com.imyvm.finance.market.QuoteOrigin.SIMULATED))) {
                     lastSnapshotId = snapshot.snapshotId();
                     snapshotConsumer.accept(snapshot);
                 }
@@ -301,6 +339,11 @@ public final class QuoteRefreshService implements AutoCloseable {
             if (unavailableInstruments.remove(symbol))
                 alertConsumer.accept(alert);
         }
+    }
+
+
+    private String jsonSimulationMarkets() {
+        return simulationStartedAt.keySet().stream().sorted().map(QuoteRefreshService::jsonString).collect(java.util.stream.Collectors.joining(",", "[", "]"));
     }
 
     private static String jsonTime(long epochMillis) {

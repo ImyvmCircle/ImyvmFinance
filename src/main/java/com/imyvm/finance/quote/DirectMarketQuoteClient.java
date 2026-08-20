@@ -64,7 +64,7 @@ public final class DirectMarketQuoteClient {
     private final Set<String> disabledProviders = ConcurrentHashMap.newKeySet();
     private final Map<String, Boolean> marketEnabled;
     private final Set<String> closedMarkets = ConcurrentHashMap.newKeySet();
-    private final Set<String> marketOutages = ConcurrentHashMap.newKeySet();
+    private final Set<String> probingMarkets = ConcurrentHashMap.newKeySet();
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout) {
         this(connectTimeout, requestTimeout, Map.of());
@@ -98,7 +98,7 @@ public final class DirectMarketQuoteClient {
         EnumMap<Instrument, MarketQuote> quotes = new EnumMap<>(Instrument.class);
         List<String> alerts = new ArrayList<>();
         if (marketEnabled.getOrDefault("CN", true) && !closedMarkets.contains("CN") && MarketHours.status("CN", fetchedAt, marketHolidays.getOrDefault("CN", Set.of())) == MarketStatus.OPEN) {
-            boolean probing = marketOutages.contains("CN");
+            boolean probing = probingMarkets.contains("CN");
             try {
                 quotes.putAll(fetchChina());
                 if (probing)
@@ -108,7 +108,7 @@ public final class DirectMarketQuoteClient {
             }
         }
         if (marketEnabled.getOrDefault("CRYPTO", true) && !closedMarkets.contains("CRYPTO")) {
-            boolean probing = marketOutages.contains("CRYPTO");
+            boolean probing = probingMarkets.contains("CRYPTO");
             try {
                 var crypto = fetchCrypto();
                 quotes.putAll(crypto.quotes().stream()
@@ -136,7 +136,7 @@ public final class DirectMarketQuoteClient {
 
     private Map<Instrument, MarketQuote> fetchChina() throws Exception {
         Exception failure = null;
-        boolean probing = marketOutages.contains("CN");
+        boolean probing = probingMarkets.contains("CN");
         List<String> providers = providersForAttempt("CN");
         if (probing)
             LOGGER.info("Market outage retry: market=CN provider={}", providers.isEmpty() ? "none" : providers.getFirst());
@@ -159,7 +159,7 @@ public final class DirectMarketQuoteClient {
                 activeProviders.put("CN", provider);
                 advanceProviderCursor("CN", provider);
                 recordSuccess(statsKey);
-                marketOutages.remove("CN");
+                probingMarkets.remove("CN");
                 LOGGER.info("Quote provider succeeded: market=CN provider={}", provider);
                 return result;
             } catch (Exception exception) {
@@ -168,13 +168,13 @@ public final class DirectMarketQuoteClient {
                 failure = exception;
             }
         }
-        marketOutages.add("CN");
+        probingMarkets.add("CN");
         throw failure == null ? new IllegalStateException("no CN providers enabled") : failure;
     }
 
     private com.imyvm.finance.market.QuoteSnapshot fetchCrypto() throws Exception {
         Exception failure = null;
-        boolean probing = marketOutages.contains("CRYPTO");
+        boolean probing = probingMarkets.contains("CRYPTO");
         List<String> providers = providersForAttempt("CRYPTO");
         if (probing)
             LOGGER.info("Market outage retry: market=CRYPTO provider={}", providers.isEmpty() ? "none" : providers.getFirst());
@@ -197,7 +197,7 @@ public final class DirectMarketQuoteClient {
                 activeProviders.put("CRYPTO", provider);
                 advanceProviderCursor("CRYPTO", provider);
                 recordSuccess(statsKey);
-                marketOutages.remove("CRYPTO");
+                probingMarkets.remove("CRYPTO");
                 LOGGER.info("Quote provider succeeded: market=CRYPTO provider={}", provider);
                 return result;
             } catch (Exception exception) {
@@ -206,13 +206,13 @@ public final class DirectMarketQuoteClient {
                 failure = exception;
             }
         }
-        marketOutages.add("CRYPTO");
+        probingMarkets.add("CRYPTO");
         throw failure == null ? new IllegalStateException("no crypto providers enabled") : failure;
     }
 
     private List<String> providersForAttempt(String market) {
         List<String> scheduled = scheduledProviders(market);
-        if (!marketOutages.contains(market))
+        if (!probingMarkets.contains(market))
             return scheduled;
         for (String provider : scheduled) {
             String key = market + ":" + provider;
@@ -246,7 +246,7 @@ public final class DirectMarketQuoteClient {
     }
 
     public synchronized String controlStatus() {
-        return "{\"closedMarkets\":" + jsonArray(closedMarkets) + ",\"marketOutages\":" + jsonArray(marketOutages)
+        return "{\"closedMarkets\":" + jsonArray(closedMarkets) + ",\"probingMarkets\":" + jsonArray(probingMarkets)
             + ",\"disabledProviders\":" + jsonArray(disabledProviders)
             + ",\"lastSuccessfulProviders\":" + jsonMap(activeProviders) + ",\"providerOrder\":" + jsonMapList(providerOrder)
             + ",\"statsSince\":" + jsonString(Instant.ofEpochMilli(statsStartedAt).toString())
@@ -346,7 +346,7 @@ public final class DirectMarketQuoteClient {
     public synchronized void clearProviderBackoff() {
         backoffUntil.clear();
         consecutiveFailures.clear();
-        marketOutages.clear();
+        probingMarkets.clear();
     }
 
     public synchronized void setMarketEnabled(String market, boolean enabled) {
