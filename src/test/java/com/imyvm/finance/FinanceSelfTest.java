@@ -146,6 +146,17 @@ public final class FinanceSelfTest {
             "{\"data\":[{\"symbol\":\"ETHUSDT\",\"lastPr\":\"3000\",\"open\":\"2900\"}]}",
             java.time.Instant.ofEpochMilli(1000));
         checkEquals(2, bitget.quotes().size(), "Bitget quote count");
+        checkWarning(() -> com.imyvm.finance.quote.CryptoQuoteClient.parseBinance("{\"code\":-1003}", java.time.Instant.ofEpochMilli(1000)), "Binance warning code");
+        checkWarning(() -> com.imyvm.finance.quote.CryptoQuoteClient.parseBitget("{\"code\":\"40001\",\"msg\":\"invalid request\"}", "{\"code\":\"00000\",\"data\":[{\"lastPr\":\"3000\",\"open\":\"2900\"}]}", java.time.Instant.ofEpochMilli(1000)), "Bitget warning code");
+    }
+
+    private static void checkWarning(Runnable action, String label) {
+        try {
+            action.run();
+            throw new AssertionError(label + " did not fail");
+        } catch (IllegalStateException exception) {
+            check(exception.getMessage().startsWith("provider warning:"), label + " was not classified as provider warning: " + exception.getMessage());
+        }
     }
 
     private static void directMarketQuoteChecks() throws Exception {
@@ -169,12 +180,15 @@ public final class FinanceSelfTest {
             .getDeclaredMethod("recordAttempt", String.class);
         var recordFailure = com.imyvm.finance.quote.DirectMarketQuoteClient.class
             .getDeclaredMethod("recordFailure", String.class, Exception.class);
+        var immediateFailure = com.imyvm.finance.quote.DirectMarketQuoteClient.class
+            .getDeclaredMethod("recordFailure", String.class, Exception.class, boolean.class);
         var providersForAttempt = com.imyvm.finance.quote.DirectMarketQuoteClient.class
             .getDeclaredMethod("providersForAttempt", String.class);
         var isBackedOff = com.imyvm.finance.quote.DirectMarketQuoteClient.class
             .getDeclaredMethod("isBackedOff", String.class);
         recordAttempt.setAccessible(true);
         recordFailure.setAccessible(true);
+        immediateFailure.setAccessible(true);
         providersForAttempt.setAccessible(true);
         isBackedOff.setAccessible(true);
         recordAttempt.invoke(singleProvider, "CN:only");
@@ -188,6 +202,9 @@ public final class FinanceSelfTest {
         checkEquals(java.util.List.of("only"), providersForAttempt.invoke(singleProvider, "CN"),
             "single provider should retry itself after one failure");
         recordFailure.invoke(singleProvider, "CN:only", new Exception("second"));
+        immediateFailure.invoke(singleProvider, "CN:warning", new Exception("provider warning: binance code=-1003"), true);
+        check((Boolean) isBackedOff.invoke(singleProvider, "CN:warning"),
+            "provider warning did not enter backoff immediately");
         check(((String) singleProvider.controlStatus()).contains("\"backoffSecondsRemaining\":"),
             "provider did not enter backoff after two failures");
     }

@@ -163,7 +163,7 @@ public final class DirectMarketQuoteClient {
                 LOGGER.info("Quote provider succeeded: market=CN provider={}", provider);
                 return result;
             } catch (Exception exception) {
-                recordFailure(statsKey, exception);
+                recordFailure(statsKey, exception, isProviderWarning(exception));
                 LOGGER.warn("Quote provider failed: market=CN provider={} error={}", provider, errorMessage(exception));
                 failure = exception;
             }
@@ -201,7 +201,7 @@ public final class DirectMarketQuoteClient {
                 LOGGER.info("Quote provider succeeded: market=CRYPTO provider={}", provider);
                 return result;
             } catch (Exception exception) {
-                recordFailure(statsKey, exception);
+                recordFailure(statsKey, exception, isProviderWarning(exception));
                 LOGGER.warn("Quote provider failed: market=CRYPTO provider={} error={}", provider, errorMessage(exception));
                 failure = exception;
             }
@@ -267,10 +267,14 @@ public final class DirectMarketQuoteClient {
     }
 
     private void recordFailure(String provider, Exception exception) {
+        recordFailure(provider, exception, false);
+    }
+
+    private void recordFailure(String provider, Exception exception, boolean immediate) {
         failureCounts.computeIfAbsent(provider, ignored -> new AtomicLong()).incrementAndGet();
         lastFailureAt.computeIfAbsent(provider, ignored -> new AtomicLong()).set(System.currentTimeMillis());
         long failures = consecutiveFailures.computeIfAbsent(provider, ignored -> new AtomicLong()).incrementAndGet();
-        if (failures < 2) {
+        if (!immediate && failures < 2) {
             lastErrors.put(provider, exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage());
             return;
         }
@@ -278,6 +282,16 @@ public final class DirectMarketQuoteClient {
         long cooldown = Math.min(providerBackoffMillis * multiplier, providerBackoffMillis * 4);
         backoffUntil.computeIfAbsent(provider, ignored -> new AtomicLong()).set(System.currentTimeMillis() + cooldown);
         lastErrors.put(provider, exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage());
+    }
+
+    private static boolean isProviderWarning(Throwable throwable) {
+        Throwable cause = throwable;
+        while (cause != null) {
+            if (cause.getMessage() != null && cause.getMessage().startsWith("provider warning:"))
+                return true;
+            cause = cause.getCause();
+        }
+        return false;
     }
 
     private boolean isBackedOff(String provider) {

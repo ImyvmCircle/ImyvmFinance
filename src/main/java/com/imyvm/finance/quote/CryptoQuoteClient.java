@@ -73,7 +73,13 @@ public final class CryptoQuoteClient {
     }
 
     public static QuoteSnapshot parseBinance(String body, Instant fetchedAt) {
-        JsonArray rows = requireArray(JsonParser.parseString(body));
+        JsonElement root = JsonParser.parseString(body);
+        if (!root.isJsonArray()) {
+            JsonObject response = root.getAsJsonObject();
+            if (response.has("code"))
+                throw warning("binance", response.get("code").getAsString(), response.has("msg") ? response.get("msg").getAsString() : "provider returned a warning code");
+        }
+        JsonArray rows = requireArray(root);
         List<MarketQuote> quotes = new ArrayList<>();
         for (JsonElement element : rows) {
             JsonObject row = element.getAsJsonObject();
@@ -91,24 +97,34 @@ public final class CryptoQuoteClient {
 
     public static QuoteSnapshot parseMexc(String btcBody, String ethBody, Instant fetchedAt) {
         List<MarketQuote> quotes = List.of(
-            exchangeQuote(Instrument.CRYPTO_BTC, btcBody, "lastPrice", "openPrice"),
-            exchangeQuote(Instrument.CRYPTO_ETH, ethBody, "lastPrice", "openPrice"));
+            exchangeQuote("mexc", Instrument.CRYPTO_BTC, btcBody, "lastPrice", "openPrice"),
+            exchangeQuote("mexc", Instrument.CRYPTO_ETH, ethBody, "lastPrice", "openPrice"));
         return snapshot("mexc", quotes, fetchedAt);
     }
 
     public static QuoteSnapshot parseBitget(String btcBody, String ethBody, Instant fetchedAt) {
         List<MarketQuote> quotes = List.of(
-            exchangeQuote(Instrument.CRYPTO_BTC, btcBody, "lastPr", "open"),
-            exchangeQuote(Instrument.CRYPTO_ETH, ethBody, "lastPr", "open"));
+            exchangeQuote("bitget", Instrument.CRYPTO_BTC, btcBody, "lastPr", "open"),
+            exchangeQuote("bitget", Instrument.CRYPTO_ETH, ethBody, "lastPr", "open"));
         return snapshot("bitget", quotes, fetchedAt);
     }
 
-    private static MarketQuote exchangeQuote(Instrument instrument, String body, String priceField, String openingField) {
-        JsonObject data = JsonParser.parseString(body).getAsJsonObject().getAsJsonArray("data") != null
-            ? JsonParser.parseString(body).getAsJsonObject().getAsJsonArray("data").get(0).getAsJsonObject()
-            : JsonParser.parseString(body).getAsJsonObject();
+    private static MarketQuote exchangeQuote(String source, Instrument instrument, String body, String priceField, String openingField) {
+        JsonObject root = JsonParser.parseString(body).getAsJsonObject();
+        if (root.has("code")) {
+            String code = root.get("code").getAsString();
+            boolean success = "bitget".equals(source) ? "00000".equals(code) : "0".equals(code) || "200".equals(code);
+            if (!success)
+                throw warning(source, code, root.has("msg") ? root.get("msg").getAsString() : "provider returned a warning code");
+        }
+        JsonArray rows = root.getAsJsonArray("data");
+        JsonObject data = rows == null ? root : rows.get(0).getAsJsonObject();
         return quote(instrument, instrument.name(), data.get(priceField).getAsString(), percent(
             new BigDecimal(data.get(priceField).getAsString()), new BigDecimal(data.get(openingField).getAsString())));
+    }
+
+    private static IllegalStateException warning(String source, String code, String message) {
+        return new IllegalStateException("provider warning: " + source + " code=" + code + " " + message);
     }
 
     private static String percent(BigDecimal value, BigDecimal opening) {
