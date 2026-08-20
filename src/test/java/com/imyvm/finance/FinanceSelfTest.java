@@ -38,6 +38,7 @@ public final class FinanceSelfTest {
         translationChecks();
         cryptoQuoteChecks();
         simulationChecks();
+        simulationFormulaChecks();
         directMarketQuoteChecks();
         marketHoursChecks();
         storageChecks();
@@ -160,6 +161,15 @@ public final class FinanceSelfTest {
         } catch (IllegalStateException exception) {
             check(exception.getMessage().startsWith("provider warning:"), label + " was not classified as provider warning: " + exception.getMessage());
         }
+    }
+
+    private static void simulationFormulaChecks() {
+        check(com.imyvm.finance.quote.SimulationFormula.compile(com.imyvm.finance.quote.SimulationFormula.DEFAULT) != null, "default simulation formula did not compile");
+        check(com.imyvm.finance.quote.SimulationFormula.parse("LN(10) + LOG10(100) + LOG2(8) + LOGN(16, 2)") != null, "logarithm formula did not compile");
+        try { com.imyvm.finance.quote.SimulationFormula.parse("LN(-1)"); throw new AssertionError("invalid logarithm formula was accepted"); }
+        catch (IllegalArgumentException expected) { }
+        try { com.imyvm.finance.quote.SimulationFormula.parse("LOGN(10, 1)"); throw new AssertionError("invalid logarithm base was accepted"); }
+        catch (IllegalArgumentException expected) { }
     }
 
     private static void directMarketQuoteChecks() throws Exception {
