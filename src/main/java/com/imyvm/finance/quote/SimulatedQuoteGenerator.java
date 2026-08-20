@@ -45,6 +45,11 @@ public final class SimulatedQuoteGenerator {
 
     public static MarketQuote next(Instrument instrument, List<StoredQuote> history,
                                    MarketQuote previous, long seed, long sessionId, int iteration) {
+        return next(instrument, history, previous, seed, sessionId, iteration, SimulationFormula.DEFAULT);
+    }
+
+    public static MarketQuote next(Instrument instrument, List<StoredQuote> history,
+                                   MarketQuote previous, long seed, long sessionId, int iteration, String formulaText) {
         history = selectEligible(history, history.get(1).nodeTimeEpochMillis() - history.get(0).nodeTimeEpochMillis());
         if (history.size() != 5)
             throw new IllegalArgumentException("five consecutive real quote nodes are required");
@@ -57,7 +62,12 @@ public final class SimulatedQuoteGenerator {
         long mixedSeed = seed ^ (sessionId * 0x9E3779B97F4A7C15L) ^ ((long) instrument.ordinal() * 0xBF58476D1CE4E5B9L) ^ iteration;
         SplittableRandom random = new SplittableRandom(mixedSeed);
         double triangular = (random.nextDouble() + random.nextDouble()) - 1.0;
-        double move = Math.max(-maxMove, Math.min(maxMove, drift + deviation * triangular));
+        double move = SimulationFormula.parse(formulaText).eval(java.util.Map.of(
+            "PREV_PRICE", (double) previous.priceScaled(), "PREV_LOG_RETURN", returns.getLast() * 10_000.0,
+            "DRIFT_BPS", drift * 10_000.0, "VOLATILITY_BPS", deviation * 10_000.0,
+            "MAX_MOVE_BPS", maxMove * 10_000.0, "RANDOM", triangular,
+            "ITERATION", (double) iteration, "HISTORY_COUNT", (double) history.size()));
+        move = Math.max(-maxMove, Math.min(maxMove, move / 10_000.0));
         double price = previous.priceScaled() * Math.exp(move);
         long scaled = Math.max(0L, BigDecimal.valueOf(price).setScale(0, RoundingMode.HALF_UP).longValue());
         long changeBps = BigDecimal.valueOf(move * 10_000.0).setScale(0, RoundingMode.HALF_UP).longValue();

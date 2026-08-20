@@ -220,10 +220,13 @@ public final class MarketCommands {
 
         var simulation = Commands.literal("simulation")
             .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
+            .then(Commands.literal("help").executes(MarketCommands::simulationFunctionSyntax))
             .then(Commands.literal("function")
                 .then(Commands.literal("list").executes(MarketCommands::simulationFunctionList))
-                .then(Commands.literal("add").then(Commands.argument("id", StringArgumentType.word()).executes(context -> simulationFunctionAdd(context, false))))
-                .then(Commands.literal("update").then(Commands.argument("id", StringArgumentType.word()).executes(context -> simulationFunctionAdd(context, true))))
+                .then(Commands.literal("use").then(Commands.argument("id", StringArgumentType.word()).executes(MarketCommands::simulationFunctionUse)))
+                .then(Commands.literal("syntax").executes(MarketCommands::simulationFunctionSyntax))
+                .then(Commands.literal("add").then(Commands.argument("id", StringArgumentType.word()).then(Commands.argument("formula", StringArgumentType.greedyString()).executes(context -> simulationFunctionAdd(context, false)))))
+                .then(Commands.literal("update").then(Commands.argument("id", StringArgumentType.word()).then(Commands.argument("formula", StringArgumentType.greedyString()).executes(context -> simulationFunctionAdd(context, true)))))
                 .then(Commands.literal("delete").then(Commands.argument("id", StringArgumentType.word()).executes(MarketCommands::simulationFunctionDelete))))
             .then(Commands.literal("sessions").executes(context -> simulationSessions(context, 1L))
                 .then(Commands.argument("page", LongArgumentType.longArg(1)).executes(context -> simulationSessions(context, LongArgumentType.getLong(context, "page")))))
@@ -1933,14 +1936,29 @@ private static String formatMovingAverage(List<Long> prices) {
         } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation function list", exception); }
     }
 
+    private static int simulationFunctionUse(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        try { ImyvmFinance.QUOTE_STORE.activateSimulationFunction(StringArgumentType.getString(context, "id")); context.getSource().sendSuccess(() -> Component.literal("simulation function activated"), true); return Command.SINGLE_SUCCESS; }
+        catch (Exception exception) { return failUnexpected(context.getSource(), "simulation function activate", exception); }
+    }
+
+    private static int simulationFunctionSyntax(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        context.getSource().sendSuccess(() -> Component.literal("Formula: + - * / and parentheses; LN(x)=natural log, LOG10(x), LOG2(x), LOGN(x,base), EXP, POW, SQRT, ABS, SIGN, MIN, MAX, CLAMP, FLOOR, CEIL, ROUND."), false);
+        context.getSource().sendSuccess(() -> Component.literal("Variables: PREV_PRICE, PREV_LOG_RETURN, DRIFT_BPS, VOLATILITY_BPS, MAX_MOVE_BPS, RANDOM, ITERATION, HISTORY_COUNT."), false);
+        context.getSource().sendSuccess(() -> Component.literal("Example: CLAMP(DRIFT_BPS + VOLATILITY_BPS * RANDOM, -MAX_MOVE_BPS, MAX_MOVE_BPS)"), false);
+        return Command.SINGLE_SUCCESS;
+    }
+
     private static int simulationFunctionAdd(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, boolean update) {
         String id = StringArgumentType.getString(context, "id");
+        String formula = StringArgumentType.getString(context, "formula");
         if (!id.matches("[a-z0-9_-]{3,64}")) { context.getSource().sendFailure(Translator.tr("commands.market.simulation.function.invalid")); return 0; }
         if (ImyvmFinance.QUOTE_STORE == null) return 0;
         try {
-            ImyvmFinance.QUOTE_STORE.upsertSimulationFunction(id, "robust_seeded_walk");
+            com.imyvm.finance.quote.SimulationFormula.parse(formula);
+            ImyvmFinance.QUOTE_STORE.upsertSimulationFunction(id, formula);
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.function.changed", update ? "updated" : "added", id), true);
             return Command.SINGLE_SUCCESS;
+        } catch (IllegalArgumentException exception) { context.getSource().sendFailure(Component.literal("非法模拟公式：" + exception.getMessage())); return 0;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation function save", exception); }
     }
 

@@ -30,6 +30,8 @@ public final class SimulationSnapshotBuilder {
             return Optional.of(withNodeTime(fetched, nodeTime));
 
         Map<Instrument, MarketQuote> quotes = new HashMap<>();
+        Map.Entry<String, String> activeFunction = store.activeSimulationFunction();
+        String simulationFormula = activeFunction.getValue();
         if (fetched != null)
             for (MarketQuote quote : fetched.quotes())
                 if (!failedMarkets.contains(quote.instrument().market()))
@@ -41,7 +43,7 @@ public final class SimulationSnapshotBuilder {
             long sessionId = existingSession == null ? now : existingSession;
             if (existingSession == null) {
                 sessionStarts.put(market, sessionId);
-                store.beginSimulation(sessionId, market, sessionId, "robust_seeded_walk", seed);
+                store.beginSimulation(sessionId, market, sessionId, activeFunction.getKey(), seed);
             }
             int iteration = (int) store.simulationNodeCount(sessionId) + 1;
             for (Instrument instrument : Instrument.values()) {
@@ -58,7 +60,7 @@ public final class SimulationSnapshotBuilder {
                 MarketQuote next;
                 history = SimulatedQuoteGenerator.selectEligible(history, intervalMillis);
                 if (history.size() == 5) {
-                    next = SimulatedQuoteGenerator.next(instrument, history, previous.get().quote(), seed, sessionId, iteration);
+                    next = SimulatedQuoteGenerator.next(instrument, history, previous.get().quote(), seed, sessionId, iteration, simulationFormula);
                     store.recordSimulationNode(sessionId, nodeTime, instrument.symbol(), history.getLast().source(), previous.get().quote().priceScaled(), next.changeBps(), next.priceScaled());
                 } else {
                     MarketQuote old = previous.get().quote();

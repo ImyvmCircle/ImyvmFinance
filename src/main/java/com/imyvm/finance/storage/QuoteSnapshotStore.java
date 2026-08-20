@@ -4,6 +4,7 @@ import com.imyvm.finance.market.Instrument;
 import com.imyvm.finance.market.MarketQuote;
 import com.imyvm.finance.market.MarketStatus;
 import com.imyvm.finance.market.QuoteSnapshot;
+import com.imyvm.finance.quote.SimulationFormula;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -57,7 +58,10 @@ public final class QuoteSnapshotStore implements AutoCloseable {
                     function_id TEXT PRIMARY KEY, function_type TEXT NOT NULL, updated_at INTEGER NOT NULL
                 )
                 """);
-            statement.execute("INSERT OR IGNORE INTO simulation_functions(function_id, function_type, updated_at) VALUES ('robust_seeded_walk', 'robust_seeded_walk', strftime('%s', 'now'))");
+            try { statement.execute("ALTER TABLE simulation_functions ADD COLUMN active INTEGER NOT NULL DEFAULT 0"); } catch (SQLException ignored) { }
+            statement.execute("INSERT OR IGNORE INTO simulation_functions(function_id, function_type, updated_at) VALUES ('robust_seeded_walk', 'CLAMP(DRIFT_BPS + VOLATILITY_BPS * RANDOM, -MAX_MOVE_BPS, MAX_MOVE_BPS)', strftime('%s', 'now'))");
+            statement.execute("UPDATE simulation_functions SET function_type = 'CLAMP(DRIFT_BPS + VOLATILITY_BPS * RANDOM, -MAX_MOVE_BPS, MAX_MOVE_BPS)' WHERE function_id = 'robust_seeded_walk' AND function_type = 'robust_seeded_walk'");
+            statement.execute("UPDATE simulation_functions SET active = 1 WHERE function_id = 'robust_seeded_walk' AND NOT EXISTS (SELECT 1 FROM simulation_functions WHERE active = 1)");
             statement.execute("""
                 CREATE TABLE IF NOT EXISTS simulation_sessions (
                     session_id INTEGER PRIMARY KEY, market TEXT NOT NULL, started_at INTEGER NOT NULL,
@@ -167,6 +171,18 @@ public final class QuoteSnapshotStore implements AutoCloseable {
             while (rows.next()) result.put(rows.getString(1), rows.getString(2));
         }
         return result;
+    }
+
+    public synchronized Map.Entry<String, String> activeSimulationFunction() throws SQLException {
+        try (Statement statement = connection.createStatement(); ResultSet rows = statement.executeQuery("SELECT function_id, function_type FROM simulation_functions WHERE active = 1 LIMIT 1")) {
+            if (rows.next()) return Map.entry(rows.getString(1), rows.getString(2));
+        }
+        return Map.entry("robust_seeded_walk", SimulationFormula.DEFAULT);
+    }
+
+    public synchronized void activateSimulationFunction(String id) throws SQLException {
+        connection.createStatement().executeUpdate("UPDATE simulation_functions SET active = 0");
+        try (PreparedStatement statement = connection.prepareStatement("UPDATE simulation_functions SET active = 1 WHERE function_id = ?")) { statement.setString(1, id); if (statement.executeUpdate() == 0) throw new IllegalArgumentException("unknown function"); }
     }
 
     public synchronized void upsertSimulationFunction(String id, String type) throws SQLException {
