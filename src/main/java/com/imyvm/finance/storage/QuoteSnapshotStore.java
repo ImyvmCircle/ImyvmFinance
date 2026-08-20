@@ -78,6 +78,13 @@ public final class QuoteSnapshotStore implements AutoCloseable {
                 )
                 """);
             statement.execute("""
+                CREATE TABLE IF NOT EXISTS simulation_node_inputs (
+                    session_id INTEGER NOT NULL, node_time INTEGER NOT NULL, symbol TEXT NOT NULL,
+                    input_index INTEGER NOT NULL, source TEXT NOT NULL, quote_time INTEGER NOT NULL, price_scaled INTEGER NOT NULL,
+                    PRIMARY KEY (session_id, node_time, symbol, input_index), FOREIGN KEY (session_id) REFERENCES simulation_sessions(session_id)
+                )
+                """);
+            statement.execute("""
                 CREATE INDEX IF NOT EXISTS market_quotes_symbol_idx
                 ON market_quotes(symbol)
                 """);
@@ -233,6 +240,13 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         try (PreparedStatement statement = connection.prepareStatement("INSERT OR REPLACE INTO simulation_nodes(session_id, node_time, symbol, input_source, previous_price, fluctuation_bps, new_price) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
             statement.setLong(1, sessionId); statement.setLong(2, nodeTime); statement.setString(3, symbol); statement.setString(4, inputSource);
             statement.setLong(5, previousPrice); statement.setLong(6, fluctuationBps); statement.setLong(7, newPrice); statement.executeUpdate();
+        }
+    }
+
+    public synchronized void recordSimulationNodeInput(long sessionId, long nodeTime, String symbol, int inputIndex, String source, long quoteTime, long priceScaled) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("INSERT OR REPLACE INTO simulation_node_inputs(session_id, node_time, symbol, input_index, source, quote_time, price_scaled) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+            statement.setLong(1, sessionId); statement.setLong(2, nodeTime); statement.setString(3, symbol); statement.setInt(4, inputIndex);
+            statement.setString(5, source); statement.setLong(6, quoteTime); statement.setLong(7, priceScaled); statement.executeUpdate();
         }
     }
 

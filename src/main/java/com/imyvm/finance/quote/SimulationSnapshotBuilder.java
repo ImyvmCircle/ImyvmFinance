@@ -58,6 +58,7 @@ public final class SimulationSnapshotBuilder {
                     MarketQuote simulated = new MarketQuote(instrument, old.name(), old.priceScaled(), 0, old.status(), QuoteOrigin.SIMULATED);
                     quotes.put(instrument, simulated);
                     store.recordSimulationNode(sessionId, effectiveNodeTime, instrument.symbol(), previous.get().source(), old.priceScaled(), 0, old.priceScaled());
+                    store.recordSimulationNodeInput(sessionId, effectiveNodeTime, instrument.symbol(), 0, previous.get().source(), previous.get().nodeTimeEpochMillis(), old.priceScaled());
                     continue;
                 }
                 List<StoredQuote> history = store.findRecentRealQuotes(instrument, 120);
@@ -65,12 +66,18 @@ public final class SimulationSnapshotBuilder {
                 history = SimulatedQuoteGenerator.selectEligible(history, intervalMillis);
                 if (history.size() == 5) {
                     next = SimulatedQuoteGenerator.next(instrument, history, previous.get().quote(), seed, sessionId, iteration, intervalMillis, sessionFunction.getValue());
-                    store.recordSimulationNode(sessionId, effectiveNodeTime, instrument.symbol(), history.stream().map(StoredQuote::source).distinct().collect(java.util.stream.Collectors.joining(",")), previous.get().quote().priceScaled(), next.changeBps(), next.priceScaled());
+                    String inputSources = history.stream().map(StoredQuote::source).distinct().collect(java.util.stream.Collectors.joining(","));
+                    store.recordSimulationNode(sessionId, effectiveNodeTime, instrument.symbol(), inputSources, previous.get().quote().priceScaled(), next.changeBps(), next.priceScaled());
+                    for (int inputIndex = 0; inputIndex < history.size(); inputIndex++) {
+                        StoredQuote input = history.get(inputIndex);
+                        store.recordSimulationNodeInput(sessionId, effectiveNodeTime, instrument.symbol(), inputIndex, input.source(), input.nodeTimeEpochMillis(), input.quote().priceScaled());
+                    }
                 } else {
                     MarketQuote old = previous.get().quote();
                     next = new MarketQuote(instrument, old.name(), old.priceScaled(), 0,
                         MarketStatus.UNAVAILABLE, QuoteOrigin.SIMULATED);
                     store.recordSimulationNode(sessionId, effectiveNodeTime, instrument.symbol(), previous.get().source(), old.priceScaled(), 0, old.priceScaled());
+                    store.recordSimulationNodeInput(sessionId, effectiveNodeTime, instrument.symbol(), 0, previous.get().source(), previous.get().nodeTimeEpochMillis(), old.priceScaled());
                 }
                 quotes.put(instrument, next);
             }
