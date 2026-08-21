@@ -2178,14 +2178,15 @@ private static String formatMovingAverage(List<Long> prices) {
         if (ImyvmFinance.QUOTE_STORE == null) return 0;
         try {
             long total = ImyvmFinance.QUOTE_STORE.simulationSessionCount();
-            long pageCount = Math.max(1L, (total + 9L) / 10L);
+            long pageCount = Math.max(1L, (total + 4L) / 5L);
             if (page > pageCount) { context.getSource().sendFailure(Translator.tr("commands.market.positions.page_unavailable", pageCount)); return 0; }
-            var rows = ImyvmFinance.QUOTE_STORE.findSimulationSessions(10, (int) ((page - 1) * 10));
+            var rows = ImyvmFinance.QUOTE_STORE.findSimulationSessions(5, (int) ((page - 1) * 5));
+            java.util.Collections.reverse(rows);
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.sessions.header", page, pageCount), false);
             for (SimulationSessionView row : rows) {
                 long end = row.endedAt() == null ? System.currentTimeMillis() : row.endedAt();
                 Component item = Translator.tr("commands.market.simulation.sessions.item", row.sessionId(), row.market(), row.status(), Instant.ofEpochMilli(row.startedAt()), ((end - row.startedAt()) / 1000) + "s", row.functionId(), row.seed(), row.intervalMillis(), row.sessionUuid())
-                    .copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation session " + row.sessionId())));
+                    .copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation nodes " + row.sessionId() + " 1")));
                 context.getSource().sendSuccess(() -> item, false);
             }
             sendPageFooter(context, "/imyvm-market simulation sessions", page, pageCount);
