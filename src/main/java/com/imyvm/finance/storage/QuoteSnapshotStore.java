@@ -238,6 +238,17 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         return findSimulationFunction(id).isPresent();
     }
 
+    public synchronized Map<String, String> simulationLayerFunctions(String layer) throws SQLException {
+        Map<String, String> result = new java.util.LinkedHashMap<>();
+        try (PreparedStatement statement = connection.prepareStatement("SELECT function_id, formula FROM simulation_layer_functions WHERE layer = ? ORDER BY function_id")) { statement.setString(1, layer); try (ResultSet rows = statement.executeQuery()) { while (rows.next()) result.put(rows.getString(1), rows.getString(2)); } }
+        return result;
+    }
+
+    public synchronized void activateSimulationLayer(String layer, String id) throws SQLException {
+        try (PreparedStatement check = connection.prepareStatement("SELECT 1 FROM simulation_layer_functions WHERE layer = ? AND function_id = ?")) { check.setString(1, layer); check.setString(2, id); try (ResultSet rows = check.executeQuery()) { if (!rows.next()) throw new IllegalArgumentException("unknown layer function"); } }
+        try (PreparedStatement clear = connection.prepareStatement("UPDATE simulation_layer_functions SET active = 0 WHERE layer = ?"); PreparedStatement activate = connection.prepareStatement("UPDATE simulation_layer_functions SET active = 1 WHERE layer = ? AND function_id = ?")) { clear.setString(1, layer); clear.executeUpdate(); activate.setString(1, layer); activate.setString(2, id); activate.executeUpdate(); }
+    }
+
     public synchronized Map<String, String> activeSimulationLayerFormulas() throws SQLException {
         Map<String, String> result = new java.util.LinkedHashMap<>();
         try (Statement statement = connection.createStatement(); ResultSet rows = statement.executeQuery("SELECT layer, formula FROM simulation_layer_functions WHERE active = 1 ORDER BY layer")) {
@@ -261,6 +272,12 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         try (PreparedStatement statement = connection.prepareStatement("INSERT OR REPLACE INTO simulation_node_layers(session_id, node_time, symbol, layer, parameters, result_bps) VALUES (?, ?, ?, ?, ?, ?)")) {
             statement.setLong(1, sessionId); statement.setLong(2, nodeTime); statement.setString(3, symbol); statement.setString(4, layer); statement.setString(5, parameters); statement.setDouble(6, resultBps); statement.executeUpdate();
         }
+    }
+
+    public synchronized List<String> simulationNodeLayers(long sessionId, String symbol, long nodeTime) throws SQLException {
+        List<String> result = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement("SELECT layer, parameters, result_bps FROM simulation_node_layers WHERE session_id = ? AND symbol = ? AND node_time = ? ORDER BY layer")) { statement.setLong(1, sessionId); statement.setString(2, symbol); statement.setLong(3, nodeTime); try (ResultSet rows = statement.executeQuery()) { while (rows.next()) result.add(rows.getString(1) + "|" + rows.getString(2) + "|" + rows.getDouble(3)); } }
+        return result;
     }
 
     public synchronized Map.Entry<String, String> activeSimulationFunction() throws SQLException {

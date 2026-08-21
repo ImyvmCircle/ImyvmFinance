@@ -90,6 +90,7 @@
   "imyvm_finance.commands.market.simulation.sessions.item": "§f{0}§7 {1} status §f{2}§7 started §8{3}§7 duration §f{4}§7 function §f{5}§7 seed §f{6}§7 interval §f{7}§7ms UUID §8{8}",
   "imyvm_finance.commands.market.simulation.nodes.header": "§6Simulation session §f{0}§6 nodes, page §f{1}/{2}§6:",
   "imyvm_finance.commands.market.simulation.nodes.item": "§f{0}§7 time §8{1}§7 source §f{2}§7 previous §e{3}§7 → new §e{4}§7 change §f{5}§7 bps, actual log return §f{6}§7, factor §e{7}",
+  "imyvm_finance.commands.market.simulation.node.layer": "§7{0}: parameters §f{1}§7, result §e{2}§7 bps",
   "imyvm_finance.commands.market.notice.startup": "§6§l=== IMYVM Finance market service started ===§r",
   "imyvm_finance.commands.market.notice.opened": "§a§lMarket {0} is now open!§r §7Quotes and trading status are being updated.",
   "imyvm_finance.commands.market.notice.closed": "§7§lMarket {0} is now closed.§r §7Trading is paused until the next session.",
