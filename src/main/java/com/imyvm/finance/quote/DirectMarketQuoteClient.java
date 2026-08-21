@@ -412,11 +412,7 @@ public final class DirectMarketQuoteClient {
             Instrument instrument = CHINA_CODES.get(code);
             if (instrument == null || fields.length < 4)
                 continue;
-            BigDecimal current = new BigDecimal(fields[3]);
-            BigDecimal previous = new BigDecimal(fields[2]);
-            BigDecimal change = current.subtract(previous).multiply(BigDecimal.valueOf(100))
-                .divide(previous, 8, java.math.RoundingMode.HALF_UP);
-            result.put(instrument, quote(instrument, current.toPlainString(), change.toPlainString()));
+            result.put(instrument, quote(instrument, fields[1], fields[3]));
         }
         if (result.size() != CHINA_CODES.size())
             throw new IllegalArgumentException("Sina returned incomplete China quotes");

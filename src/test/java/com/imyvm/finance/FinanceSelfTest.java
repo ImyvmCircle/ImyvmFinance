@@ -192,6 +192,15 @@ public final class FinanceSelfTest {
         var tencent = com.imyvm.finance.quote.DirectMarketQuoteClient.parseTencent(("v_s_sh000001=\"1~SSE~000001~3000~10~1.25~\";\nv_s_sz399001=\"1~SZ~399001~3000~10~1.25~\";\nv_s_sz399006=\"1~CY~399006~3000~10~1.25~\";\nv_s_sh000300=\"1~CSI~000300~3000~10~1.25~\";\nv_s_sh000905=\"1~CSI500~000905~3000~10~1.25~\";").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
         checkEquals(5, tencent.size(), "Tencent quote count");
         checkEquals(-33L, quote.changeBps(), "direct Yahoo change");
+        var sina = com.imyvm.finance.quote.DirectMarketQuoteClient.parseSina((
+            "var hq_str_s_sh000001=\"SSE,3000,12,0.40,1,2\";"
+                + "var hq_str_s_sz399001=\"SZ,14000,20,0.14,1,2\";"
+                + "var hq_str_s_sz399006=\"CY,3500,-10,-0.29,1,2\";"
+                + "var hq_str_s_sh000300=\"CSI,4600,15,0.33,1,2\";"
+                + "var hq_str_s_sh000905=\"CSI500,7800,0,0.00,1,2\";").getBytes(java.nio.charset.StandardCharsets.US_ASCII),
+            java.time.Instant.EPOCH);
+        checkEquals(30_000_000L, sina.get(Instrument.CN_000001).priceScaled(), "Sina current price");
+        checkEquals(40L, sina.get(Instrument.CN_000001).changeBps(), "Sina change percent");
         var status = new com.imyvm.finance.quote.DirectMarketQuoteClient(
             java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(1)).controlStatus();
         check(status.contains("lastSuccessfulProviders") && status.contains("providerStats") && status.contains("statsSince"),
