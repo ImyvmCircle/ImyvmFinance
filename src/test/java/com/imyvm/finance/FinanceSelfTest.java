@@ -352,6 +352,10 @@ public final class FinanceSelfTest {
             for (int index = 0; index < 5; index++)
                 quotes.save(new QuoteSnapshot("ma5-" + index, "test", index + 1L, index + 1L,
                     List.of(new MarketQuote(Instrument.CN_000001, "SSE", 10_000L + index * 100L, 0L, MarketStatus.OPEN)), List.of()));
+            quotes.save(new QuoteSnapshot("node-time", "test", 0L, 0L,
+                List.of(new MarketQuote(Instrument.CN_000001, "SSE", 10_500L, 0L, MarketStatus.OPEN)), List.of(), 8L));
+            checkEquals(8L, quotes.find(Instrument.CN_000001, "node-time").orElseThrow().nodeTimeEpochMillis(),
+                "snapshot node time");
             var recentPrices = quotes.findRecentPrices(Instrument.CN_000001, 5);
             checkEquals(5, recentPrices.size(), "MA5 history count");
             checkEquals(10_400L, recentPrices.getFirst(), "MA5 newest price");

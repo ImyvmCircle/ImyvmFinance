@@ -499,7 +499,7 @@ public final class QuoteSnapshotStore implements AutoCloseable {
 
     public synchronized Optional<StoredQuote> find(Instrument instrument, String snapshotId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
-            SELECT s.snapshot_id, s.source, s.fetched_at, s.market_time,
+            SELECT s.snapshot_id, s.source, s.fetched_at, s.market_time, s.node_time,
                    q.name, q.price_scaled, q.change_bps, q.market_status, q.quote_origin
             FROM market_quotes q
             JOIN market_snapshots s ON s.snapshot_id = q.snapshot_id
