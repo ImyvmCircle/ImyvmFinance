@@ -48,7 +48,7 @@ public final class MarketHours {
             return MarketStatus.CLOSED;
         LocalTime time = local.toLocalTime();
         boolean open = switch (market) {
-            case "CN" -> inSession(time, LocalTime.of(9, 30), LocalTime.NOON)
+            case "CN" -> inSession(time, LocalTime.of(9, 30), LocalTime.of(11, 30))
                 || inSession(time, LocalTime.of(13, 0), LocalTime.of(15, 0));
             case "HK" -> inSession(time, LocalTime.of(9, 30), LocalTime.NOON)
                 || inSession(time, LocalTime.of(13, 0), LocalTime.of(16, 0));

@@ -30,6 +30,7 @@ public final class QuoteRefreshService implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger("imyvm_finance/quotes");
         private final QuoteSnapshotStore store;
     private final DirectMarketQuoteClient client;
+    private final java.util.Map<String, java.util.Set<java.time.LocalDate>> marketHolidays;
     private final ScheduledExecutorService executor;
     private final AtomicBoolean refreshing = new AtomicBoolean();
     private final AtomicBoolean closed = new AtomicBoolean();
@@ -80,6 +81,7 @@ public final class QuoteRefreshService implements AutoCloseable {
                                Consumer<String> alertConsumer,
                                Consumer<com.imyvm.finance.market.QuoteSnapshot> snapshotConsumer) {
         this.store = store;
+        this.marketHolidays = config.marketHolidays();
         this.client = new DirectMarketQuoteClient(
             config.quoteConnectTimeout(),
             config.quoteReadTimeout(),
@@ -264,7 +266,7 @@ public final class QuoteRefreshService implements AutoCloseable {
                     try {
                         java.util.Optional<QuoteSnapshot> simulated = SimulationSnapshotBuilder.build(null, store,
                             lastScheduledPollAtEpochMillis == 0 ? System.currentTimeMillis() : lastScheduledPollAtEpochMillis,
-                            pollIntervalMillis, simulationSeed, simulationDefaultPrices, simulationStartedAt);
+                            pollIntervalMillis, simulationSeed, simulationDefaultPrices, simulationStartedAt, marketHolidays);
                         if (simulated.isPresent()) {
                             store.save(simulated.get());
                             lastRefreshStatus = "simulated";
@@ -284,7 +286,7 @@ public final class QuoteRefreshService implements AutoCloseable {
 
                 snapshot = SimulationSnapshotBuilder.build(snapshot, store,
                     lastScheduledPollAtEpochMillis == 0 ? System.currentTimeMillis() : lastScheduledPollAtEpochMillis,
-                    pollIntervalMillis, simulationSeed, simulationDefaultPrices, simulationStartedAt).orElse(snapshot);
+                    pollIntervalMillis, simulationSeed, simulationDefaultPrices, simulationStartedAt, marketHolidays).orElse(snapshot);
                 store.save(snapshot);
                 lastRefreshStatus = "success";
                 if (!snapshot.snapshotId().equals(lastSnapshotId)

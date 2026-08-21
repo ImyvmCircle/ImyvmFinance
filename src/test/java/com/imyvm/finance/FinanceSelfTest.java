@@ -285,9 +285,12 @@ public final class FinanceSelfTest {
         checkEquals(com.imyvm.finance.market.MarketStatus.OPEN,
             com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-19T01:30:00Z")),
             "China morning opening boundary");
+        checkEquals(com.imyvm.finance.market.MarketStatus.OPEN,
+            com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-19T03:29:00Z")),
+            "China morning closing boundary" );
         checkEquals(com.imyvm.finance.market.MarketStatus.CLOSED,
-            com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-19T04:00:00Z")),
-            "China lunch break");
+            com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-19T03:30:00Z")),
+            "China lunch break" );
         checkEquals(com.imyvm.finance.market.MarketStatus.OPEN,
             com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-19T05:00:00Z")),
             "China afternoon opening boundary");
@@ -417,9 +420,11 @@ public final class FinanceSelfTest {
             check(Math.abs(node.logReturn() - Math.log(10_100.0 / 10_000.0)) < 1.0e-12, "simulation log return was not persisted from actual prices");
             var simulationSessions = new java.util.HashMap<String, Long>();
             var coldStart = com.imyvm.finance.quote.SimulationSnapshotBuilder.build(null, quotes, 1_000L, 180_000L, 7L,
-                FinanceConfig.defaults().simulationDefaultPrices(), simulationSessions).orElseThrow();
+                FinanceConfig.defaults().simulationDefaultPrices(), simulationSessions, FinanceConfig.defaults().marketHolidays()).orElseThrow();
             check(coldStart.quotes().stream().anyMatch(quote -> quote.instrument() == Instrument.CRYPTO_BTC && quote.priceScaled() > 0),
                 "simulation did not use configured default point for a missing last quote");
+            checkEquals(MarketStatus.CLOSED, coldStart.quotes().stream().filter(quote -> quote.instrument() == Instrument.CN_000001).findFirst().orElseThrow().status(),
+                "cold-start China simulation opened outside market hours");
             check(coldStart.quotes().stream().allMatch(quote -> quote.origin() == com.imyvm.finance.market.QuoteOrigin.SIMULATED),
                 "cold-start simulation leaked a real quote origin");
             long cnSimulation = simulationSessions.get("CN");
@@ -427,7 +432,7 @@ public final class FinanceSelfTest {
             com.imyvm.finance.quote.SimulationSnapshotBuilder.build(new QuoteSnapshot("partial", "test", 2_000L, 2_000L,
                 List.of(new MarketQuote(Instrument.CRYPTO_BTC, "BTC", 600_000_000L, 0L, MarketStatus.OPEN)),
                 List.of("failed:market:CN")), quotes, 2_000L, 180_000L, 7L,
-                FinanceConfig.defaults().simulationDefaultPrices(), simulationSessions).orElseThrow();
+                FinanceConfig.defaults().simulationDefaultPrices(), simulationSessions, FinanceConfig.defaults().marketHolidays()).orElseThrow();
             checkEquals("RECOVERED", quotes.findSimulationSession(cryptoSimulation).orElseThrow().status(),
                 "recovered market simulation session was not finished");
             quotes.abortSimulation(cnSimulation, 3_000L);

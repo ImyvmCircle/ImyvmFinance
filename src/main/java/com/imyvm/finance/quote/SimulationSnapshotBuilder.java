@@ -21,7 +21,7 @@ public final class SimulationSnapshotBuilder {
 
     public static Optional<QuoteSnapshot> build(QuoteSnapshot fetched, QuoteSnapshotStore store, long nodeTime,
                                                 long intervalMillis, long seed, Map<String, Long> defaultPrices,
-                                                Map<String, Long> sessionStarts) throws Exception {
+                                                Map<String, Long> sessionStarts, Map<String, java.util.Set<java.time.LocalDate>> marketHolidays) throws Exception {
         Set<String> failedMarkets = failedMarkets(fetched);
         if (fetched == null) failedMarkets.addAll(Set.of("CN", "CRYPTO"));
         long effectiveNodeTime = fetched == null ? nodeTime : fetched.nodeTimeEpochMillis();
@@ -56,8 +56,10 @@ public final class SimulationSnapshotBuilder {
             for (Instrument instrument : Instrument.values()) {
                 if (!instrument.market().equals(market)) continue;
                 Optional<StoredQuote> storedPrevious = store.findLatest(instrument);
-                MarketQuote previous = storedPrevious.map(StoredQuote::quote).orElseGet(() -> defaultQuote(instrument, defaultPrices));
+                MarketQuote previous = storedPrevious.map(StoredQuote::quote).orElseGet(() -> defaultQuote(instrument, defaultPrices, nodeTime, marketHolidays));
                 if (previous == null) continue;
+                previous = new MarketQuote(instrument, previous.name(), previous.priceScaled(), previous.changeBps(),
+                    MarketHours.status(instrument.market(), java.time.Instant.ofEpochMilli(nodeTime), marketHolidays.getOrDefault(instrument.market(), java.util.Set.of())), previous.origin());
                 String source = storedPrevious.map(StoredQuote::source).orElse("config-default");
                 int configuredFactor = store.simulationFactor(instrument.symbol());
                 int factor = store.simulationFactorForSession(sessionId, instrument.symbol(), configuredFactor);
@@ -91,9 +93,10 @@ public final class SimulationSnapshotBuilder {
             System.currentTimeMillis(), effectiveNodeTime, new ArrayList<>(quotes.values()), fetched == null ? java.util.List.of() : fetched.alerts(), effectiveNodeTime));
     }
 
-    private static MarketQuote defaultQuote(Instrument instrument, Map<String, Long> defaultPrices) {
+    private static MarketQuote defaultQuote(Instrument instrument, Map<String, Long> defaultPrices, long nodeTime, Map<String, java.util.Set<java.time.LocalDate>> marketHolidays) {
         Long price = defaultPrices.get(instrument.symbol());
-        return price == null || price <= 0 ? null : new MarketQuote(instrument, instrument.symbol(), price, 0, MarketStatus.OPEN, QuoteOrigin.SIMULATED);
+        MarketStatus status = MarketHours.status(instrument.market(), java.time.Instant.ofEpochMilli(nodeTime), marketHolidays.getOrDefault(instrument.market(), java.util.Set.of()));
+        return price == null || price <= 0 ? null : new MarketQuote(instrument, instrument.symbol(), price, 0, status, QuoteOrigin.SIMULATED);
     }
 
     private static long simulationSessionId(long startedAt, String market) { return startedAt * 10L + ("CRYPTO".equals(market) ? 2L : 1L); }
