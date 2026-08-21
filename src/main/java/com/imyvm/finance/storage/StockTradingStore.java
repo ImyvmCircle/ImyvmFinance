@@ -590,6 +590,21 @@ public final class StockTradingStore implements AutoCloseable {
         }
     }
 
+    public synchronized java.util.Optional<StockTransactionStore.PendingSettlement> findPendingSettlement(UUID transactionId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT transaction_id, player_id, operation, reference_id, symbol, amount, state, economy_result, created_at, updated_at, failure_stage, failure_reason, retry_count, next_retry_at, external_reference FROM stock_transactions WHERE transaction_id = ? AND state = ?")) {
+            statement.setString(1, transactionId.toString());
+            statement.setString(2, com.imyvm.finance.transaction.StockTransactionState.PENDING_MANUAL.name());
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) return java.util.Optional.empty();
+                Instrument instrument = Instrument.fromSymbol(result.getString("symbol"));
+                if (instrument == null) throw new SQLException("transaction contains a non-whitelisted symbol");
+                long nextRetry = result.getLong("next_retry_at");
+                var transaction = new com.imyvm.finance.transaction.StockTransaction(UUID.fromString(result.getString("transaction_id")), UUID.fromString(result.getString("player_id")), com.imyvm.finance.transaction.StockOperation.valueOf(result.getString("operation")), result.getString("reference_id"), instrument, result.getLong("amount"), com.imyvm.finance.transaction.StockTransactionState.valueOf(result.getString("state")), result.getString("economy_result"), result.getLong("created_at"), result.getLong("updated_at"));
+                return java.util.Optional.of(new StockTransactionStore.PendingSettlement(transaction, result.getString("failure_stage"), result.getString("failure_reason"), result.getInt("retry_count"), result.wasNull() ? null : nextRetry, result.getString("external_reference")));
+            }
+        }
+    }
+
     public synchronized List<StoredOrder> findPendingManualOrders() throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("""
             SELECT order_id, player_id, transaction_id, symbol, units, amount,

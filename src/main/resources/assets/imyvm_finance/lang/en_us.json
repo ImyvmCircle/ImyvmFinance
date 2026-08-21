@@ -183,7 +183,7 @@
   "imyvm_finance.commands.market.history.item": "{0} {1} §7| §f{2} §7units | settlement §e{3}$ §7| state {4} §7| §8{5}",
   "imyvm_finance.commands.market.pending.storage_unavailable": "§cManual handling queue is unavailable.",
   "imyvm_finance.commands.market.pending.header": "§6Pending manual orders (§f{0}§6):",
-  "imyvm_finance.commands.market.pending.item": "§7player §f{0} §7| §f{1} §7| §f{2} §7units | amount §e{3}$ §7| transaction §8{4} §7| §8{5}",
+  "imyvm_finance.commands.market.pending.item": "§7player §f{0} §7| §f{1} §7| §f{2} units | amount §e{3}�7| transaction §8{4} §7| created §8{5} §7| operation §f{6} §7| state §f{7} §7| failure stage §f{8} §7| reason §f{9} §7| retries §f{10} §7| next retry §f{11} §7| external ref §f{12}",
   "imyvm_finance.commands.market.pending.invalid_transaction": "§cInvalid transaction ID.",
   "imyvm_finance.commands.market.pending.not_found": "§cThe stock transaction or order was not found.",
   "imyvm_finance.commands.market.pending.not_pending": "§cThis transaction cannot be resolved with this action.",

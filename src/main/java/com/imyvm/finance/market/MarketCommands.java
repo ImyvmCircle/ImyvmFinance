@@ -680,15 +680,20 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
             context.getSource().sendSuccess(
                 () -> Translator.tr("commands.market.pending.header", orders.size()), false);
             for (StoredOrder order : orders) {
+                var evidence = ImyvmFinance.TRADING_STORE.findPendingSettlement(order.transactionId()).orElse(null);
+                StockTransaction transaction = evidence == null ? null : evidence.transaction();
                 context.getSource().sendSuccess(
                     () -> Translator.tr(
                         "commands.market.pending.item",
-                        order.playerId(),
-                        order.instrument().symbol(),
-                        order.units(),
-                        order.amount(),
-                        order.transactionId(),
-                        Instant.ofEpochMilli(order.createdAtEpochMillis())),
+                        order.playerId(), order.instrument().symbol(), order.units(), order.amount(),
+                        order.transactionId(), Instant.ofEpochMilli(order.createdAtEpochMillis()),
+                        transaction == null ? "-" : transaction.operation().name(),
+                        transaction == null ? "-" : transaction.state().name(),
+                        evidence == null ? "-" : String.valueOf(evidence.failureStage()),
+                        evidence == null ? "-" : String.valueOf(evidence.failureReason()),
+                        evidence == null ? 0 : evidence.retryCount(),
+                        evidence == null || evidence.nextRetryAtEpochMillis() == null ? "-" : Instant.ofEpochMilli(evidence.nextRetryAtEpochMillis()),
+                        evidence == null || evidence.externalReference() == null ? "-" : evidence.externalReference()),
                     false);
             }
             return Command.SINGLE_SUCCESS;

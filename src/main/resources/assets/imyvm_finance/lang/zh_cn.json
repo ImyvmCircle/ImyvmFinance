@@ -183,7 +183,7 @@
   "imyvm_finance.commands.market.history.item": "{0} {1} §7| §f{2} §7单位 | 结算 §e{3}$ §7| 状态 {4} §7| §8{5}",
   "imyvm_finance.commands.market.pending.storage_unavailable": "§c人工处理队列不可用。",
   "imyvm_finance.commands.market.pending.header": "§6待人工处理订单 §f{0} §6条：",
-  "imyvm_finance.commands.market.pending.item": "§7玩家 §f{0} §7| §f{1} §7| §f{2} §7单位 | 金额 §e{3}$ §7| 事务 §8{4} §7| §8{5}",
+  "imyvm_finance.commands.market.pending.item": "§7玩家 §f{0} §7| §f{1} §7| §f{2} 单位 | 金额 §e{3}�7| 事务 §8{4} §7| 创建 §8{5} §7| 操作 §f{6} §7| 状态 §f{7} §7| 失败阶段 §f{8} §7| 原因 §f{9} §7| 重试 §f{10} §7| 下次重试 §f{11} §7| 外部引用 §f{12}",
   "imyvm_finance.commands.market.pending.invalid_transaction": "§c事务 ID 无效。",
   "imyvm_finance.commands.market.pending.not_found": "§c找不到对应的股票事务或订单。",
   "imyvm_finance.commands.market.pending.not_pending": "§c该事务当前不可执行此人工操作。",
