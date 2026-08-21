@@ -122,7 +122,7 @@ public final class MarketCommands {
                 .executes(context -> setTrading(context, false, null))
                 .then(tradingSymbol.executes(context -> setInstrumentTrading(context, false))));
 
-        var sourceMarket = Commands.argument("market", StringArgumentType.word()).suggests(MarketCommands::suggestMarkets);
+        var sourceMarket = Commands.argument("market", StringArgumentType.word()).suggests(MarketCommands::suggestSourceMarkets);
         var sourceProvider = Commands.argument("provider", StringArgumentType.word()).suggests(MarketCommands::suggestProviders);
         var sourceControl = Commands.literal("source")
             .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
@@ -208,11 +208,11 @@ public final class MarketCommands {
                         .then(Commands.argument("enabled", StringArgumentType.word())
                             .executes(MarketCommands::configureBriefing)))))
             .then(Commands.literal("providers")
-                .then(Commands.argument("market", StringArgumentType.word()).suggests(MarketCommands::suggestMarkets)
+                .then(Commands.argument("market", StringArgumentType.word()).suggests(MarketCommands::suggestSourceMarkets)
                     .then(Commands.argument("order", StringArgumentType.greedyString())
                         .executes(MarketCommands::configureProviders))))
             .then(Commands.literal("holiday")
-                .then(Commands.argument("market", StringArgumentType.word()).suggests(MarketCommands::suggestMarkets)
+                .then(Commands.argument("market", StringArgumentType.word()).suggests(MarketCommands::suggestHolidayMarkets)
                     .then(Commands.argument("dates", StringArgumentType.greedyString())
                         .executes(MarketCommands::configureHoliday))));
 
@@ -362,14 +362,14 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
 
     private static int configureProviders(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         String market = StringArgumentType.getString(context, "market").toUpperCase();
-        if (!knownMarket(market)) return 0;
+        if (!Instrument.sourceMarkets().contains(market)) return 0;
         try { ImyvmFinance.configureProviderOrder(market, StringArgumentType.getString(context, "order")); context.getSource().sendSuccess(() -> Component.literal("provider order saved; restart required"), true); return Command.SINGLE_SUCCESS; }
         catch (Exception exception) { return failUnexpected(context.getSource(), "provider configuration", exception); }
     }
 
     private static int configureHoliday(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         String market = StringArgumentType.getString(context, "market").toUpperCase();
-        if (!knownMarket(market)) return 0;
+        if (!"CN".equals(market)) return 0;
         try { ImyvmFinance.configureHolidays(market, StringArgumentType.getString(context, "dates")); context.getSource().sendSuccess(() -> Component.literal("holiday settings saved; restart required"), true); return Command.SINGLE_SUCCESS; }
         catch (Exception exception) { return failUnexpected(context.getSource(), "holiday configuration", exception); }
     }
@@ -690,7 +690,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                 context.getSource().sendSuccess(
                     () -> Translator.tr(
                         "commands.market.pending.item",
-                        order.playerId(), order.instrument().symbol(), order.units(), order.amount(),
+                        order.playerId(), instrumentLabel(order.instrument()), order.units(), order.amount(),
                         order.transactionId(), Instant.ofEpochMilli(order.createdAtEpochMillis()),
                         transaction == null ? "-" : transaction.operation().name(),
                         transaction == null ? "-" : transaction.state().name(),
@@ -724,9 +724,18 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
 
     private static CompletableFuture<Suggestions> suggestMarkets(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
         String remaining = builder.getRemaining().toUpperCase(java.util.Locale.ROOT);
-        LinkedHashSet<String> markets = new LinkedHashSet<>();
-        for (Instrument instrument : Instrument.values()) markets.add(instrument.market());
-        for (String market : markets) if (market.startsWith(remaining)) builder.suggest(market);
+        for (String market : Instrument.markets()) if (market.startsWith(remaining)) builder.suggest(market);
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestSourceMarkets(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
+        String remaining = builder.getRemaining().toUpperCase(java.util.Locale.ROOT);
+        for (String market : Instrument.sourceMarkets()) if (market.startsWith(remaining)) builder.suggest(market);
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestHolidayMarkets(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
+        if ("CN".startsWith(builder.getRemaining().toUpperCase(java.util.Locale.ROOT))) builder.suggest("CN");
         return builder.buildFuture();
     }
 
@@ -783,7 +792,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                 if (positionId.startsWith(remaining))
                     builder.suggest(positionId,
                         Translator.tr("commands.market.suggest.position",
-                            position.instrument().symbol(), availableUnits));
+                            instrumentLabel(position.instrument()), availableUnits));
             }
         } catch (Exception exception) {
             return builder.buildFuture();
@@ -846,7 +855,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                 if (transactionId.startsWith(remaining))
                     builder.suggest(transactionId,
                         Translator.tr("commands.market.suggest.transaction",
-                            order.instrument().symbol(), order.units(), order.amount()));
+                            instrumentLabel(order.instrument()), order.units(), order.amount()));
             }
         } catch (Exception exception) {
             return builder.buildFuture();
@@ -1011,7 +1020,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         if (!context.getNodes().stream().anyMatch(node -> node.getNode() instanceof ArgumentCommandNode<?, ?>
             && "market".equals(node.getNode().getName())) ) {
             try {
-                for (String market : new String[]{"CN", "CRYPTO"}) {
+                for (String market : Instrument.markets()) {
                     boolean enabled = ImyvmFinance.TRADING_STORE != null
                         && ImyvmFinance.TRADING_STORE.isMarketTradingEnabled(market);
                     source.sendSuccess(() -> Translator.tr("commands.market.market.status", marketLabel(market),
@@ -1070,6 +1079,10 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         return Translator.tr("commands.market.market.name." + market.toLowerCase());
     }
 
+    private static Component sourceMarketLabel(String market) {
+        return Translator.tr("commands.market.source.group." + market.toLowerCase());
+    }
+
     private static boolean knownMarket(String market) {
         for (Instrument instrument : Instrument.values())
             if (instrument.market().equals(market))
@@ -1096,7 +1109,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
             JsonObject schedulerStatus = root.getAsJsonObject("scheduler");
             source.sendSuccess(() -> Translator.tr("commands.market.source.status.header"), false);
             source.sendSuccess(() -> Translator.tr("commands.market.source.status.since", value(root, "statsSince", "-")), false);
-            String outages = schedulerStatus != null && schedulerStatus.has("simulationMarkets") ? schedulerStatus.get("simulationMarkets").toString().replace("\"", "").replace("[", "").replace("]", "") : "";
+            String outages = marketArrayValues(schedulerStatus, "simulationMarkets", false);
             source.sendSuccess(() -> Translator.tr("commands.market.source.status.outage", outages.isEmpty() ? "-" : outages), false);
             if (ImyvmFinance.QUOTE_STORE != null) {
                 Map<String, String> layers = ImyvmFinance.QUOTE_STORE.activeSimulationLayerFormulas();
@@ -1108,25 +1121,31 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
             String closed = Translator.tr("commands.market.source.status.closed").getString();
             String outage = Translator.tr("commands.market.source.status.outage_state").getString();
             String globalTrading = enabled;
-            String cnTrading = enabled;
-            String cryptoTrading = enabled;
             if (ImyvmFinance.TRADING_STORE != null) {
                 try {
                     globalTrading = ImyvmFinance.TRADING_STORE.isGlobalTradingEnabled() ? enabled : paused;
-                    cnTrading = ImyvmFinance.TRADING_STORE.isMarketTradingEnabled("CN") ? enabled : paused;
-                    cryptoTrading = ImyvmFinance.TRADING_STORE.isMarketTradingEnabled("CRYPTO") ? enabled : paused;
                 } catch (Exception ignored) {
-                    globalTrading = cnTrading = cryptoTrading = "-";
+                    globalTrading = "-";
                 }
             }
             final String finalGlobalTrading = globalTrading;
-            final String finalCnTrading = cnTrading;
-            final String finalCryptoTrading = cryptoTrading;
-            source.sendSuccess(() -> Translator.tr("commands.market.source.status.trading",
-                finalGlobalTrading, marketLabel("CN"), finalCnTrading, marketLabel("CRYPTO"), finalCryptoTrading), false);
-            source.sendSuccess(() -> Translator.tr("commands.market.source.status.quote",
-                marketLabel("CN"), quoteControlStatus(root, "CN", activeState, closed, outage),
-                marketLabel("CRYPTO"), quoteControlStatus(root, "CRYPTO", activeState, closed, outage)), false);
+            source.sendSuccess(() -> Translator.tr("commands.market.source.status.trading", finalGlobalTrading), false);
+            for (String market : Instrument.markets()) {
+                String marketTrading = enabled;
+                if (ImyvmFinance.TRADING_STORE != null) {
+                    try {
+                        marketTrading = ImyvmFinance.TRADING_STORE.isMarketTradingEnabled(market) ? enabled : paused;
+                    } catch (Exception ignored) {
+                        marketTrading = "-";
+                    }
+                }
+                String state = marketTrading;
+                source.sendSuccess(() -> Translator.tr("commands.market.source.status.trading_market", marketLabel(market), state), false);
+            }
+            source.sendSuccess(() -> Translator.tr("commands.market.source.status.quote"), false);
+            for (String market : Instrument.markets())
+                source.sendSuccess(() -> Translator.tr("commands.market.source.status.quote_market", marketLabel(market),
+                    quoteControlStatus(root, market, activeState, closed, outage)), false);
             JsonObject activity = root.getAsJsonObject("activity");
             if (activity != null) {
                 source.sendSuccess(() -> Translator.tr("commands.market.source.status.activity",
@@ -1162,7 +1181,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                     value(announcements, "lastBriefingSnapshotId", "-")), false);
                 JsonObject markets = announcements.getAsJsonObject("markets");
                 if (markets != null) {
-                    for (String market : new String[]{"CN", "CRYPTO"}) {
+                    for (String market : Instrument.markets()) {
                         JsonObject item = markets.getAsJsonObject(market);
                         if (item == null) continue;
                         source.sendSuccess(() -> Translator.tr("commands.market.source.status.announcement.market",
@@ -1173,14 +1192,14 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
             JsonObject orders = root.getAsJsonObject("providerOrder");
             JsonObject active = root.getAsJsonObject("lastSuccessfulProviders");
             if (orders != null) {
-                for (String market : new String[]{"CN", "CRYPTO"}) {
+                for (String market : Instrument.sourceMarkets()) {
                     if (!orders.has(market)) continue;
                     String order = orders.getAsJsonArray(market).toString().replace("\"", "").replace("[", "").replace("]", "");
                     source.sendSuccess(() -> Translator.tr("commands.market.source.status.market",
-                        marketLabel(market), value(active, market, "-"), order), false);
+                        sourceMarketLabel(market), value(active, market, "-"), order), false);
                 }
             }
-            source.sendSuccess(() -> Translator.tr("commands.market.source.status.provider_sets", arrayValues(root, "probingMarkets"), arrayValues(root, "disabledProviders")), false);
+            source.sendSuccess(() -> Translator.tr("commands.market.source.status.provider_sets", marketArrayValues(root, "probingMarkets", true), arrayValues(root, "disabledProviders")), false);
             JsonObject stats = root.getAsJsonObject("providerStats");
             JsonObject providerOrders = root.getAsJsonObject("providerOrder");
             if (stats != null || providerOrders != null) {
@@ -1243,6 +1262,16 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         catch (Exception ignored) { return 0; }
     }
 
+    private static String marketArrayValues(JsonObject object, String key, boolean sourceGroups) {
+        if (object == null || !object.has(key) || !object.get(key).isJsonArray()) return "-";
+        java.util.List<String> values = new java.util.ArrayList<>();
+        for (var item : object.getAsJsonArray(key)) {
+            String market = item.getAsString();
+            values.add((sourceGroups ? sourceMarketLabel(market) : marketLabel(market)).getString());
+        }
+        return values.isEmpty() ? "-" : String.join(", ", values);
+    }
+
     private static String arrayValues(JsonObject object, String key) {
         if (object == null || !object.has(key) || !object.get(key).isJsonArray()) return "-";
         String values = object.getAsJsonArray(key).toString().replace("\"", "").replace("[", "").replace("]", "");
@@ -1270,13 +1299,13 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         CommandSourceStack source = context.getSource();
         String market = StringArgumentType.getString(context, "market").toUpperCase();
         String provider = StringArgumentType.getString(context, "provider").toLowerCase();
-        if (!knownMarket(market) || !ImyvmFinance.CONFIG.providerOrder().getOrDefault(market, List.of()).contains(provider)) {
+        if (!Instrument.sourceMarkets().contains(market) || !ImyvmFinance.CONFIG.providerOrder().getOrDefault(market, List.of()).contains(provider)) {
             source.sendFailure(Translator.tr("commands.market.source.invalid", market, provider));
             return 0;
         }
         String path = "/control/provider?market=" + market + "&provider=" + provider + "&enabled=" + enabled;
         ImyvmFinance.controlMarketData(path).thenAccept(ignored -> source.getServer().execute(() ->
-            source.sendSuccess(() -> Translator.tr("commands.market.source." + (enabled ? "enabled" : "disabled"), market, provider), true)))
+            source.sendSuccess(() -> Translator.tr("commands.market.source." + (enabled ? "enabled" : "disabled"), sourceMarketLabel(market), provider), true)))
             .exceptionally(error -> {
                 source.getServer().execute(() -> source.sendFailure(Translator.tr("commands.market.control.failed")));
                 return null;
@@ -1321,7 +1350,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
             context.getSource().sendSuccess(
                 () -> Translator.tr(enabled
                     ? "commands.market.trading.instrument.enabled"
-                    : "commands.market.trading.instrument.disabled", instrument.symbol()), false);
+                    : "commands.market.trading.instrument.disabled", instrumentLabel(instrument)), false);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) {
             return failUnexpected(context.getSource(), "trading control", exception);
@@ -1360,7 +1389,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                 ImyvmFinance.TRADING_STORE.setTradingEnabled(instrument, enabled);
                 context.getSource().sendSuccess(() -> Translator.tr(enabled
                     ? "commands.market.trading.instrument.enabled_by"
-                    : "commands.market.trading.instrument.disabled_by", instrument.symbol(), context.getSource().getTextName()), true);
+                    : "commands.market.trading.instrument.disabled_by", instrumentLabel(instrument), context.getSource().getTextName()), true);
             }
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) {
@@ -2138,7 +2167,7 @@ private static String formatMovingAverage(List<Long> prices) {
         int factor = (int) LongArgumentType.getLong(context, "factor");
         try {
             ImyvmFinance.QUOTE_STORE.setSimulationFactor(instrument.symbol(), factor);
-            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.factor.changed", instrument.symbol(), factor), true);
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.factor.changed", instrumentLabel(instrument), factor), true);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation factor set", exception); }
     }
@@ -2148,7 +2177,7 @@ private static String formatMovingAverage(List<Long> prices) {
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.factor.header"), false);
             for (Instrument instrument : Instrument.values()) {
                 int factor = ImyvmFinance.QUOTE_STORE.simulationFactor(instrument.symbol());
-                context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.factor.item", instrument.symbol(), factor), false);
+                context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.factor.item", instrumentLabel(instrument), factor), false);
             }
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation factor list", exception); }
@@ -2173,7 +2202,7 @@ private static String formatMovingAverage(List<Long> prices) {
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.header"), false);
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.explanation"), false);
             long previewBaseTime = timestamp;
-            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.config", instrument.symbol(), nodes, previewSeed, Instant.ofEpochMilli(previewBaseTime)), false);
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.config", instrumentLabel(instrument), nodes, previewSeed, Instant.ofEpochMilli(previewBaseTime)), false);
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.input", stored == null ? "config-default" : stored.source()), false);
             for (var entry : functions.entrySet())
                 context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.layer", entry.getKey(), entry.getValue()), false);
@@ -2214,8 +2243,11 @@ private static String formatMovingAverage(List<Long> prices) {
                 Map<String, String> layers = ImyvmFinance.QUOTE_STORE.simulationSessionLayerFunctionIds(row.sessionId());
                 Map<String, Integer> factors = ImyvmFinance.QUOTE_STORE.simulationSessionFactors(row.sessionId());
                 long nodeCount = ImyvmFinance.QUOTE_STORE.simulationNodeTotal(row.sessionId());
-                String factorText = factors.entrySet().stream().map(entry -> entry.getKey() + "=" + entry.getValue()).collect(java.util.stream.Collectors.joining(","));
-                Component item = Translator.tr("commands.market.simulation.sessions.item", row.sessionId(), row.market(), row.status(), Instant.ofEpochMilli(row.startedAt()), ((end - row.startedAt()) / 1000) + "s", layers.getOrDefault("LONG", "-"), layers.getOrDefault("MEDIUM", "-"), layers.getOrDefault("SHORT", "-"), row.seed(), row.intervalMillis(), row.intervalToleranceMillis(), row.formula(), factorText, nodeCount, Instant.ofEpochMilli(end), row.sessionUuid())
+                String factorText = factors.entrySet().stream().map(entry -> {
+                    Instrument instrument = Instrument.fromSymbol(entry.getKey());
+                    return (instrument == null ? entry.getKey() : instrumentLabel(instrument).getString()) + "=" + entry.getValue();
+                }).collect(java.util.stream.Collectors.joining(","));
+                Component item = Translator.tr("commands.market.simulation.sessions.item", row.sessionId(), marketLabel(row.market()), row.status(), Instant.ofEpochMilli(row.startedAt()), ((end - row.startedAt()) / 1000) + "s", layers.getOrDefault("LONG", "-"), layers.getOrDefault("MEDIUM", "-"), layers.getOrDefault("SHORT", "-"), row.seed(), row.intervalMillis(), row.intervalToleranceMillis(), row.formula(), factorText, nodeCount, Instant.ofEpochMilli(end), row.sessionUuid())
                     .copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation sessions nodes " + row.sessionId() + " 1")));
                 context.getSource().sendSuccess(() -> item, false);
             }
@@ -2233,7 +2265,9 @@ private static String formatMovingAverage(List<Long> prices) {
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.nodes.header", sessionId, page, pageCount), false);
             for (SimulationNodeView row : ImyvmFinance.QUOTE_STORE.findSimulationNodes(sessionId, 10, (int) ((page - 1) * 10))) {
                 String layers = String.join(" ", ImyvmFinance.QUOTE_STORE.simulationNodeLayers(sessionId, row.symbol(), row.nodeTime()).stream().map(value -> value.substring(0, value.lastIndexOf("|")).replace("|", "=")).toList());
-                MutableComponent item = Translator.tr("commands.market.simulation.nodes.item", row.symbol(), Instant.ofEpochMilli(row.nodeTime()), row.inputSource(), formatPrice(row.previousPrice()), formatPrice(row.newPrice()), row.fluctuationBps(), String.format(java.util.Locale.ROOT, "%.9f", row.logReturn()), row.factor(), layers).copy();
+                Instrument nodeInstrument = Instrument.fromSymbol(row.symbol());
+                Component nodeLabel = nodeInstrument == null ? Component.literal(row.symbol()) : instrumentLabel(nodeInstrument);
+                MutableComponent item = Translator.tr("commands.market.simulation.nodes.item", nodeLabel, Instant.ofEpochMilli(row.nodeTime()), row.inputSource(), formatPrice(row.previousPrice()), formatPrice(row.newPrice()), row.fluctuationBps(), String.format(java.util.Locale.ROOT, "%.9f", row.logReturn()), row.factor(), layers).copy();
                 item.append(" ").append(Translator.tr("commands.market.simulation.nodes.layers_link").copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation sessions node-layers " + sessionId + " " + row.symbol().replace(":", "") + " " + row.nodeTime()))));
                 item.append(" ").append(Translator.tr("commands.market.simulation.nodes.inputs_link").copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation sessions node-inputs " + sessionId + " " + row.symbol().replace(":", "") + " " + row.nodeTime()))));
                 context.getSource().sendSuccess(() -> item, false);
@@ -2260,7 +2294,7 @@ private static String formatMovingAverage(List<Long> prices) {
             long nodeTime = LongArgumentType.getLong(context, "nodeTime");
             List<SimulationNodeInputView> rows = ImyvmFinance.QUOTE_STORE.findSimulationNodeInputs(sessionId, canonicalSymbol, nodeTime);
             if (rows.isEmpty()) { context.getSource().sendFailure(Translator.tr("commands.market.simulation.inputs.empty")); return 0; }
-            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.inputs.header", canonicalSymbol, Instant.ofEpochMilli(nodeTime)), false);
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.inputs.header", instrumentLabel(instrument), Instant.ofEpochMilli(nodeTime)), false);
             for (SimulationNodeInputView row : rows)
                 context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.inputs.item", row.inputIndex() + 1, row.source(), Instant.ofEpochMilli(row.quoteTime()), formatPrice(row.priceScaled())), false);
             return Command.SINGLE_SUCCESS;

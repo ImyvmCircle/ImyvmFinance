@@ -35,19 +35,22 @@ public final class DirectMarketQuoteClient {
     private static final long MAX_PROVIDER_BACKOFF_MILLIS = Duration.ofDays(1).toMillis();
     private static final URI CHINA_EASTMONEY = URI.create(
         "https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2&fields=f12,f14,f2,f3"
-            + "&secids=1.000001,0.399001,0.399006,1.000300,1.000905");
-    private static final URI CHINA_TENCENT = URI.create("https://qt.gtimg.cn/q=s_sh000001,s_sz399001,s_sz399006,s_sh000300,s_sh000905");
+            + "&secids=1.000001,0.399001,0.399006,1.000300,1.000905,1.518880,1.511090,0.159980");
+    private static final URI CHINA_TENCENT = URI.create("https://qt.gtimg.cn/q=s_sh000001,s_sz399001,s_sz399006,s_sh000300,s_sh000905,s_sh518880,s_sh511090,s_sz159980");
     private static final URI CHINA_SINA = URI.create(
-        "https://hq.sinajs.cn/list=s_sh000001,s_sz399001,s_sz399006,s_sh000300,s_sh000905");
+        "https://hq.sinajs.cn/list=s_sh000001,s_sz399001,s_sz399006,s_sh000300,s_sh000905,s_sh518880,s_sh511090,s_sz159980");
     private static final URI CHINA_WSCN = URI.create(
         "https://api-ddc-wscn.awtmt.com/market/real?fields=prod_name%2Cprod_code%2Clast_px%2Cpx_change_rate%2Cpreclose_px"
-            + "&prod_code=000001.SS%2C399001.SZ%2C399006.SZ%2C000300.SS%2C000905.SS");
+            + "&prod_code=000001.SS%2C399001.SZ%2C399006.SZ%2C000300.SS%2C000905.SS%2C518880.SS%2C511090.SS%2C159980.SZ");
     private static final Map<String, Instrument> CHINA_CODES = Map.of(
         "000001", Instrument.CN_000001,
         "399001", Instrument.CN_399001,
         "399006", Instrument.CN_399006,
         "000300", Instrument.CN_000300,
-        "000905", Instrument.CN_000905);
+        "000905", Instrument.CN_000905,
+        "518880", Instrument.GOLD_518880,
+        "511090", Instrument.BOND_511090,
+        "159980", Instrument.FUTURES_159980);
     private final HttpClient httpClient;
     private final Duration requestTimeout;
     private final long providerBackoffMillis;
@@ -76,7 +79,7 @@ public final class DirectMarketQuoteClient {
     }
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays) {
-        this(connectTimeout, requestTimeout, marketHolidays, Map.of("CN", true, "CRYPTO", true), Set.of(), Map.of("CN", List.of("eastmoney", "wscn", "sina", "tencent"), "CRYPTO", List.of("binance", "gate", "kucoin", "okx")), 15);
+        this(connectTimeout, requestTimeout, marketHolidays, Map.of("CN", true, "GOLD", true, "BOND", true, "FUTURES", true, "CRYPTO", true), Set.of(), Map.of("CN", List.of("eastmoney", "wscn", "sina", "tencent"), "CRYPTO", List.of("binance", "gate", "kucoin", "okx")), 15);
     }
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays, Map<String, Boolean> marketEnabled, Set<String> disabledProviders, Map<String, List<String>> providerOrder) {
@@ -102,17 +105,20 @@ public final class DirectMarketQuoteClient {
         Instant fetchedAt = Instant.now();
         EnumMap<Instrument, MarketQuote> quotes = new EnumMap<>(Instrument.class);
         List<String> alerts = new ArrayList<>();
-        if (marketEnabled.getOrDefault("CN", true) && !closedMarkets.contains("CN") && MarketHours.status("CN", fetchedAt, marketHolidays.getOrDefault("CN", Set.of())) == MarketStatus.OPEN) {
+        List<String> chinaMarkets = activeMarkets("CN", fetchedAt);
+        if (!chinaMarkets.isEmpty()) {
             boolean probing = probingMarkets.contains("CN");
             try {
-                quotes.putAll(fetchChina());
+                for (Map.Entry<Instrument, MarketQuote> entry : fetchChina().entrySet())
+                    if (chinaMarkets.contains(entry.getKey().market()))
+                        quotes.put(entry.getKey(), entry.getValue());
                 if (probing)
-                    alerts.add("recovered:market:CN");
+                    for (String market : chinaMarkets) alerts.add("recovered:market:" + market);
             } catch (Exception exception) {
-                alerts.add("failed:market:CN");
+                for (String market : chinaMarkets) alerts.add("failed:market:" + market);
             }
         }
-        if (marketEnabled.getOrDefault("CRYPTO", true) && !closedMarkets.contains("CRYPTO")) {
+        if (isMarketActive("CRYPTO", fetchedAt)) {
             boolean probing = probingMarkets.contains("CRYPTO");
             try {
                 var crypto = fetchCrypto();
@@ -129,14 +135,28 @@ public final class DirectMarketQuoteClient {
             MarketQuote quote = lastQuotes.get(instrument);
             if (quote == null)
                 continue;
+            String sourceMarket = instrument.sourceMarket();
             lastQuotes.put(instrument, new MarketQuote(instrument, quote.name(), quote.priceScaled(),
-                quote.changeBps(), MarketHours.status(instrument.market(), fetchedAt, marketHolidays.getOrDefault(instrument.market(), Set.of()))));
+                quote.changeBps(), MarketHours.status(sourceMarket, fetchedAt, marketHolidays.getOrDefault(sourceMarket, Set.of()))));
         }
         if (lastQuotes.isEmpty())
             throw new IllegalStateException("all direct market providers failed");
         long timestamp = fetchedAt.toEpochMilli();
         return new QuoteSnapshot("direct-" + timestamp, "direct", timestamp, timestamp,
             new ArrayList<>(lastQuotes.values()), alerts);
+    }
+
+    private List<String> activeMarkets(String sourceMarket, Instant fetchedAt) {
+        return Instrument.markets().stream()
+            .filter(market -> sourceMarket.equals(Instrument.sourceMarket(market)))
+            .filter(market -> isMarketActive(market, fetchedAt))
+            .toList();
+    }
+
+    private boolean isMarketActive(String market, Instant fetchedAt) {
+        String sourceMarket = Instrument.sourceMarket(market);
+        return marketEnabled.getOrDefault(market, true) && !closedMarkets.contains(market)
+            && MarketHours.status(sourceMarket, fetchedAt, marketHolidays.getOrDefault(sourceMarket, Set.of())) == MarketStatus.OPEN;
     }
 
     private Map<Instrument, MarketQuote> fetchChina() throws Exception {

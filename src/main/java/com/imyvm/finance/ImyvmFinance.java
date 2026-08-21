@@ -265,7 +265,7 @@ public final class ImyvmFinance implements ModInitializer {
             return;
         MutableComponent briefing = Component.empty().append(Translator.tr("commands.market.briefing.header",
             formatLocalTimestamp(now)));
-        for (String market : new String[]{"CN", "CRYPTO"}) {
+        for (String market : Instrument.markets()) {
             MutableComponent line = Component.empty().append("\n").append(Translator.tr("commands.market.briefing.market", marketLabel(market)));
             for (int index = 0; index < instruments.length; index++) {
                 Instrument instrument = instruments[index];
@@ -406,7 +406,7 @@ public final class ImyvmFinance implements ModInitializer {
     private static String announcementStatus() {
         StringBuilder markets = new StringBuilder("{");
         boolean first = true;
-        for (String market : new String[]{"CN", "CRYPTO"}) {
+        for (String market : Instrument.markets()) {
             if (!first) markets.append(',');
             first = false;
             MarketStatus status = MARKET_STATUSES.get(market);
@@ -642,7 +642,7 @@ public final class ImyvmFinance implements ModInitializer {
         String value = alert.substring((recovered ? "recovered:" : "failed:").length());
         if (value.startsWith("market:"))
             return Translator.tr("commands.market.quote." + (recovered ? "market_recovered" : "market_failed"),
-                value.substring("market:".length()));
+                marketLabel(value.substring("market:".length())));
         return Translator.tr("commands.market.quote." + (recovered ? "recovered" : "failed"), value);
     }
 

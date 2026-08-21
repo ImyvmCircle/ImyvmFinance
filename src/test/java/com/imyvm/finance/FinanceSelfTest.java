@@ -68,6 +68,11 @@ public final class FinanceSelfTest {
             checkEquals("Asia/Shanghai", defaults.timeZone(), "default time zone");
             checkEquals(30_000_000L, defaults.simulationDefaultPrices().get("CN:000001"), "default simulation point");
             checkEquals(600_000_000L, defaults.simulationDefaultPrices().get("CRYPTO:BTCUSDT"), "default crypto simulation point");
+            checkEquals(90_000L, defaults.simulationDefaultPrices().get("GOLD:518880"), "default gold simulation point");
+            checkEquals(1_200_000L, defaults.simulationDefaultPrices().get("BOND:511090"), "default bond simulation point");
+            checkEquals(20_000L, defaults.simulationDefaultPrices().get("FUTURES:159980"), "default futures simulation point");
+            check(Instrument.markets().stream().allMatch(market -> defaults.marketEnabled().getOrDefault(market, false)),
+                "business markets did not default to enabled");
             check(defaults.briefingEnabled(), "default briefing enabled");
             checkEquals(15L * 60 * 1000, defaults.tradingRules().maxQuoteAgeMillis(), "default quote age");
 
@@ -114,11 +119,25 @@ public final class FinanceSelfTest {
             "Chinese BTC instrument name was not localized");
         check(MarketCommands.instrumentLabel(Instrument.CRYPTO_ETH).getString().contains("煤气罐"),
             "Chinese ETH instrument name was not localized");
+        check(MarketCommands.instrumentLabel(Instrument.GOLD_518880).getString().contains("黄金ETF")
+            && MarketCommands.instrumentLabel(Instrument.GOLD_518880).getString().contains("GOLD:518880"),
+            "Chinese gold instrument name was not localized");
+        check(MarketCommands.instrumentLabel(Instrument.BOND_511090).getString().contains("30年国债ETF")
+            && MarketCommands.instrumentLabel(Instrument.FUTURES_159980).getString().contains("有色期货ETF"),
+            "Chinese bond or futures instrument name was not localized");
+        check(Translator.tr("commands.market.market.name.cn").getString().equals("A股市场")
+            && Translator.tr("commands.market.market.name.gold").getString().equals("黄金市场")
+            && Translator.tr("commands.market.source.group.cn").getString().equals("沪深行情源"),
+            "Chinese business market or source group was not localized");
         check(Translator.tr("commands.market.disclaimer").getString().contains("[提示]")
             && Translator.tr("commands.market.disclaimer").getString().contains("游戏内容仅供娱乐")
             && Translator.tr("commands.market.briefing.buy_hint").getString().contains("点击拟定买入"),
             "Chinese player notice translation missing");
         Translator.setLanguage("en_us");
+        check(MarketCommands.instrumentLabel(Instrument.GOLD_518880).getString().contains("Gold ETF")
+            && Translator.tr("commands.market.market.name.cn").getString().equals("A-Share Market")
+            && Translator.tr("commands.market.market.name.futures").getString().equals("Futures Market"),
+            "English instrument or market name was not localized");
         check(Translator.tr("commands.market.disclaimer").getString().contains("[Notice]")
             && Translator.tr("commands.market.briefing.buy_hint").getString().contains("Click to prepare a purchase"),
             "English player notice translation missing");
@@ -130,6 +149,13 @@ public final class FinanceSelfTest {
             "command-form symbol without colon did not resolve");
         check(Instrument.fromSymbol("cn:000001") == Instrument.CN_000001,
             "display-form symbol did not resolve");
+        check(Instrument.fromSymbol("GOLD518880") == Instrument.GOLD_518880
+            && Instrument.fromSymbol("gold:518880") == Instrument.GOLD_518880
+            && Instrument.fromSymbol("BOND511090") == Instrument.BOND_511090
+            && Instrument.fromSymbol("futures:159980") == Instrument.FUTURES_159980,
+            "new symbols did not resolve in colon-free and display forms");
+        checkEquals(java.util.List.of("CN", "GOLD", "BOND", "FUTURES", "CRYPTO"), Instrument.markets(), "business market order");
+        checkEquals(java.util.List.of("CN", "CRYPTO"), Instrument.sourceMarkets(), "source market order");
         String rendered = Translator.tr("commands.market.list.item", "CN:000001", "3000", "1.25%", "37.50", "2990", "日内", "可交易").getString();
         check(rendered.contains("CN:000001") && rendered.contains("3000") && rendered.contains("1.25%") && rendered.contains("2990"),
             "zh_cn translation did not interpolate arguments: " + rendered);
@@ -210,21 +236,29 @@ public final class FinanceSelfTest {
             "{\"chart\":{\"result\":[{\"meta\":{\"regularMarketPrice\":\"3000\",\"previousClose\":\"3010\"}}]}}",
             com.imyvm.finance.market.Instrument.CN_000001);
         checkEquals(30_000_000L, quote.priceScaled(), "direct Yahoo price");
-        var tencent = com.imyvm.finance.quote.DirectMarketQuoteClient.parseTencent(("v_s_sh000001=\"1~SSE~000001~3000~10~1.25~\";\nv_s_sz399001=\"1~SZ~399001~3000~10~1.25~\";\nv_s_sz399006=\"1~CY~399006~3000~10~1.25~\";\nv_s_sh000300=\"1~CSI~000300~3000~10~1.25~\";\nv_s_sh000905=\"1~CSI500~000905~3000~10~1.25~\";").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
-        checkEquals(5, tencent.size(), "Tencent quote count");
+        var eastmoney = com.imyvm.finance.quote.DirectMarketQuoteClient.parseEastmoney(
+            "{\"data\":{\"diff\":[{\"f12\":\"000001\",\"f2\":3000,\"f3\":0.4},{\"f12\":\"399001\",\"f2\":14000,\"f3\":0.14},{\"f12\":\"399006\",\"f2\":3500,\"f3\":-0.29},{\"f12\":\"000300\",\"f2\":4600,\"f3\":0.33},{\"f12\":\"000905\",\"f2\":7800,\"f3\":0},{\"f12\":\"518880\",\"f2\":9,\"f3\":1.25},{\"f12\":\"511090\",\"f2\":120,\"f3\":0.08},{\"f12\":\"159980\",\"f2\":2,\"f3\":-0.5}]}}".getBytes(java.nio.charset.StandardCharsets.UTF_8),
+            java.time.Instant.EPOCH);
+        checkEquals(8, eastmoney.size(), "Eastmoney quote count");
+        checkEquals(90_000L, eastmoney.get(Instrument.GOLD_518880).priceScaled(), "Eastmoney gold price");
+        var tencent = com.imyvm.finance.quote.DirectMarketQuoteClient.parseTencent(("v_s_sh000001=\"1~SSE~000001~3000~10~1.25~\";\nv_s_sz399001=\"1~SZ~399001~3000~10~1.25~\";\nv_s_sz399006=\"1~CY~399006~3000~10~1.25~\";\nv_s_sh000300=\"1~CSI~000300~3000~10~1.25~\";\nv_s_sh000905=\"1~CSI500~000905~3000~10~1.25~\";\nv_s_sh518880=\"1~GOLD~518880~9~0.1~1.25~\";\nv_s_sh511090=\"1~BOND~511090~120~0.1~0.08~\";\nv_s_sz159980=\"1~FUTURES~159980~2~0.1~-0.50~\";").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        checkEquals(8, tencent.size(), "Tencent quote count");
         checkEquals(-33L, quote.changeBps(), "direct Yahoo change");
         var sina = com.imyvm.finance.quote.DirectMarketQuoteClient.parseSina((
             "var hq_str_s_sh000001=\"SSE,3000,12,0.40,1,2\";"
                 + "var hq_str_s_sz399001=\"SZ,14000,20,0.14,1,2\";"
                 + "var hq_str_s_sz399006=\"CY,3500,-10,-0.29,1,2\";"
                 + "var hq_str_s_sh000300=\"CSI,4600,15,0.33,1,2\";"
-                + "var hq_str_s_sh000905=\"CSI500,7800,0,0.00,1,2\";").getBytes(java.nio.charset.StandardCharsets.US_ASCII),
+                + "var hq_str_s_sh000905=\"CSI500,7800,0,0.00,1,2\";"
+                + "var hq_str_s_sh518880=\"GOLD,9,0.1,1.25,1,2\";"
+                + "var hq_str_s_sh511090=\"BOND,120,0.1,0.08,1,2\";"
+                + "var hq_str_s_sz159980=\"FUTURES,2,-0.01,-0.50,1,2\";").getBytes(java.nio.charset.StandardCharsets.US_ASCII),
             java.time.Instant.EPOCH);
         checkEquals(30_000_000L, sina.get(Instrument.CN_000001).priceScaled(), "Sina current price");
         checkEquals(40L, sina.get(Instrument.CN_000001).changeBps(), "Sina change percent");
         var wscn = com.imyvm.finance.quote.DirectMarketQuoteClient.parseWscn(
-            "{\"code\":20000,\"message\":\"OK\",\"data\":{\"snapshot\":{\"000001.SS\":[\"SSE\",\"000001.SS\",3000,0.4,2990],\"399001.SZ\":[\"SZ\",\"399001.SZ\",14000,0.14,13980],\"399006.SZ\":[\"CY\",\"399006.SZ\",3500,-0.29,3510],\"000300.SS\":[\"CSI\",\"000300.SS\",4600,0.33,4585],\"000905.SS\":[\"CSI500\",\"000905.SS\",7800,0,7800]}}}");
-        checkEquals(5, wscn.size(), "WSCN quote count");
+            "{\"code\":20000,\"message\":\"OK\",\"data\":{\"snapshot\":{\"000001.SS\":[\"SSE\",\"000001.SS\",3000,0.4,2990],\"399001.SZ\":[\"SZ\",\"399001.SZ\",14000,0.14,13980],\"399006.SZ\":[\"CY\",\"399006.SZ\",3500,-0.29,3510],\"000300.SS\":[\"CSI\",\"000300.SS\",4600,0.33,4585],\"000905.SS\":[\"CSI500\",\"000905.SS\",7800,0,7800],\"518880.SS\":[\"GOLD\",\"518880.SS\",9,1.25,8.9],\"511090.SS\":[\"BOND\",\"511090.SS\",120,0.08,119.9],\"159980.SZ\":[\"FUTURES\",\"159980.SZ\",2,-0.5,2.01]}}}");
+        checkEquals(8, wscn.size(), "WSCN quote count");
         checkEquals(30_000_000L, wscn.get(Instrument.CN_000001).priceScaled(), "WSCN current price");
         checkEquals(40L, wscn.get(Instrument.CN_000001).changeBps(), "WSCN change percent");
         checkWarning(() -> com.imyvm.finance.quote.DirectMarketQuoteClient.parseWscn(
@@ -331,6 +365,21 @@ public final class FinanceSelfTest {
         root.add("disabledProviders", disabled);
         check(((net.minecraft.network.chat.Component) providerStatus.invoke(null, root, "CN:only", successful)).getString().contains("已停用"),
             "disabled provider state did not take priority");
+        var marketArrayValues = MarketCommands.class.getDeclaredMethod("marketArrayValues", com.google.gson.JsonObject.class, String.class, boolean.class);
+        marketArrayValues.setAccessible(true);
+        var visibleMarkets = new com.google.gson.JsonObject();
+        var businessMarkets = new com.google.gson.JsonArray();
+        businessMarkets.add("CN"); businessMarkets.add("GOLD"); businessMarkets.add("BOND"); businessMarkets.add("FUTURES"); businessMarkets.add("CRYPTO");
+        visibleMarkets.add("markets", businessMarkets);
+        String renderedMarkets = (String) marketArrayValues.invoke(null, visibleMarkets, "markets", false);
+        check(renderedMarkets.contains("A股市场") && renderedMarkets.contains("黄金市场")
+            && renderedMarkets.contains("债券市场") && renderedMarkets.contains("期货市场") && renderedMarkets.contains("加密货币市场"),
+            "OP business market list was not fully localized: " + renderedMarkets);
+        var sourceMarkets = new com.google.gson.JsonArray(); sourceMarkets.add("CN"); sourceMarkets.add("CRYPTO");
+        visibleMarkets.add("sources", sourceMarkets);
+        String renderedSources = (String) marketArrayValues.invoke(null, visibleMarkets, "sources", true);
+        check(renderedSources.contains("沪深行情源") && renderedSources.contains("加密货币行情源"),
+            "OP source group list was not localized: " + renderedSources);
     }
 
     private static void marketHoursChecks() {
@@ -344,6 +393,10 @@ public final class FinanceSelfTest {
             com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-24T03:00:00Z"),
                 java.util.Set.of(java.time.LocalDate.of(2026, 8, 24))),
             "China configured holiday hours");
+        checkEquals(com.imyvm.finance.market.MarketStatus.CLOSED,
+            com.imyvm.finance.quote.MarketHours.status("GOLD", java.time.Instant.parse("2026-08-24T03:00:00Z"),
+                java.util.Set.of(java.time.LocalDate.of(2026, 8, 24))),
+            "gold market did not share the CN holiday calendar");
         checkEquals(com.imyvm.finance.market.MarketStatus.OPEN,
             com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-19T01:30:00Z")),
             "China morning opening boundary");
@@ -359,6 +412,10 @@ public final class FinanceSelfTest {
         checkEquals(com.imyvm.finance.market.MarketStatus.CLOSED,
             com.imyvm.finance.quote.MarketHours.status("CN", java.time.Instant.parse("2026-08-19T07:00:00Z")),
             "China closing boundary");
+        for (String market : java.util.List.of("GOLD", "BOND", "FUTURES"))
+            checkEquals(com.imyvm.finance.market.MarketStatus.OPEN,
+                com.imyvm.finance.quote.MarketHours.status(market, java.time.Instant.parse("2026-08-19T05:00:00Z")),
+                market + " did not share Shanghai/Shenzhen market hours");
     }
 
     private static boolean idleRelationChecks() {
@@ -488,6 +545,10 @@ public final class FinanceSelfTest {
                 FinanceConfig.defaults().simulationDefaultPrices(), simulationSessions, FinanceConfig.defaults().marketHolidays()).orElseThrow();
             check(coldStart.quotes().stream().anyMatch(quote -> quote.instrument() == Instrument.CRYPTO_BTC && quote.priceScaled() > 0),
                 "simulation did not use configured default point for a missing last quote");
+            check(coldStart.quotes().stream().anyMatch(quote -> quote.instrument() == Instrument.GOLD_518880 && quote.priceScaled() == 90_000L),
+                "gold simulation did not use its configured default point");
+            checkEquals(5, simulationSessions.size(), "simulation sessions were not split by business market");
+            checkEquals(5L, simulationSessions.values().stream().distinct().count(), "simulation session IDs collided across markets");
             checkEquals(MarketStatus.CLOSED, coldStart.quotes().stream().filter(quote -> quote.instrument() == Instrument.CN_000001).findFirst().orElseThrow().status(),
                 "cold-start China simulation opened outside market hours");
             check(coldStart.quotes().stream().allMatch(quote -> quote.origin() == com.imyvm.finance.market.QuoteOrigin.SIMULATED),

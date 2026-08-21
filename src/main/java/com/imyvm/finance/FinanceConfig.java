@@ -1,5 +1,6 @@
 package com.imyvm.finance;
 
+import com.imyvm.finance.market.Instrument;
 import com.imyvm.finance.trading.TradingRules;
 
 import java.io.IOException;
@@ -55,11 +56,12 @@ public record FinanceConfig(
             true,
             false,
             Map.of(),
-            Map.of("CN", true, "CRYPTO", true),
+            Map.of("CN", true, "GOLD", true, "BOND", true, "FUTURES", true, "CRYPTO", true),
             Set.of(),
             Map.of("CN", java.util.List.of("eastmoney", "wscn", "sina", "tencent"), "CRYPTO", java.util.List.of("binance", "gate", "kucoin", "okx")),
             Map.of("CN:000001", 30_000_000L, "CN:399001", 30_000_000L, "CN:399006", 30_000_000L,
-                "CN:000300", 40_000_000L, "CN:000905", 50_000_000L, "CRYPTO:BTCUSDT", 600_000_000L, "CRYPTO:ETHUSDT", 30_000_000L),
+                "CN:000300", 40_000_000L, "CN:000905", 50_000_000L, "GOLD:518880", 90_000L,
+                "BOND:511090", 1_200_000L, "FUTURES:159980", 20_000L, "CRYPTO:BTCUSDT", 600_000_000L, "CRYPTO:ETHUSDT", 30_000_000L),
             "zh_cn",
             "Asia/Shanghai",
             TradingRules.DEFAULT);
@@ -208,7 +210,7 @@ public record FinanceConfig(
 
     private static Map<String, Boolean> parseMarketEnabled(Properties properties) {
         Map<String, Boolean> result = new HashMap<>();
-        for (String market : new String[] {"CN", "CRYPTO"})
+        for (String market : Instrument.markets())
             result.put(market, parseBoolean(properties, "market.enabled." + market, true));
         return Map.copyOf(result);
     }
