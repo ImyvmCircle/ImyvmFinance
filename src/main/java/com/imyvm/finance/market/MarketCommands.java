@@ -1141,6 +1141,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                         marketLabel(market), value(active, market, "-"), order), false);
                 }
             }
+            source.sendSuccess(() -> Translator.tr("commands.market.source.status.provider_sets", arrayValues(root, "probingMarkets"), arrayValues(root, "disabledProviders")), false);
             JsonObject stats = root.getAsJsonObject("providerStats");
             JsonObject providerOrders = root.getAsJsonObject("providerOrder");
             if (stats != null || providerOrders != null) {
@@ -1156,7 +1157,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                     source.sendSuccess(() -> Translator.tr("commands.market.source.status.provider",
                         key, requests, failures, value(item, "failureRatePercent", "0.00"), state,
                         value(item, "lastAttemptAt", "-"), value(item, "lastSuccessAt", "-"),
-                        value(item, "lastFailureAt", "-")), false);
+                        value(item, "lastFailureAt", "-"), value(item, "lastError", "-")), false);
                 }
             }
         } catch (Exception exception) {
@@ -1199,6 +1200,12 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
     private static long timestamp(JsonObject object, String key) {
         try { return object == null || !object.has(key) || object.get(key).isJsonNull() ? 0 : Instant.parse(object.get(key).getAsString()).toEpochMilli(); }
         catch (Exception ignored) { return 0; }
+    }
+
+    private static String arrayValues(JsonObject object, String key) {
+        if (object == null || !object.has(key) || !object.get(key).isJsonArray()) return "-";
+        String values = object.getAsJsonArray(key).toString().replace("\"", "").replace("[", "").replace("]", "");
+        return values.isEmpty() ? "-" : values;
     }
 
     private static boolean hasArrayValue(JsonObject object, String key, String value) {
@@ -1537,7 +1544,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                 instrumentLabel(quote.quote().instrument()),
                 formatPrice(quote.quote().priceScaled()),
                 formatPercent(quote.quote().changeBps()),
-                status),
+                status, Translator.tr("commands.market.quote.origin." + quote.quote().origin().name().toLowerCase()).getString()),
             false);
         return Command.SINGLE_SUCCESS;
     }
@@ -2193,9 +2200,10 @@ private static String formatMovingAverage(List<Long> prices) {
             long pageCount = Math.max(1L, (total + 9L) / 10L);
             if (page > pageCount) { context.getSource().sendFailure(Translator.tr("commands.market.positions.page_unavailable", pageCount)); return 0; }
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.nodes.header", sessionId, page, pageCount), false);
-            for (SimulationNodeView row : ImyvmFinance.QUOTE_STORE.findSimulationNodes(sessionId, 10, (int) ((page - 1) * 10)))
-                context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.nodes.item", row.symbol(), Instant.ofEpochMilli(row.nodeTime()), row.inputSource(), formatPrice(row.previousPrice()), formatPrice(row.newPrice()), row.fluctuationBps(), String.format(java.util.Locale.ROOT, "%.9f", row.logReturn()), row.factor()).copy()
-                    .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation inputs " + sessionId + " " + row.symbol() + " " + row.nodeTime()))), false);
+            for (SimulationNodeView row : ImyvmFinance.QUOTE_STORE.findSimulationNodes(sessionId, 10, (int) ((page - 1) * 10))) {
+                String layers = String.join(" ", ImyvmFinance.QUOTE_STORE.simulationNodeLayers(sessionId, row.symbol(), row.nodeTime()).stream().map(value -> value.substring(0, value.lastIndexOf("|")).replace("|", "=")).toList());
+                context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.nodes.item", row.symbol(), Instant.ofEpochMilli(row.nodeTime()), row.inputSource(), formatPrice(row.previousPrice()), formatPrice(row.newPrice()), row.fluctuationBps(), String.format(java.util.Locale.ROOT, "%.9f", row.logReturn()), row.factor(), layers).copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation layers " + sessionId + " " + row.symbol() + " " + row.nodeTime()))), false);
+            }
             sendPageFooter(context, "/imyvm-market simulation nodes " + sessionId, page, pageCount);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation nodes", exception); }
