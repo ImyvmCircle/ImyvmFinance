@@ -427,6 +427,15 @@ public final class FinanceSelfTest {
                 "cold-start China simulation opened outside market hours");
             check(coldStart.quotes().stream().allMatch(quote -> quote.origin() == com.imyvm.finance.market.QuoteOrigin.SIMULATED),
                 "cold-start simulation leaked a real quote origin");
+            long coldCnSession = simulationSessions.get("CN");
+            checkEquals(3, quotes.simulationLayers(coldCnSession).size(), "simulation session layers were not frozen");
+            check(quotes.findSimulationNodes(coldCnSession, 1, 0).getFirst().inputSource().contains("REAL"),
+                "simulation real input origin was not recorded");
+            quotes.save(coldStart);
+            com.imyvm.finance.quote.SimulationSnapshotBuilder.build(null, quotes, 2_000L, 180_000L, 7L,
+                FinanceConfig.defaults().simulationDefaultPrices(), simulationSessions, FinanceConfig.defaults().marketHolidays()).orElseThrow();
+            check(quotes.findSimulationNodes(coldCnSession, 1, 0).getFirst().inputSource().contains("SIMULATED"),
+                "simulation input origin was not recorded");
             long cnSimulation = simulationSessions.get("CN");
             long cryptoSimulation = simulationSessions.get("CRYPTO");
             com.imyvm.finance.quote.SimulationSnapshotBuilder.build(new QuoteSnapshot("partial", "test", 2_000L, 2_000L,
