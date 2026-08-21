@@ -1607,7 +1607,6 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
     private static int confirmNow(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         if (!requireInitialized(context.getSource()))
             return 0;
-        sendPlayerDisclaimer(context.getSource());
         UUID confirmationId;
         try {
             confirmationId = UUID.fromString(StringArgumentType.getString(context, "confirmationId"));

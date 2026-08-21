@@ -1,5 +1,5 @@
 {
-  "imyvm_finance.commands.market.disclaimer": "§c§l[Simulation Warning]§r §cThe following content is an in-game simulation and is not real investment advice.",
+  "imyvm_finance.commands.market.disclaimer": "§e§l[Notice]§r §eThe following content is an in-game simulation and is not real investment advice.",
   "imyvm_finance.commands.market.help.header": "§6§l=== IMYVM Finance Market ===§r",
   "imyvm_finance.commands.market.help.intro": "§7ImyvmFinance brings real index quotes into the server economy: §fbuy and sell index shares with in-game money at live prices§7 and ride the market swings.",
   "imyvm_finance.commands.market.help.symbol_hint": "§7Enter symbols without the colon, e.g. §fCN000001§7 for CN:000001; suggestions complete them for you.",
@@ -110,7 +110,7 @@
   "imyvm_finance.commands.market.briefing.status.paused": "§ePAUSED",
   "imyvm_finance.commands.market.briefing.status.closed": "§7CLOSED",
   "imyvm_finance.commands.market.briefing.status.unavailable": "§cUNAVAILABLE",
-  "imyvm_finance.commands.market.briefing.buy_hint": "§c§l[Simulation Warning]§r §cThis is an in-game simulation. §r\n§7Click to prepare a purchase",
+  "imyvm_finance.commands.market.briefing.buy_hint": "§e§l[Notice]§r §eThis is an in-game simulation. §r\n§7Click to prepare a purchase",
   "imyvm_finance.commands.market.briefing.subscription.on": "§aMarket briefing enabled.",
   "imyvm_finance.commands.market.briefing.subscription.off": "§eMarket briefing muted; run §f/imyvm-market briefing §eto resume.",
   "imyvm_finance.commands.market.trade.disabled_global": "§eGlobal stock trading is paused by an administrator.",
