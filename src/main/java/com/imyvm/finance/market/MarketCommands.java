@@ -122,8 +122,8 @@ public final class MarketCommands {
                 .executes(context -> setTrading(context, false, null))
                 .then(tradingSymbol.executes(context -> setInstrumentTrading(context, false))));
 
-        var sourceMarket = Commands.argument("market", StringArgumentType.word());
-        var sourceProvider = Commands.argument("provider", StringArgumentType.word());
+        var sourceMarket = Commands.argument("market", StringArgumentType.word()).suggests(MarketCommands::suggestMarkets);
+        var sourceProvider = Commands.argument("provider", StringArgumentType.word()).suggests(MarketCommands::suggestProviders);
         var sourceControl = Commands.literal("source")
             .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
             .then(Commands.literal("status").executes(MarketCommands::sourceStatus))
@@ -132,7 +132,7 @@ public final class MarketCommands {
             .then(Commands.literal("disable")
                 .then(sourceMarket.then(sourceProvider.executes(context -> setSource(context, false)))));
 
-        var marketName = Commands.argument("market", StringArgumentType.word());
+        var marketName = Commands.argument("market", StringArgumentType.word()).suggests(MarketCommands::suggestMarkets);
         var marketControl = Commands.literal("market")
             .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
             .then(Commands.literal("status")
@@ -146,7 +146,7 @@ public final class MarketCommands {
         var adminPlayer = Commands.argument("player", StringArgumentType.word());
         var adminSymbol = Commands.argument("symbol", StringArgumentType.word())
             .suggests(MarketCommands::suggestInstruments);
-        var adminSnapshot = Commands.argument("snapshotId", StringArgumentType.word());
+        var adminSnapshot = Commands.argument("snapshotId", StringArgumentType.word()).suggests(MarketCommands::suggestSnapshots);
         var adminUnits = Commands.argument("units", LongArgumentType.longArg(1));
         var admin = Commands.literal("admin")
             .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
@@ -208,11 +208,11 @@ public final class MarketCommands {
                         .then(Commands.argument("enabled", StringArgumentType.word())
                             .executes(MarketCommands::configureBriefing)))))
             .then(Commands.literal("providers")
-                .then(Commands.argument("market", StringArgumentType.word())
+                .then(Commands.argument("market", StringArgumentType.word()).suggests(MarketCommands::suggestMarkets)
                     .then(Commands.argument("order", StringArgumentType.greedyString())
                         .executes(MarketCommands::configureProviders))))
             .then(Commands.literal("holiday")
-                .then(Commands.argument("market", StringArgumentType.word())
+                .then(Commands.argument("market", StringArgumentType.word()).suggests(MarketCommands::suggestMarkets)
                     .then(Commands.argument("dates", StringArgumentType.greedyString())
                         .executes(MarketCommands::configureHoliday))));
 
@@ -228,12 +228,12 @@ public final class MarketCommands {
             .then(Commands.literal("help").executes(MarketCommands::simulationFunctionSyntax))
             .then(Commands.literal("function")
                 .then(Commands.literal("list").executes(MarketCommands::simulationFunctionList))
-                .then(Commands.literal("show").then(Commands.argument("id", StringArgumentType.word()).executes(MarketCommands::simulationFunctionShow)))
-                .then(Commands.literal("use").then(Commands.argument("id", StringArgumentType.word()).executes(MarketCommands::simulationFunctionUse))))
+                .then(Commands.literal("show").then(Commands.argument("id", StringArgumentType.word()).suggests(MarketCommands::suggestSimulationFunctions).executes(MarketCommands::simulationFunctionShow)))
+                .then(Commands.literal("use").then(Commands.argument("id", StringArgumentType.word()).suggests(MarketCommands::suggestSimulationFunctions).executes(MarketCommands::simulationFunctionUse))))
             .then(Commands.literal("layer")
-                .then(Commands.argument("layer", StringArgumentType.word())
+                .then(Commands.argument("layer", StringArgumentType.word()).suggests(MarketCommands::suggestSimulationLayers)
                     .then(Commands.literal("list").executes(MarketCommands::simulationLayerList))
-                    .then(Commands.literal("use").then(Commands.argument("id", StringArgumentType.word()).executes(MarketCommands::simulationLayerUse)))))
+                    .then(Commands.literal("use").then(Commands.argument("id", StringArgumentType.word()).suggests(MarketCommands::suggestSimulationLayerFunctions).executes(MarketCommands::simulationLayerUse)))))
             .then(Commands.literal("factor")
                 .then(Commands.literal("set")
                     .then(Commands.argument("symbol", StringArgumentType.word()).suggests(MarketCommands::suggestInstruments)
@@ -724,6 +724,52 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         try {
             String remaining = builder.getRemaining().toLowerCase(java.util.Locale.ROOT);
             for (String id : ImyvmFinance.QUOTE_STORE.findSimulationFunctions().keySet())
+                if (id.startsWith(remaining)) builder.suggest(id);
+        } catch (Exception ignored) { }
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestMarkets(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
+        String remaining = builder.getRemaining().toUpperCase(java.util.Locale.ROOT);
+        LinkedHashSet<String> markets = new LinkedHashSet<>();
+        for (Instrument instrument : Instrument.values()) markets.add(instrument.market());
+        for (String market : markets) if (market.startsWith(remaining)) builder.suggest(market);
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestProviders(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
+        try {
+            String market = StringArgumentType.getString(context, "market").toUpperCase(java.util.Locale.ROOT);
+            String remaining = builder.getRemaining().toLowerCase(java.util.Locale.ROOT);
+            for (String provider : ImyvmFinance.CONFIG.providerOrder().getOrDefault(market, List.of()))
+                if (provider.startsWith(remaining)) builder.suggest(provider);
+        } catch (Exception ignored) { }
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestSnapshots(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
+        try {
+            Instrument instrument = Instrument.fromSymbol(StringArgumentType.getString(context, "symbol"));
+            if (instrument != null && ImyvmFinance.QUOTE_STORE != null) {
+                String remaining = builder.getRemaining().toLowerCase(java.util.Locale.ROOT);
+                for (StoredQuote quote : ImyvmFinance.QUOTE_STORE.findQuoteHistory(instrument, 10, 0))
+                    if (quote.snapshotId().toLowerCase(java.util.Locale.ROOT).startsWith(remaining)) builder.suggest(quote.snapshotId());
+            }
+        } catch (Exception ignored) { }
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestSimulationLayers(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
+        String remaining = builder.getRemaining().toUpperCase(java.util.Locale.ROOT);
+        for (String layer : List.of("LONG", "MEDIUM", "SHORT")) if (layer.startsWith(remaining)) builder.suggest(layer);
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestSimulationLayerFunctions(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
+        try {
+            String layer = StringArgumentType.getString(context, "layer").toUpperCase(java.util.Locale.ROOT);
+            String remaining = builder.getRemaining().toLowerCase(java.util.Locale.ROOT);
+            for (String id : ImyvmFinance.QUOTE_STORE.simulationLayerFunctions(layer).keySet())
                 if (id.startsWith(remaining)) builder.suggest(id);
         } catch (Exception ignored) { }
         return builder.buildFuture();
@@ -2203,7 +2249,10 @@ private static String formatMovingAverage(List<Long> prices) {
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.nodes.header", sessionId, page, pageCount), false);
             for (SimulationNodeView row : ImyvmFinance.QUOTE_STORE.findSimulationNodes(sessionId, 10, (int) ((page - 1) * 10))) {
                 String layers = String.join(" ", ImyvmFinance.QUOTE_STORE.simulationNodeLayers(sessionId, row.symbol(), row.nodeTime()).stream().map(value -> value.substring(0, value.lastIndexOf("|")).replace("|", "=")).toList());
-                context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.nodes.item", row.symbol(), Instant.ofEpochMilli(row.nodeTime()), row.inputSource(), formatPrice(row.previousPrice()), formatPrice(row.newPrice()), row.fluctuationBps(), String.format(java.util.Locale.ROOT, "%.9f", row.logReturn()), row.factor(), layers).copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation layers " + sessionId + " " + row.symbol() + " " + row.nodeTime()))), false);
+                MutableComponent item = Translator.tr("commands.market.simulation.nodes.item", row.symbol(), Instant.ofEpochMilli(row.nodeTime()), row.inputSource(), formatPrice(row.previousPrice()), formatPrice(row.newPrice()), row.fluctuationBps(), String.format(java.util.Locale.ROOT, "%.9f", row.logReturn()), row.factor(), layers).copy();
+                item.append(" ").append(Translator.tr("commands.market.simulation.nodes.layers_link").copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation layers " + sessionId + " " + row.symbol() + " " + row.nodeTime()))));
+                item.append(" ").append(Translator.tr("commands.market.simulation.nodes.inputs_link").copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation inputs " + sessionId + " " + row.symbol() + " " + row.nodeTime()))));
+                context.getSource().sendSuccess(() -> item, false);
             }
             sendPageFooter(context, "/imyvm-market simulation nodes " + sessionId, page, pageCount);
             return Command.SINGLE_SUCCESS;
