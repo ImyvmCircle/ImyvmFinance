@@ -2165,6 +2165,7 @@ private static String formatMovingAverage(List<Long> prices) {
         context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.layers.syntax.operators"), false);
         context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.layers.syntax.functions"), false);
         context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.layers.syntax.variables"), false);
+        context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.layers.syntax.commands"), false);
         context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.layers.syntax.example"), false);
         return Command.SINGLE_SUCCESS;
     }
@@ -2181,7 +2182,10 @@ private static String formatMovingAverage(List<Long> prices) {
             for (SimulationSessionView row : rows) {
                 long end = row.endedAt() == null ? System.currentTimeMillis() : row.endedAt();
                 Map<String, String> layers = ImyvmFinance.QUOTE_STORE.simulationSessionLayerFunctionIds(row.sessionId());
-                Component item = Translator.tr("commands.market.simulation.sessions.item", row.sessionId(), row.market(), row.status(), Instant.ofEpochMilli(row.startedAt()), ((end - row.startedAt()) / 1000) + "s", layers.getOrDefault("LONG", "-"), layers.getOrDefault("MEDIUM", "-"), layers.getOrDefault("SHORT", "-"), row.seed(), row.intervalMillis(), row.sessionUuid())
+                Map<String, Integer> factors = ImyvmFinance.QUOTE_STORE.simulationSessionFactors(row.sessionId());
+                long nodeCount = ImyvmFinance.QUOTE_STORE.simulationNodeTotal(row.sessionId());
+                String factorText = factors.entrySet().stream().map(entry -> entry.getKey() + "=" + entry.getValue()).collect(java.util.stream.Collectors.joining(","));
+                Component item = Translator.tr("commands.market.simulation.sessions.item", row.sessionId(), row.market(), row.status(), Instant.ofEpochMilli(row.startedAt()), ((end - row.startedAt()) / 1000) + "s", layers.getOrDefault("LONG", "-"), layers.getOrDefault("MEDIUM", "-"), layers.getOrDefault("SHORT", "-"), row.seed(), row.intervalMillis(), row.intervalToleranceMillis(), row.formula(), factorText, nodeCount, Instant.ofEpochMilli(end), row.sessionUuid())
                     .copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation sessions nodes " + row.sessionId() + " 1")));
                 context.getSource().sendSuccess(() -> item, false);
             }
@@ -2200,8 +2204,8 @@ private static String formatMovingAverage(List<Long> prices) {
             for (SimulationNodeView row : ImyvmFinance.QUOTE_STORE.findSimulationNodes(sessionId, 10, (int) ((page - 1) * 10))) {
                 String layers = String.join(" ", ImyvmFinance.QUOTE_STORE.simulationNodeLayers(sessionId, row.symbol(), row.nodeTime()).stream().map(value -> value.substring(0, value.lastIndexOf("|")).replace("|", "=")).toList());
                 MutableComponent item = Translator.tr("commands.market.simulation.nodes.item", row.symbol(), Instant.ofEpochMilli(row.nodeTime()), row.inputSource(), formatPrice(row.previousPrice()), formatPrice(row.newPrice()), row.fluctuationBps(), String.format(java.util.Locale.ROOT, "%.9f", row.logReturn()), row.factor(), layers).copy();
-                item.append(" ").append(Translator.tr("commands.market.simulation.nodes.layers_link").copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation sessions node-layers " + sessionId + " " + row.symbol() + " " + row.nodeTime()))));
-                item.append(" ").append(Translator.tr("commands.market.simulation.nodes.inputs_link").copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation sessions node-inputs " + sessionId + " " + row.symbol() + " " + row.nodeTime()))));
+                item.append(" ").append(Translator.tr("commands.market.simulation.nodes.layers_link").copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation sessions node-layers " + sessionId + " " + row.symbol().replace(":", "") + " " + row.nodeTime()))));
+                item.append(" ").append(Translator.tr("commands.market.simulation.nodes.inputs_link").copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation sessions node-inputs " + sessionId + " " + row.symbol().replace(":", "") + " " + row.nodeTime()))));
                 context.getSource().sendSuccess(() -> item, false);
             }
             sendPageFooter(context, "/imyvm-market simulation sessions nodes " + sessionId, page, pageCount);
@@ -2210,7 +2214,7 @@ private static String formatMovingAverage(List<Long> prices) {
     }
 
     private static int simulationNodeLayers(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
-        try { long sessionId = LongArgumentType.getLong(context, "session"); String symbol = StringArgumentType.getString(context, "symbol"); long nodeTime = LongArgumentType.getLong(context, "nodeTime");
+        try { long sessionId = LongArgumentType.getLong(context, "session"); String symbol = StringArgumentType.getString(context, "symbol"); Instrument instrument = Instrument.fromSymbol(symbol); if (instrument == null) { context.getSource().sendFailure(Translator.tr("commands.market.quote.unknown_symbol", symbol)); return 0; } symbol = instrument.symbol(); long nodeTime = LongArgumentType.getLong(context, "nodeTime");
             for (String row : ImyvmFinance.QUOTE_STORE.simulationNodeLayers(sessionId, symbol, nodeTime)) { String[] values = row.split("\\|", 3); context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.node.layer", values[0], values[1], values[2]), false); } return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation layers", exception); }
     }
@@ -2219,10 +2223,14 @@ private static String formatMovingAverage(List<Long> prices) {
         try {
             long sessionId = LongArgumentType.getLong(context, "session");
             String symbol = StringArgumentType.getString(context, "symbol");
+            Instrument instrument = Instrument.fromSymbol(symbol);
+            if (instrument == null) { context.getSource().sendFailure(Translator.tr("commands.market.quote.unknown_symbol", symbol)); return 0; }
+            symbol = instrument.symbol();
+            final String canonicalSymbol = symbol;
             long nodeTime = LongArgumentType.getLong(context, "nodeTime");
-            List<SimulationNodeInputView> rows = ImyvmFinance.QUOTE_STORE.findSimulationNodeInputs(sessionId, symbol, nodeTime);
+            List<SimulationNodeInputView> rows = ImyvmFinance.QUOTE_STORE.findSimulationNodeInputs(sessionId, canonicalSymbol, nodeTime);
             if (rows.isEmpty()) { context.getSource().sendFailure(Translator.tr("commands.market.simulation.inputs.empty")); return 0; }
-            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.inputs.header", symbol, Instant.ofEpochMilli(nodeTime)), false);
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.inputs.header", canonicalSymbol, Instant.ofEpochMilli(nodeTime)), false);
             for (SimulationNodeInputView row : rows)
                 context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.inputs.item", row.inputIndex() + 1, row.source(), Instant.ofEpochMilli(row.quoteTime()), formatPrice(row.priceScaled())), false);
             return Command.SINGLE_SUCCESS;

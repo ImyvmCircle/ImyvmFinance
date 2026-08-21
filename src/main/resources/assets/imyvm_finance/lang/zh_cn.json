@@ -82,7 +82,7 @@
   "imyvm_finance.commands.market.simulation.preview.item": "§8#{0} §7时间 §f{1}§7，理论价格 §e{2}§7，长 §f{3}§7 bps，中 §f{4}§7 bps，短 §f{5}§7 bps，合计 §e{6}§7 bps，实际 §f{7}§7，因子 §e{8}",
   "imyvm_finance.commands.market.simulation.session.layer": "§7{0} 层公式：§e{1}",
   "imyvm_finance.commands.market.simulation.sessions.header": "§6模拟会话，第 §f{0}/{1}§6 页：",
-  "imyvm_finance.commands.market.simulation.sessions.item": "§f{0}§7 {1} 状态 §f{2}§7 开始 §8{3}§7 持续 §f{4}§7 长 §e{5}§7 中 §e{6}§7 短 §e{7}§7 种子 §f{8}§7 间隔 §f{9}§7ms UUID §8{10}",
+  "imyvm_finance.commands.market.simulation.sessions.item": "§f{0}§7 {1} 状态 §f{2}§7 开始 §8{3}§7 结束 §8{15}§7 持续 §f{4}§7 图层 L=§e{5}§7 M=§e{6}§7 S=§e{7}§7 公式 §f{12}§7 因子 §e{13}§7 种子 §f{8}§7 间隔 §f{9}§7±{10}ms 节点 §f{14}§7 UUID §8{16}",
   "imyvm_finance.commands.market.simulation.nodes.header": "§6模拟会话 §f{0}§6 节点，第 §f{1}/{2}§6 页：",
   "imyvm_finance.commands.market.simulation.nodes.item": "§f{0}§7 时间 §8{1}§7 源 §f{2}§7 前值 §e{3}§7 → 新值 §e{4}§7 波动 §f{5}§7 bps，实际 log return §f{6}§7，因子 §e{7}§7 | §f{8}",
   "imyvm_finance.commands.market.simulation.node.layer": "§7{0}：参数 §f{1}§7，结果 §e{2}§7 bps",

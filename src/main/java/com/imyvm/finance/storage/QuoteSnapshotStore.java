@@ -239,6 +239,15 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         return result;
     }
 
+    public synchronized Map<String, Integer> simulationSessionFactors(long sessionId) throws SQLException {
+        Map<String, Integer> result = new java.util.LinkedHashMap<>();
+        try (PreparedStatement statement = connection.prepareStatement("SELECT symbol, factor FROM simulation_session_factors WHERE session_id = ? ORDER BY symbol")) {
+            statement.setLong(1, sessionId);
+            try (ResultSet rows = statement.executeQuery()) { while (rows.next()) result.put(rows.getString(1), rows.getInt(2)); }
+        }
+        return result;
+    }
+
     public synchronized void freezeSimulationLayers(long sessionId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("INSERT INTO simulation_session_layers(session_id, layer, function_id, formula) SELECT ?, layer, function_id, formula FROM simulation_layer_functions WHERE active = 1")) { statement.setLong(1, sessionId); statement.executeUpdate(); }
     }
