@@ -280,7 +280,7 @@ public final class ImyvmFinance implements ModInitializer {
                     Component name = MarketCommands.instrumentLabel(instrument).copy();
                     if (tradable)
                         name = name.copy().withStyle(style -> style
-                            .withClickEvent(new ClickEvent.RunCommand(
+                            .withClickEvent(new ClickEvent.SuggestCommand(
                                 "/imyvm-market estimate " + instrument.commandForm() + " " + TRADING_RULES.minUnits()))
                             .withHoverEvent(new HoverEvent.ShowText(Translator.tr("commands.market.briefing.buy_hint")))
                             .withUnderlined(true));

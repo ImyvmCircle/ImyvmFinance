@@ -1446,7 +1446,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                 "commands.market.list.item", instrumentLabel(instrument), price, change, changeAmount, movingAverage, changeReference, status).copy();
             if (tradable)
                 item = item.copy().withStyle(style -> style
-                    .withClickEvent(new ClickEvent.RunCommand(
+                    .withClickEvent(new ClickEvent.SuggestCommand(
                         "/imyvm-market estimate " + instrument.commandForm() + " " + ImyvmFinance.TRADING_RULES.minUnits()))
                     .withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(
                         Translator.tr("commands.market.briefing.buy_hint")))
