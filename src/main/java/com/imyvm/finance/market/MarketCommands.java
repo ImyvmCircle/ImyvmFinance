@@ -292,13 +292,17 @@ public final class MarketCommands {
         source.sendSuccess(() -> Translator.tr("commands.market.help.intro"), false);
         source.sendSuccess(() -> Translator.tr("commands.market.help.symbol_hint"), false);
         for (String entry : new String[]{
-            "list", "quote", "buy", "estimate", "sell", "positions", "leaderboard", "history", "rules", "briefing", "setup", "help"
+            "list", "quote", "quote_history", "buy", "estimate", "sell", "confirm", "positions", "leaderboard", "history", "rules", "briefing", "help"
         })
             source.sendSuccess(() -> Translator.tr("commands.market.help.command." + entry), false);
         if (source.permissions().hasPermission(Permissions.COMMANDS_ADMIN)) {
             source.sendSuccess(() -> Translator.tr("commands.market.help.admin.header"), false);
+            source.sendSuccess(() -> Translator.tr("commands.market.help.command.setup"), false);
             source.sendSuccess(() -> Translator.tr("commands.market.help.command.source"), false);
             source.sendSuccess(() -> Translator.tr("commands.market.help.command.trading"), false);
+            source.sendSuccess(() -> Translator.tr("commands.market.help.command.market"), false);
+            source.sendSuccess(() -> Translator.tr("commands.market.help.command.admin_position"), false);
+            source.sendSuccess(() -> Translator.tr("commands.market.help.command.admin_settle"), false);
             source.sendSuccess(() -> Translator.tr("commands.market.help.command.pending"), false);
             source.sendSuccess(() -> Translator.tr("commands.market.help.command.simulation"), false);
         }
