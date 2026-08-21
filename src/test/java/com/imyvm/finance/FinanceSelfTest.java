@@ -209,13 +209,15 @@ public final class FinanceSelfTest {
         var singleProvider = new com.imyvm.finance.quote.DirectMarketQuoteClient(
             java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(1), java.util.Map.of(),
             java.util.Map.of("CN", true, "CRYPTO", false), java.util.Set.of(),
-            java.util.Map.of("CN", java.util.List.of("only")), 1);
+            java.util.Map.of("CN", java.util.List.of("only")), 15);
         var recordAttempt = com.imyvm.finance.quote.DirectMarketQuoteClient.class
             .getDeclaredMethod("recordAttempt", String.class);
         var recordFailure = com.imyvm.finance.quote.DirectMarketQuoteClient.class
             .getDeclaredMethod("recordFailure", String.class, Exception.class);
         var immediateFailure = com.imyvm.finance.quote.DirectMarketQuoteClient.class
             .getDeclaredMethod("recordFailure", String.class, Exception.class, boolean.class);
+        var recordSuccess = com.imyvm.finance.quote.DirectMarketQuoteClient.class
+            .getDeclaredMethod("recordSuccess", String.class);
         var providersForAttempt = com.imyvm.finance.quote.DirectMarketQuoteClient.class
             .getDeclaredMethod("providersForAttempt", String.class);
         var isBackedOff = com.imyvm.finance.quote.DirectMarketQuoteClient.class
@@ -223,6 +225,7 @@ public final class FinanceSelfTest {
         recordAttempt.setAccessible(true);
         recordFailure.setAccessible(true);
         immediateFailure.setAccessible(true);
+        recordSuccess.setAccessible(true);
         providersForAttempt.setAccessible(true);
         isBackedOff.setAccessible(true);
         recordAttempt.invoke(singleProvider, "CN:only");
@@ -235,12 +238,42 @@ public final class FinanceSelfTest {
         ((java.util.Set<String>) outages.get(singleProvider)).add("CN");
         checkEquals(java.util.List.of("only"), providersForAttempt.invoke(singleProvider, "CN"),
             "single provider should retry itself after one failure");
+        recordAttempt.invoke(singleProvider, "CN:only");
         recordFailure.invoke(singleProvider, "CN:only", new Exception("second"));
+        check(!(Boolean) isBackedOff.invoke(singleProvider, "CN:only"),
+            "ordinary provider failure entered backoff");
+        recordAttempt.invoke(singleProvider, "CN:warning");
         immediateFailure.invoke(singleProvider, "CN:warning", new Exception("provider warning: binance code=-1003"), true);
         check((Boolean) isBackedOff.invoke(singleProvider, "CN:warning"),
             "provider warning did not enter backoff immediately");
-        check(((String) singleProvider.controlStatus()).contains("\"backoffSecondsRemaining\":"),
-            "provider did not enter backoff after two failures");
+        var warningStats = com.google.gson.JsonParser.parseString(singleProvider.controlStatus()).getAsJsonObject()
+            .getAsJsonObject("providerStats").getAsJsonObject("CN:warning");
+        long remaining = warningStats.get("backoffSecondsRemaining").getAsLong();
+        check(remaining > 890 && remaining <= 900,
+            "first provider warning did not use base backoff: " + remaining);
+        recordAttempt.invoke(singleProvider, "CN:warning");
+        immediateFailure.invoke(singleProvider, "CN:warning", new Exception("provider warning: binance code=-1003"), true);
+        warningStats = com.google.gson.JsonParser.parseString(singleProvider.controlStatus()).getAsJsonObject()
+            .getAsJsonObject("providerStats").getAsJsonObject("CN:warning");
+        remaining = warningStats.get("backoffSecondsRemaining").getAsLong();
+        check(remaining > 1_790 && remaining <= 1_800,
+            "second provider warning did not double backoff: " + remaining);
+        for (int warning = 2; warning < 8; warning++) {
+            recordAttempt.invoke(singleProvider, "CN:warning");
+            immediateFailure.invoke(singleProvider, "CN:warning", new Exception("provider warning: binance code=-1003"), true);
+        }
+        warningStats = com.google.gson.JsonParser.parseString(singleProvider.controlStatus()).getAsJsonObject()
+            .getAsJsonObject("providerStats").getAsJsonObject("CN:warning");
+        checkEquals(8L, warningStats.get("consecutiveWarnings").getAsLong(), "provider warning streak");
+        remaining = warningStats.get("backoffSecondsRemaining").getAsLong();
+        check(remaining > 86_390 && remaining <= 86_400,
+            "provider warning backoff was not capped at one day: " + remaining);
+        recordSuccess.invoke(singleProvider, "CN:warning");
+        check(!(Boolean) isBackedOff.invoke(singleProvider, "CN:warning"),
+            "provider success did not clear backoff");
+        warningStats = com.google.gson.JsonParser.parseString(singleProvider.controlStatus()).getAsJsonObject()
+            .getAsJsonObject("providerStats").getAsJsonObject("CN:warning");
+        checkEquals(0L, warningStats.get("consecutiveWarnings").getAsLong(), "provider warning streak reset");
 
         Translator.setLanguage("zh_cn");
         var providerStatus = MarketCommands.class.getDeclaredMethod("providerStatus", com.google.gson.JsonObject.class, String.class, com.google.gson.JsonObject.class);
@@ -258,11 +291,12 @@ public final class FinanceSelfTest {
         var failed = new com.google.gson.JsonObject();
         failed.addProperty("requests", 1);
         failed.addProperty("lastFailureAt", "2026-08-21T00:00:01Z");
+        failed.addProperty("consecutiveWarnings", 2);
         failed.addProperty("backoffSecondsRemaining", 60);
-        check(((net.minecraft.network.chat.Component) providerStatus.invoke(null, root, "CN:only", failed)).getString().contains("退避中"),
+        check(((net.minecraft.network.chat.Component) providerStatus.invoke(null, root, "CN:only", failed)).getString().contains("业务警告连续 2 次"),
             "backed off provider state was not rendered");
         failed.addProperty("backoffSecondsRemaining", 0);
-        check(((net.minecraft.network.chat.Component) providerStatus.invoke(null, root, "CN:only", failed)).getString().contains("等待下次重试"),
+        check(((net.minecraft.network.chat.Component) providerStatus.invoke(null, root, "CN:only", failed)).getString().contains("继续尝试"),
             "failed provider outside backoff was not rendered");
         var disabled = new com.google.gson.JsonArray();
         disabled.add("CN:only");

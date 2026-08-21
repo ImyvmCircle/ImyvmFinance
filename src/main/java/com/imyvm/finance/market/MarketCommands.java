@@ -1234,8 +1234,8 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         if (timestamp(item, "lastSuccessAt") > timestamp(item, "lastFailureAt"))
             return Translator.tr("commands.market.source.status.ready");
         long backoff = number(item, "backoffSecondsRemaining");
-        return backoff > 0 ? Translator.tr("commands.market.source.status.backoff", backoff)
-            : Translator.tr("commands.market.source.status.unavailable");
+        return backoff > 0 ? Translator.tr("commands.market.source.status.backoff", number(item, "consecutiveWarnings"), backoff)
+            : Translator.tr("commands.market.source.status.retrying");
     }
 
     private static long timestamp(JsonObject object, String key) {

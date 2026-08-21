@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 
 public final class DirectMarketQuoteClient {
     private static final Logger LOGGER = LoggerFactory.getLogger("imyvm_finance/quotes");
+    private static final long MAX_PROVIDER_BACKOFF_MILLIS = Duration.ofDays(1).toMillis();
     private static final URI CHINA_EASTMONEY = URI.create(
         "https://push2.eastmoney.com/api/qt/ulist.np/get?fltt=2&invt=2&fields=f12,f14,f2,f3"
             + "&secids=1.000001,0.399001,0.399006,1.000300,1.000905");
@@ -58,6 +59,7 @@ public final class DirectMarketQuoteClient {
     private final Map<String, AtomicLong> lastSuccessAt = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> lastFailureAt = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> consecutiveFailures = new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> consecutiveWarnings = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> backoffUntil = new ConcurrentHashMap<>();
     private final Map<String, String> lastErrors = new ConcurrentHashMap<>();
     private final EnumMap<Instrument, MarketQuote> lastQuotes = new EnumMap<>(Instrument.class);
@@ -80,7 +82,7 @@ public final class DirectMarketQuoteClient {
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays, Map<String, Boolean> marketEnabled, Set<String> disabledProviders, Map<String, List<String>> providerOrder, long providerBackoffMinutes) {
         this.marketHolidays = Map.copyOf(marketHolidays);
-        this.providerBackoffMillis = providerBackoffMinutes * 60_000L;
+        this.providerBackoffMillis = Math.min(providerBackoffMinutes, Duration.ofDays(1).toMinutes()) * 60_000L;
         this.marketEnabled = new ConcurrentHashMap<>(marketEnabled);
         this.providerOrder = Map.copyOf(providerOrder);
         this.disabledProviders.addAll(disabledProviders);
@@ -263,6 +265,7 @@ public final class DirectMarketQuoteClient {
     private void recordSuccess(String provider) {
         lastSuccessAt.computeIfAbsent(provider, ignored -> new AtomicLong()).set(System.currentTimeMillis());
         consecutiveFailures.computeIfAbsent(provider, ignored -> new AtomicLong()).set(0);
+        consecutiveWarnings.computeIfAbsent(provider, ignored -> new AtomicLong()).set(0);
         backoffUntil.remove(provider);
     }
 
@@ -270,18 +273,17 @@ public final class DirectMarketQuoteClient {
         recordFailure(provider, exception, false);
     }
 
-    private void recordFailure(String provider, Exception exception, boolean immediate) {
+    private void recordFailure(String provider, Exception exception, boolean providerWarning) {
         failureCounts.computeIfAbsent(provider, ignored -> new AtomicLong()).incrementAndGet();
         lastFailureAt.computeIfAbsent(provider, ignored -> new AtomicLong()).set(System.currentTimeMillis());
-        long failures = consecutiveFailures.computeIfAbsent(provider, ignored -> new AtomicLong()).incrementAndGet();
-        if (!immediate && failures < 2) {
-            lastErrors.put(provider, exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage());
-            return;
-        }
-        long multiplier = 1L << Math.min(failures - 1, 2);
-        long cooldown = Math.min(providerBackoffMillis * multiplier, providerBackoffMillis * 4);
-        backoffUntil.computeIfAbsent(provider, ignored -> new AtomicLong()).set(System.currentTimeMillis() + cooldown);
+        consecutiveFailures.computeIfAbsent(provider, ignored -> new AtomicLong()).incrementAndGet();
         lastErrors.put(provider, exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage());
+        if (!providerWarning)
+            return;
+        long warnings = consecutiveWarnings.computeIfAbsent(provider, ignored -> new AtomicLong()).incrementAndGet();
+        long multiplier = 1L << Math.min(warnings - 1, 7);
+        long cooldown = Math.min(providerBackoffMillis * multiplier, MAX_PROVIDER_BACKOFF_MILLIS);
+        backoffUntil.computeIfAbsent(provider, ignored -> new AtomicLong()).set(System.currentTimeMillis() + cooldown);
     }
 
     private static boolean isProviderWarning(Throwable throwable) {
@@ -310,6 +312,7 @@ public final class DirectMarketQuoteClient {
                 + ",\"lastSuccessAt\":" + jsonTime(lastSuccessAt.get(provider))
                 + ",\"lastFailureAt\":" + jsonTime(lastFailureAt.get(provider))
                 + ",\"consecutiveFailures\":" + consecutiveFailures.getOrDefault(provider, new AtomicLong()).get()
+                + ",\"consecutiveWarnings\":" + consecutiveWarnings.getOrDefault(provider, new AtomicLong()).get()
                 + ",\"backoffUntil\":" + jsonTime(backoffUntil.get(provider))
                 + ",\"backoffSecondsRemaining\":" + backoffSecondsRemaining(provider)
                 + ",\"lastError\":" + jsonString(lastErrors.get(provider)) + "}";
@@ -350,6 +353,7 @@ public final class DirectMarketQuoteClient {
     public synchronized void clearProviderBackoff() {
         backoffUntil.clear();
         consecutiveFailures.clear();
+        consecutiveWarnings.clear();
         probingMarkets.clear();
     }
 
