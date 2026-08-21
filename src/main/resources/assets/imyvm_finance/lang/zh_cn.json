@@ -67,7 +67,7 @@
   "imyvm_finance.commands.market.quote.unknown_symbol": "§c未知标的。",
   "imyvm_finance.commands.market.quote.storage_unavailable": "§c金融行情存储不可用。",
   "imyvm_finance.commands.market.quote.unavailable": "{0}§c 暂无已确认行情。",
-  "imyvm_finance.commands.market.quote.failed": "§e行情抓取失败，§f§l{0}§r §e的交易将在十五分钟后停止。",
+  "imyvm_finance.commands.market.quote.failed": "§f§l{0}§r §e行情抓取失败，已切换至模拟行情；交易按最新模拟报价继续。",
   "imyvm_finance.commands.market.quote.recovered": "§a行情抓取已恢复，§f§l{0}§r §a可继续等待新报价。",
   "imyvm_finance.commands.market.quote.market_failed": "§e行情 API 读取失败，市场 §f§l{0}§r §e将继续切换备用来源。",
   "imyvm_finance.commands.market.quote.market_recovered": "§a行情 API 已恢复，市场 §f§l{0}§r §a已恢复读取。",

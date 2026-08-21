@@ -67,7 +67,7 @@
   "imyvm_finance.commands.market.quote.unknown_symbol": "§cUnknown instrument.",
   "imyvm_finance.commands.market.quote.storage_unavailable": "§cFinance quote storage is unavailable.",
   "imyvm_finance.commands.market.quote.unavailable": "{0}§c: no confirmed quote is available.",
-  "imyvm_finance.commands.market.quote.failed": "§eQuote retrieval failed; trading for §f§l{0}§r §estops in fifteen minutes.",
+  "imyvm_finance.commands.market.quote.failed": "§f§l{0}§r §equote retrieval failed; switching to simulated quotes and trading continues on the latest simulated quote.",
   "imyvm_finance.commands.market.quote.recovered": "§aQuote retrieval recovered for §f§l{0}§r§a.",
   "imyvm_finance.commands.market.quote.market_failed": "§eMarket data API failed for §f§l{0}§r§e; fallback sources will continue to be tried.",
   "imyvm_finance.commands.market.quote.market_recovered": "§aMarket data API recovered for §f§l{0}§r§a.",
