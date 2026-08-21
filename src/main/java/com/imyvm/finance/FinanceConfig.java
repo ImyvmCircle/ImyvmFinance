@@ -1,6 +1,7 @@
 package com.imyvm.finance;
 
 import com.imyvm.finance.market.Instrument;
+import com.imyvm.finance.quote.SimulationModelConfig;
 import com.imyvm.finance.trading.TradingRules;
 
 import java.io.IOException;
@@ -36,6 +37,7 @@ public record FinanceConfig(
     Set<String> disabledProviders,
     Map<String, java.util.List<String>> providerOrder,
     Map<String, Long> simulationDefaultPrices,
+    SimulationModelConfig simulationModels,
     String language,
     String timeZone,
     TradingRules tradingRules
@@ -62,6 +64,7 @@ public record FinanceConfig(
             Map.of("CN:000001", 30_000_000L, "CN:399001", 30_000_000L, "CN:399006", 30_000_000L,
                 "CN:000300", 40_000_000L, "CN:000905", 50_000_000L, "GOLD:518880", 90_000L,
                 "BOND:511090", 1_200_000L, "FUTURES:159980", 20_000L, "CRYPTO:BTCUSDT", 600_000_000L, "CRYPTO:ETHUSDT", 30_000_000L),
+            SimulationModelConfig.bundledDefaults(),
             "zh_cn",
             "Asia/Shanghai",
             TradingRules.DEFAULT);
@@ -95,6 +98,8 @@ public record FinanceConfig(
                     Long.toString(defaults.quoteRandomSeed()));
                 for (var entry : defaults.simulationDefaultPrices().entrySet())
                     properties.setProperty("simulation.default-price." + entry.getKey(), java.math.BigDecimal.valueOf(entry.getValue(), 4).stripTrailingZeros().toPlainString());
+                properties.setProperty("simulation.default-model",
+                    defaults.simulationModels().defaultModelId());
                 properties.setProperty("briefing.interval-minutes",
                     Long.toString(defaults.briefingIntervalMinutes()));
                 properties.setProperty("briefing.delay-seconds",
@@ -122,6 +127,11 @@ public record FinanceConfig(
                 simulationDefaultsAdded = true;
             }
         }
+        if (!properties.containsKey("simulation.default-model")) {
+            properties.setProperty("simulation.default-model",
+                defaults.simulationModels().defaultModelId());
+            simulationDefaultsAdded = true;
+        }
         if (simulationDefaultsAdded) {
             try (Writer writer = Files.newBufferedWriter(path)) { properties.store(writer, "ImyvmFinance settings"); }
         }
@@ -146,6 +156,7 @@ public record FinanceConfig(
             parseDisabledProviders(properties),
             parseProviderOrder(properties),
             parseSimulationDefaultPrices(properties, defaults.simulationDefaultPrices()),
+            SimulationModelConfig.load(properties),
             properties.getProperty("language", defaults.language()).trim(),
             parseTimeZone(properties, "time-zone", defaults.timeZone()),
             new TradingRules(
@@ -166,7 +177,7 @@ public record FinanceConfig(
     public FinanceConfig withSetupInitialized(boolean initialized) {
         return new FinanceConfig(quoteConnectTimeout, quoteReadTimeout,
             quotePollIntervalMinutes, quoteIdlePollIntervalMinutes, quotePollDelaySeconds, quoteJitterSeconds, quoteProviderBackoffMinutes, quoteRandomSeed, briefingIntervalMinutes, briefingDelaySeconds,
-            briefingEnabled, initialized, marketHolidays, marketEnabled, disabledProviders, providerOrder, simulationDefaultPrices, language, timeZone, tradingRules);
+            briefingEnabled, initialized, marketHolidays, marketEnabled, disabledProviders, providerOrder, simulationDefaultPrices, simulationModels, language, timeZone, tradingRules);
     }
 
     public static void writeMarketEnabled(Path path, String market, boolean enabled) throws IOException {

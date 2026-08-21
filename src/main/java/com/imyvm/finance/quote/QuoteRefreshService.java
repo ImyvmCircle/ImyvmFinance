@@ -49,6 +49,7 @@ public final class QuoteRefreshService implements AutoCloseable {
     private final long randomSeed;
     private final long simulationSeed;
     private final java.util.Map<String, Long> simulationDefaultPrices;
+    private final SimulationModelConfig simulationModels;
     private final long pollIntervalMillis;
     private final java.util.Map<String, Long> simulationStartedAt = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile long nextNominalPollAtEpochMillis;
@@ -90,6 +91,7 @@ public final class QuoteRefreshService implements AutoCloseable {
         this.pollIntervalMillis = pollIntervalMinutes * 60_000L;
         this.simulationSeed = config.quoteRandomSeed();
         this.simulationDefaultPrices = config.simulationDefaultPrices();
+        this.simulationModels = config.simulationModels();
         this.idlePollIntervalMinutes = config.quoteIdlePollIntervalMinutes();
         this.pollDelaySeconds = config.quotePollDelaySeconds();
         this.jitterSeconds = config.quoteJitterSeconds();
@@ -266,7 +268,8 @@ public final class QuoteRefreshService implements AutoCloseable {
                     try {
                         java.util.Optional<QuoteSnapshot> simulated = SimulationSnapshotBuilder.build(null, store,
                             lastScheduledPollAtEpochMillis == 0 ? System.currentTimeMillis() : lastScheduledPollAtEpochMillis,
-                            pollIntervalMillis, simulationSeed, simulationDefaultPrices, simulationStartedAt, marketHolidays);
+                            pollIntervalMillis, simulationSeed, simulationDefaultPrices, simulationModels,
+                            simulationStartedAt, marketHolidays);
                         if (simulated.isPresent()) {
                             store.save(simulated.get());
                             lastRefreshStatus = "simulated";
@@ -286,7 +289,8 @@ public final class QuoteRefreshService implements AutoCloseable {
 
                 snapshot = SimulationSnapshotBuilder.build(snapshot, store,
                     lastScheduledPollAtEpochMillis == 0 ? System.currentTimeMillis() : lastScheduledPollAtEpochMillis,
-                    pollIntervalMillis, simulationSeed, simulationDefaultPrices, simulationStartedAt, marketHolidays).orElse(snapshot);
+                    pollIntervalMillis, simulationSeed, simulationDefaultPrices, simulationModels,
+                    simulationStartedAt, marketHolidays).orElse(snapshot);
                 store.save(snapshot);
                 lastRefreshStatus = "success";
                 if (!snapshot.snapshotId().equals(lastSnapshotId)

@@ -52,6 +52,24 @@ processResources {
 	}
 }
 
+sourceSets {
+	simulationPreview {
+		java.srcDir "tools/simulation-preview/src/main/java"
+		resources.srcDir "tools/simulation-preview/src/main/resources"
+		compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+		runtimeClasspath += output + compileClasspath + sourceSets.main.runtimeClasspath
+	}
+}
+
+tasks.register("simulationPreview", JavaExec) {
+	dependsOn simulationPreviewClasses
+	classpath = sourceSets.simulationPreview.runtimeClasspath
+	mainClass = "com.imyvm.finance.preview.SimulationPreviewServer"
+	standardInput = System.in
+	group = "verification"
+	description = "Run the local simulation model preview without packaging it into the mod"
+}
+
 tasks.register("financeSelfTest", JavaExec) {
 	dependsOn testClasses
 	classpath = sourceSets.test.runtimeClasspath

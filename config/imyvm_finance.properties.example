@@ -12,6 +12,7 @@ quote.poll-delay-seconds=17
 quote.jitter-seconds=15
 quote.provider-backoff-minutes=15
 quote.random-seed=0
+simulation.default-model=empirical-regime-v1
 briefing.interval-minutes=15
 briefing.delay-seconds=20
 briefing.enabled=true

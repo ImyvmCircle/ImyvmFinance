@@ -38,7 +38,6 @@ public final class FinanceSelfTest {
         translationChecks();
         cryptoQuoteChecks();
         simulationChecks();
-        simulationFormulaChecks();
         directMarketQuoteChecks();
         marketHoursChecks();
         storageChecks();
@@ -215,20 +214,6 @@ public final class FinanceSelfTest {
         } catch (IllegalStateException exception) {
             check(exception.getMessage().startsWith("provider warning:"), label + " was not classified as provider warning: " + exception.getMessage());
         }
-    }
-
-    private static void simulationFormulaChecks() {
-        check(com.imyvm.finance.quote.SimulationFormula.compile(com.imyvm.finance.quote.SimulationFormula.DEFAULT) != null, "default simulation formula did not compile");
-        check(com.imyvm.finance.quote.SimulationFormula.parse("LN(10) + LOG10(100) + LOG2(8) + LOGN(16, 2)") != null, "logarithm formula did not compile");
-        check(com.imyvm.finance.quote.SimulationFormula.parse(com.imyvm.finance.quote.SimulationFormula.STABLE) != null, "stable preset formula did not compile");
-        var rising = com.imyvm.finance.quote.SimulatedQuoteGenerator.nextStep(Instrument.CN_000001, new MarketQuote(Instrument.CN_000001, "SSE", 30_000_000L, 0, MarketStatus.OPEN), 7L, 1, 5, 0, com.imyvm.finance.quote.SimulationFormula.DEFAULT);
-        var falling = com.imyvm.finance.quote.SimulatedQuoteGenerator.nextStep(Instrument.CN_000001, new MarketQuote(Instrument.CN_000001, "SSE", 30_000_000L, 0, MarketStatus.OPEN), 7L, 1, 1, 0, com.imyvm.finance.quote.SimulationFormula.DEFAULT);
-        check(rising.trendBps() > falling.trendBps(), "trend factor did not control long-term direction");
-        check(rising.quote().priceScaled() != falling.quote().priceScaled(), "trend factor did not affect simulation price");
-        try { com.imyvm.finance.quote.SimulationFormula.parse("LN(-1)"); throw new AssertionError("invalid logarithm formula was accepted"); }
-        catch (IllegalArgumentException expected) { }
-        try { com.imyvm.finance.quote.SimulationFormula.parse("LOGN(10, 1)"); throw new AssertionError("invalid logarithm base was accepted"); }
-        catch (IllegalArgumentException expected) { }
     }
 
     private static void directMarketQuoteChecks() throws Exception {
@@ -523,7 +508,7 @@ public final class FinanceSelfTest {
             var recentPrices = quotes.findRecentPrices(Instrument.CN_000001, 5);
             checkEquals(5, recentPrices.size(), "MA5 history count");
             checkEquals(10_400L, recentPrices.getFirst(), "MA5 newest price");
-            quotes.beginSimulation(123L, "CN", 100L, "robust_seeded_walk", com.imyvm.finance.quote.SimulationFormula.DEFAULT, 9L, 180_000L, 45_000L);
+            quotes.beginSimulation(123L, "CN", 100L, "legacy", "legacy", 9L, 180_000L, 45_000L);
             quotes.recordSimulationNode(123L, 200L, "CN:000001", "test", 10_000L, 100L, 10_100L);
             var session = quotes.findSimulationSession(123L).orElseThrow();
             check(session.sessionUuid() != null && !session.sessionUuid().isBlank(), "simulation session UUID was not migrated or persisted");
@@ -533,16 +518,14 @@ public final class FinanceSelfTest {
             checkEquals(5, quotes.simulationFactor("CN:000001"), "simulation factor was not persisted");
             checkEquals(5, quotes.simulationFactorForSession(123L, "CN:000001", 5), "session factor was not frozen");
             checkEquals(5, quotes.simulationFactorForSession(123L, "CN:000001", 1), "session factor changed after freeze");
-            boolean rejectedFormula = false;
-            try { quotes.setActiveSimulationLayerFormula("LONG", "UNKNOWN_VARIABLE"); } catch (IllegalArgumentException expected) { rejectedFormula = true; }
-            check(rejectedFormula, "invalid simulation formula was accepted");
             quotes.saveSimulationState(123L, "CN:000001", 2.5, 7);
             checkEquals(7, quotes.findSimulationState(123L, "CN:000001").orElseThrow().iteration(), "simulation trend state was not persisted");
             var node = quotes.findSimulationNodes(123L, 10, 0).getFirst();
             check(Math.abs(node.logReturn() - Math.log(10_100.0 / 10_000.0)) < 1.0e-12, "simulation log return was not persisted from actual prices");
             var simulationSessions = new java.util.HashMap<String, Long>();
             var coldStart = com.imyvm.finance.quote.SimulationSnapshotBuilder.build(null, quotes, 1_000L, 180_000L, 7L,
-                FinanceConfig.defaults().simulationDefaultPrices(), simulationSessions, FinanceConfig.defaults().marketHolidays()).orElseThrow();
+                FinanceConfig.defaults().simulationDefaultPrices(), FinanceConfig.defaults().simulationModels(),
+                simulationSessions, FinanceConfig.defaults().marketHolidays()).orElseThrow();
             check(coldStart.quotes().stream().anyMatch(quote -> quote.instrument() == Instrument.CRYPTO_BTC && quote.priceScaled() > 0),
                 "simulation did not use configured default point for a missing last quote");
             check(coldStart.quotes().stream().anyMatch(quote -> quote.instrument() == Instrument.GOLD_518880 && quote.priceScaled() == 90_000L),
@@ -559,7 +542,8 @@ public final class FinanceSelfTest {
                 "simulation real input origin was not recorded");
             quotes.save(coldStart);
             com.imyvm.finance.quote.SimulationSnapshotBuilder.build(null, quotes, 2_000L, 180_000L, 7L,
-                FinanceConfig.defaults().simulationDefaultPrices(), simulationSessions, FinanceConfig.defaults().marketHolidays()).orElseThrow();
+                FinanceConfig.defaults().simulationDefaultPrices(), FinanceConfig.defaults().simulationModels(),
+                simulationSessions, FinanceConfig.defaults().marketHolidays()).orElseThrow();
             check(quotes.findSimulationNodes(coldCnSession, 1, 0).getFirst().inputSource().contains("SIMULATED"),
                 "simulation input origin was not recorded");
             long cnSimulation = simulationSessions.get("CN");
@@ -567,7 +551,8 @@ public final class FinanceSelfTest {
             com.imyvm.finance.quote.SimulationSnapshotBuilder.build(new QuoteSnapshot("partial", "test", 2_000L, 2_000L,
                 List.of(new MarketQuote(Instrument.CRYPTO_BTC, "BTC", 600_000_000L, 0L, MarketStatus.OPEN)),
                 List.of("failed:market:CN")), quotes, 2_000L, 180_000L, 7L,
-                FinanceConfig.defaults().simulationDefaultPrices(), simulationSessions, FinanceConfig.defaults().marketHolidays()).orElseThrow();
+                FinanceConfig.defaults().simulationDefaultPrices(), FinanceConfig.defaults().simulationModels(),
+                simulationSessions, FinanceConfig.defaults().marketHolidays()).orElseThrow();
             checkEquals("RECOVERED", quotes.findSimulationSession(cryptoSimulation).orElseThrow().status(),
                 "recovered market simulation session was not finished");
             quotes.abortSimulation(cnSimulation, 3_000L);
@@ -777,15 +762,234 @@ public final class FinanceSelfTest {
         }
     }
     private static void simulationChecks() {
+        var models = com.imyvm.finance.quote.SimulationModelConfig.bundledDefaults();
+        checkEquals(List.of("empirical-regime-v1", "empirical-calm-v1", "empirical-stress-v1"),
+            models.modelIds(), "simulation model choices");
+        checkEquals(10L, java.util.Arrays.stream(Instrument.values()).map(models::instrument).count(),
+            "simulation instrument statistics");
+        check(Math.abs(models.instrument(Instrument.CRYPTO_BTC).annualVolatility() - 0.66) < 1.0e-12,
+            "BTC annual volatility");
+        check(Math.abs(models.instrument(Instrument.CRYPTO_ETH).annualVolatility() - 0.89) < 1.0e-12,
+            "ETH annual volatility");
+        var frozen = com.imyvm.finance.quote.SimulationModelConfig.fromSnapshot(
+            models.snapshot(models.defaultModelId()));
+        checkEquals(models.defaultModelId(), frozen.defaultModelId(), "frozen simulation model");
+        checkEquals(models.instrument(Instrument.CRYPTO_BTC), frozen.instrument(Instrument.CRYPTO_BTC),
+            "frozen instrument statistics");
+
+        Properties unknown = new Properties();
+        unknown.setProperty("simulation.model.typo", "1");
+        checkRejectedSimulationConfig(unknown, "simulation.model.typo");
+        Properties invalidDefault = simulationProperties(models);
+        invalidDefault.setProperty("simulation.default-model", "missing-model");
+        checkRejectedSimulationProperties(invalidDefault, "simulation.default-model");
+        Properties invalidRange = simulationProperties(models);
+        invalidRange.setProperty("simulation.instruments.CRYPTOBTCUSDT.long-duration-min-days", "600");
+        invalidRange.setProperty("simulation.instruments.CRYPTOBTCUSDT.long-duration-max-days", "500");
+        checkRejectedSimulationProperties(invalidRange,
+            "simulation.instruments.CRYPTOBTCUSDT.long-duration-max-days");
+
         var previous = new MarketQuote(Instrument.CN_000001, "SSE", 30_000_000L, 0, MarketStatus.OPEN);
-        var first = com.imyvm.finance.quote.SimulatedQuoteGenerator.nextStep(Instrument.CN_000001, previous, 7L, 1, 5, 0, com.imyvm.finance.quote.SimulationFormula.DEFAULT);
-        var second = com.imyvm.finance.quote.SimulatedQuoteGenerator.nextStep(Instrument.CN_000001, previous, 7L, 1, 5, 0, com.imyvm.finance.quote.SimulationFormula.DEFAULT);
+        var initial = com.imyvm.finance.quote.SimulatedQuoteGenerator.State.initial();
+        var first = com.imyvm.finance.quote.SimulatedQuoteGenerator.nextStep(
+            Instrument.CN_000001, previous, 7L, 1, 5, initial, models,
+            models.defaultModelId(), 180_000L);
+        var second = com.imyvm.finance.quote.SimulatedQuoteGenerator.nextStep(
+            Instrument.CN_000001, previous, 7L, 1, 5, initial, models,
+            models.defaultModelId(), 180_000L);
         checkEquals(first.quote().priceScaled(), second.quote().priceScaled(), "simulation seed reproducibility");
+        checkEquals(first.state().serialize(), second.state().serialize(), "simulation state reproducibility");
+        checkEquals(first.state(), com.imyvm.finance.quote.SimulatedQuoteGenerator.State.parse(
+            first.state().serialize()), "simulation state persistence");
         check(first.quote().origin() == com.imyvm.finance.market.QuoteOrigin.SIMULATED, "simulation origin was not recorded");
-        var falling = com.imyvm.finance.quote.SimulatedQuoteGenerator.nextStep(Instrument.CN_000001, previous, 7L, 1, 1, 0, com.imyvm.finance.quote.SimulationFormula.DEFAULT);
-        check(first.trendBps() > falling.trendBps(), "trend factor did not control long-term direction");
-        check(first.quote().priceScaled() != falling.quote().priceScaled(), "trend factor did not affect simulation price");
+
+        int strongBearUp = 0;
+        int strongBullUp = 0;
+        for (long seed = 1; seed <= 1_000; seed++) {
+            var bear = com.imyvm.finance.quote.SimulatedQuoteGenerator.nextStep(
+                Instrument.CRYPTO_BTC, cryptoStart(Instrument.CRYPTO_BTC), seed, 1, 1,
+                initial, models, models.defaultModelId(), 3_600_000L);
+            var bull = com.imyvm.finance.quote.SimulatedQuoteGenerator.nextStep(
+                Instrument.CRYPTO_BTC, cryptoStart(Instrument.CRYPTO_BTC), seed, 1, 5,
+                initial, models, models.defaultModelId(), 3_600_000L);
+            if (bear.switches().contains("LONG:UP"))
+                strongBearUp++;
+            if (bull.switches().contains("LONG:UP"))
+                strongBullUp++;
+        }
+        check(strongBearUp > 80 && strongBearUp < 250,
+            "strong bearish factor locked or lost its configured probability: " + strongBearUp);
+        check(strongBullUp > 750 && strongBullUp < 920,
+            "strong bullish factor locked or lost its configured probability: " + strongBullUp);
+
+        SimulationRun switching = simulate(Instrument.CRYPTO_BTC, models.defaultModelId(), 71L,
+            3, 3_600_000L, 26_280);
+        check(switching.longSwitches() >= 2, "long regime did not switch automatically");
+        check(switching.mediumSwitches() >= 15, "medium regime did not switch automatically");
+        check(switching.shortSwitches() >= 50, "short regime did not switch automatically");
+        check(switching.upSwitches() >= 10 && switching.downSwitches() >= 10,
+            "regimes did not retain two-way random direction changes");
+
+        SimulationRun threeMinute = simulate(Instrument.CRYPTO_BTC, models.defaultModelId(), 19L,
+            3, 180_000L, 175_200);
+        check(threeMinute.minimumRatio() > 0.0001,
+            "three-minute BTC path collapsed to the price floor: " + threeMinute.minimumRatio());
+        check(threeMinute.finalRatio() > 0.001,
+            "three-minute BTC path formulaically approached zero: " + threeMinute.finalRatio());
+        check(threeMinute.positiveReturns() > 25_000 && threeMinute.negativeReturns() > 25_000,
+            "three-minute BTC path became one-way");
+
+        int nearZeroPaths = 0;
+        for (String modelId : models.modelIds()) {
+            for (Instrument instrument : List.of(Instrument.CRYPTO_BTC, Instrument.CRYPTO_ETH)) {
+                for (long seed = 101; seed <= 108; seed++) {
+                    SimulationRun run = simulate(instrument, modelId, seed, 3, 3_600_000L, 8_760);
+                    if (run.finalRatio() < 0.01)
+                        nearZeroPaths++;
+                    check(run.positiveReturns() > 1_000 && run.negativeReturns() > 1_000,
+                        modelId + " " + instrument.symbol() + " became monotonic");
+                }
+            }
+        }
+        check(nearZeroPaths <= 4, "crypto model systematically collapsed near zero: " + nearZeroPaths);
+
+        SimulationRun btc = simulate(Instrument.CRYPTO_BTC, models.defaultModelId(), 307L,
+            3, 3_600_000L, 8_760);
+        SimulationRun eth = simulate(Instrument.CRYPTO_ETH, models.defaultModelId(), 307L,
+            3, 3_600_000L, 8_760);
+        double correlation = correlation(btc.returns(), eth.returns());
+        check(correlation > 0.35 && correlation < 0.95,
+            "crypto cross-instrument correlation was unrealistic: " + correlation);
+        double btcVolatility = annualizedVolatility(btc.returns(), 8_760.0);
+        double ethVolatility = annualizedVolatility(eth.returns(), 8_760.0);
+        check(btcVolatility > 0.25 && btcVolatility < 1.40,
+            "BTC annualized volatility escaped its market range: " + btcVolatility);
+        check(ethVolatility > 0.35 && ethVolatility < 1.80,
+            "ETH annualized volatility escaped its market range: " + ethVolatility);
         check(com.imyvm.finance.quote.SimulatedQuoteGenerator.intervalToleranceMillis(180_000L) == 45_000L, "simulation interval tolerance changed unexpectedly");
+    }
+
+    private static Properties simulationProperties(
+        com.imyvm.finance.quote.SimulationModelConfig models
+    ) {
+        Properties properties = new Properties();
+        models.properties().forEach(properties::setProperty);
+        return properties;
+    }
+
+    private static void checkRejectedSimulationConfig(Properties properties, String expectedKey) {
+        boolean rejected = false;
+        try {
+            com.imyvm.finance.quote.SimulationModelConfig.load(properties);
+        } catch (IllegalArgumentException expected) {
+            rejected = expected.getMessage().contains(expectedKey);
+        }
+        check(rejected, "invalid simulation configuration did not identify " + expectedKey);
+    }
+
+    private static void checkRejectedSimulationProperties(Properties properties, String expectedKey) {
+        boolean rejected = false;
+        try {
+            com.imyvm.finance.quote.SimulationModelConfig.fromProperties(properties);
+        } catch (IllegalArgumentException expected) {
+            rejected = expected.getMessage().contains(expectedKey);
+        }
+        check(rejected, "invalid simulation properties did not identify " + expectedKey);
+    }
+
+    private static MarketQuote cryptoStart(Instrument instrument) {
+        long price = FinanceConfig.defaults().simulationDefaultPrices().get(instrument.symbol());
+        return new MarketQuote(instrument, instrument.symbol(), price, 0, MarketStatus.OPEN);
+    }
+
+    private static SimulationRun simulate(
+        Instrument instrument,
+        String modelId,
+        long seed,
+        int factor,
+        long intervalMillis,
+        int steps
+    ) {
+        var models = com.imyvm.finance.quote.SimulationModelConfig.bundledDefaults();
+        MarketQuote quote = new MarketQuote(instrument, instrument.symbol(),
+            FinanceConfig.defaults().simulationDefaultPrices().get(instrument.symbol()),
+            0, MarketStatus.OPEN);
+        long startingPrice = quote.priceScaled();
+        long minimumPrice = startingPrice;
+        var state = com.imyvm.finance.quote.SimulatedQuoteGenerator.State.initial();
+        double[] returns = new double[steps];
+        int positives = 0;
+        int negatives = 0;
+        int longSwitches = 0;
+        int mediumSwitches = 0;
+        int shortSwitches = 0;
+        int upSwitches = 0;
+        int downSwitches = 0;
+        for (int iteration = 1; iteration <= steps; iteration++) {
+            var step = com.imyvm.finance.quote.SimulatedQuoteGenerator.nextStep(
+                instrument, quote, seed, iteration, factor, state, models, modelId, intervalMillis);
+            returns[iteration - 1] = step.appliedBps() / 10_000.0;
+            if (returns[iteration - 1] > 0.0)
+                positives++;
+            else if (returns[iteration - 1] < 0.0)
+                negatives++;
+            for (String event : step.switches()) {
+                if (event.startsWith("LONG:"))
+                    longSwitches++;
+                else if (event.startsWith("MEDIUM:"))
+                    mediumSwitches++;
+                else if (event.startsWith("SHORT:"))
+                    shortSwitches++;
+                if (event.endsWith(":UP"))
+                    upSwitches++;
+                else if (event.endsWith(":DOWN"))
+                    downSwitches++;
+            }
+            quote = step.quote();
+            state = step.state();
+            minimumPrice = Math.min(minimumPrice, quote.priceScaled());
+        }
+        return new SimulationRun(returns, quote.priceScaled() / (double) startingPrice,
+            minimumPrice / (double) startingPrice, positives, negatives, longSwitches,
+            mediumSwitches, shortSwitches, upSwitches, downSwitches);
+    }
+
+    private static double annualizedVolatility(double[] values, double periodsPerYear) {
+        double mean = java.util.Arrays.stream(values).average().orElseThrow();
+        double variance = 0.0;
+        for (double value : values)
+            variance += (value - mean) * (value - mean);
+        return Math.sqrt(variance / Math.max(1, values.length - 1) * periodsPerYear);
+    }
+
+    private static double correlation(double[] first, double[] second) {
+        double firstMean = java.util.Arrays.stream(first).average().orElseThrow();
+        double secondMean = java.util.Arrays.stream(second).average().orElseThrow();
+        double covariance = 0.0;
+        double firstVariance = 0.0;
+        double secondVariance = 0.0;
+        for (int index = 0; index < first.length; index++) {
+            double left = first[index] - firstMean;
+            double right = second[index] - secondMean;
+            covariance += left * right;
+            firstVariance += left * left;
+            secondVariance += right * right;
+        }
+        return covariance / Math.sqrt(firstVariance * secondVariance);
+    }
+
+    private record SimulationRun(
+        double[] returns,
+        double finalRatio,
+        double minimumRatio,
+        int positiveReturns,
+        int negativeReturns,
+        int longSwitches,
+        int mediumSwitches,
+        int shortSwitches,
+        int upSwitches,
+        int downSwitches
+    ) {
     }
 
 }

@@ -4,7 +4,6 @@ import com.imyvm.finance.market.Instrument;
 import com.imyvm.finance.market.MarketQuote;
 import com.imyvm.finance.market.MarketStatus;
 import com.imyvm.finance.market.QuoteSnapshot;
-import com.imyvm.finance.quote.SimulationFormula;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -54,10 +53,6 @@ public final class QuoteSnapshotStore implements AutoCloseable {
             try { statement.execute("ALTER TABLE market_snapshots ADD COLUMN node_time INTEGER NOT NULL DEFAULT 0"); } catch (SQLException ignored) { }
             statement.execute("UPDATE market_snapshots SET node_time = market_time WHERE node_time = 0");
             try { statement.execute("ALTER TABLE market_quotes ADD COLUMN quote_origin TEXT NOT NULL DEFAULT 'REAL'"); } catch (SQLException ignored) { }
-            statement.execute("CREATE TABLE IF NOT EXISTS simulation_layer_functions (layer TEXT NOT NULL CHECK (layer IN ('LONG', 'MEDIUM', 'SHORT')), function_id TEXT NOT NULL, formula TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (layer, function_id))");
-            statement.execute("INSERT OR IGNORE INTO simulation_layer_functions(layer, function_id, formula, active) VALUES ('LONG', 'trend', 'TREND_BPS', 1)");
-            statement.execute("INSERT OR IGNORE INTO simulation_layer_functions(layer, function_id, formula, active) VALUES ('MEDIUM', 'neutral', '0', 1)");
-            statement.execute("INSERT OR IGNORE INTO simulation_layer_functions(layer, function_id, formula, active) VALUES ('SHORT', 'noise', 'VOLATILITY_BPS * RANDOM', 1)");
             statement.execute("CREATE TABLE IF NOT EXISTS simulation_session_layers (session_id INTEGER NOT NULL, layer TEXT NOT NULL, function_id TEXT NOT NULL, formula TEXT NOT NULL, PRIMARY KEY (session_id, layer))");
             statement.execute("CREATE TABLE IF NOT EXISTS simulation_node_layers (session_id INTEGER NOT NULL, node_time INTEGER NOT NULL, symbol TEXT NOT NULL, layer TEXT NOT NULL, parameters TEXT NOT NULL, result_bps REAL NOT NULL, PRIMARY KEY (session_id, node_time, symbol, layer))");
             statement.execute("""
@@ -100,6 +95,11 @@ public final class QuoteSnapshotStore implements AutoCloseable {
                 )
                 """);
             statement.execute("""
+                CREATE TABLE IF NOT EXISTS simulation_model_control (
+                    singleton INTEGER PRIMARY KEY CHECK (singleton = 1), model_id TEXT NOT NULL, updated_at INTEGER NOT NULL
+                )
+                """);
+            statement.execute("""
                 CREATE TABLE IF NOT EXISTS simulation_controls (
                     symbol TEXT PRIMARY KEY, factor INTEGER NOT NULL CHECK (factor BETWEEN 0 AND 5), updated_at INTEGER NOT NULL
                 )
@@ -113,9 +113,11 @@ public final class QuoteSnapshotStore implements AutoCloseable {
             statement.execute("""
                 CREATE TABLE IF NOT EXISTS simulation_states (
                     session_id INTEGER NOT NULL, symbol TEXT NOT NULL, trend_state REAL NOT NULL, iteration INTEGER NOT NULL,
+                    model_state TEXT NOT NULL DEFAULT '',
                     PRIMARY KEY (session_id, symbol), FOREIGN KEY (session_id) REFERENCES simulation_sessions(session_id)
                 )
                 """);
+            try { statement.execute("ALTER TABLE simulation_states ADD COLUMN model_state TEXT NOT NULL DEFAULT ''"); } catch (SQLException ignored) { }
             statement.execute("""
                 CREATE INDEX IF NOT EXISTS market_quotes_symbol_idx
                 ON market_quotes(symbol)
@@ -207,38 +209,6 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         }
     }
 
-    public synchronized Map<String, String> simulationLayerFunctions(String layer) throws SQLException {
-        Map<String, String> result = new java.util.LinkedHashMap<>();
-        try (PreparedStatement statement = connection.prepareStatement("SELECT function_id, formula FROM simulation_layer_functions WHERE layer = ? ORDER BY function_id")) { statement.setString(1, layer); try (ResultSet rows = statement.executeQuery()) { while (rows.next()) result.put(rows.getString(1), rows.getString(2)); } }
-        return result;
-    }
-
-    public synchronized String setActiveSimulationLayerFormula(String layer, String formula) throws SQLException {
-        String normalizedLayer = layer.toUpperCase(java.util.Locale.ROOT);
-        if (!java.util.Set.of("LONG", "MEDIUM", "SHORT").contains(normalizedLayer)) throw new IllegalArgumentException("unknown simulation layer");
-        SimulationFormula.compile(formula);
-        String id = "custom_" + System.currentTimeMillis();
-        try (PreparedStatement clear = connection.prepareStatement("UPDATE simulation_layer_functions SET active = 0 WHERE layer = ?"); PreparedStatement upsert = connection.prepareStatement("INSERT INTO simulation_layer_functions(layer, function_id, formula, active) VALUES (?, ?, ?, 1) ON CONFLICT(layer, function_id) DO UPDATE SET formula = excluded.formula, active = 1")) {
-            clear.setString(1, normalizedLayer); clear.executeUpdate();
-            upsert.setString(1, normalizedLayer); upsert.setString(2, id); upsert.setString(3, formula.trim()); upsert.executeUpdate();
-        }
-        return id;
-    }
-
-    public synchronized void activateSimulationLayer(String layer, String id) throws SQLException {
-        try (PreparedStatement check = connection.prepareStatement("SELECT 1 FROM simulation_layer_functions WHERE layer = ? AND function_id = ?")) { check.setString(1, layer); check.setString(2, id); try (ResultSet rows = check.executeQuery()) { if (!rows.next()) throw new IllegalArgumentException("unknown layer function"); } }
-        try (PreparedStatement clear = connection.prepareStatement("UPDATE simulation_layer_functions SET active = 0 WHERE layer = ?"); PreparedStatement activate = connection.prepareStatement("UPDATE simulation_layer_functions SET active = 1 WHERE layer = ? AND function_id = ?")) { clear.setString(1, layer); clear.executeUpdate(); activate.setString(1, layer); activate.setString(2, id); activate.executeUpdate(); }
-    }
-
-    public synchronized Map<String, String> activeSimulationLayerFormulas() throws SQLException {
-        Map<String, String> result = new java.util.LinkedHashMap<>();
-        try (Statement statement = connection.createStatement(); ResultSet rows = statement.executeQuery("SELECT layer, formula FROM simulation_layer_functions WHERE active = 1 ORDER BY layer")) {
-            while (rows.next()) result.put(rows.getString(1), rows.getString(2));
-        }
-        if (result.size() != 3) throw new IllegalStateException("simulation layers are incomplete");
-        return result;
-    }
-
     public synchronized Map<String, String> simulationLayers(long sessionId) throws SQLException {
         Map<String, String> result = new java.util.LinkedHashMap<>();
         try (PreparedStatement statement = connection.prepareStatement("SELECT layer, formula FROM simulation_session_layers WHERE session_id = ? ORDER BY layer")) { statement.setLong(1, sessionId); try (ResultSet rows = statement.executeQuery()) { while (rows.next()) result.put(rows.getString(1), rows.getString(2)); } }
@@ -260,8 +230,14 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         return result;
     }
 
-    public synchronized void freezeSimulationLayers(long sessionId) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("INSERT INTO simulation_session_layers(session_id, layer, function_id, formula) SELECT ?, layer, function_id, formula FROM simulation_layer_functions WHERE active = 1")) { statement.setLong(1, sessionId); statement.executeUpdate(); }
+    public synchronized void freezeSimulationLayers(long sessionId, String modelId, Map<String, String> descriptions) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("INSERT OR REPLACE INTO simulation_session_layers(session_id, layer, function_id, formula) VALUES (?, ?, ?, ?)")) {
+            for (var entry : descriptions.entrySet()) {
+                statement.setLong(1, sessionId); statement.setString(2, entry.getKey());
+                statement.setString(3, modelId); statement.setString(4, entry.getValue()); statement.addBatch();
+            }
+            statement.executeBatch();
+        }
     }
 
     public synchronized void recordSimulationNodeLayer(long sessionId, long nodeTime, String symbol, String layer, String parameters, double resultBps) throws SQLException {
@@ -309,6 +285,26 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         }
     }
 
+    public synchronized String activeSimulationModel(String defaultModelId) throws SQLException {
+        try (Statement statement = connection.createStatement();
+             ResultSet row = statement.executeQuery("SELECT model_id FROM simulation_model_control WHERE singleton = 1")) {
+            return row.next() ? row.getString(1) : defaultModelId;
+        }
+    }
+
+    public synchronized void setActiveSimulationModel(String modelId) throws SQLException {
+        if (modelId == null || modelId.isBlank())
+            throw new IllegalArgumentException("simulation model id is required");
+        try (PreparedStatement statement = connection.prepareStatement("""
+            INSERT INTO simulation_model_control(singleton, model_id, updated_at) VALUES (1, ?, ?)
+            ON CONFLICT(singleton) DO UPDATE SET model_id = excluded.model_id, updated_at = excluded.updated_at
+            """)) {
+            statement.setString(1, modelId);
+            statement.setLong(2, System.currentTimeMillis());
+            statement.executeUpdate();
+        }
+    }
+
     public synchronized int simulationFactor(String symbol) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("SELECT factor FROM simulation_controls WHERE symbol = ?")) {
             statement.setString(1, symbol);
@@ -344,16 +340,26 @@ public final class QuoteSnapshotStore implements AutoCloseable {
     }
 
     public synchronized Optional<SimulationStateView> findSimulationState(long sessionId, String symbol) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("SELECT session_id, symbol, trend_state, iteration FROM simulation_states WHERE session_id = ? AND symbol = ?")) {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT session_id, symbol, trend_state, iteration, model_state FROM simulation_states WHERE session_id = ? AND symbol = ?")) {
             statement.setLong(1, sessionId); statement.setString(2, symbol);
-            try (ResultSet row = statement.executeQuery()) { if (row.next()) return Optional.of(new SimulationStateView(row.getLong(1), row.getString(2), row.getDouble(3), row.getInt(4))); }
+            try (ResultSet row = statement.executeQuery()) { if (row.next()) return Optional.of(new SimulationStateView(row.getLong(1), row.getString(2), row.getDouble(3), row.getInt(4), row.getString(5))); }
         }
         return Optional.empty();
     }
 
     public synchronized void saveSimulationState(long sessionId, String symbol, double trendState, int iteration) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("INSERT INTO simulation_states(session_id, symbol, trend_state, iteration) VALUES (?, ?, ?, ?) ON CONFLICT(session_id, symbol) DO UPDATE SET trend_state = excluded.trend_state, iteration = excluded.iteration")) {
-            statement.setLong(1, sessionId); statement.setString(2, symbol); statement.setDouble(3, trendState); statement.setInt(4, iteration); statement.executeUpdate();
+        saveSimulationState(sessionId, symbol, trendState, iteration, "");
+    }
+
+    public synchronized void saveSimulationState(long sessionId, String symbol, double trendState, int iteration, String modelState) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            INSERT INTO simulation_states(session_id, symbol, trend_state, iteration, model_state) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(session_id, symbol) DO UPDATE SET trend_state = excluded.trend_state,
+                iteration = excluded.iteration, model_state = excluded.model_state
+            """)) {
+            statement.setLong(1, sessionId); statement.setString(2, symbol);
+            statement.setDouble(3, trendState); statement.setInt(4, iteration);
+            statement.setString(5, modelState == null ? "" : modelState); statement.executeUpdate();
         }
     }
 

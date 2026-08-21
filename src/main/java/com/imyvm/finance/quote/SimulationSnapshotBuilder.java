@@ -17,13 +17,24 @@ import java.util.Set;
 
 public final class SimulationSnapshotBuilder {
     private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("imyvm_finance/simulation");
-    private SimulationSnapshotBuilder() { }
 
-    public static Optional<QuoteSnapshot> build(QuoteSnapshot fetched, QuoteSnapshotStore store, long nodeTime,
-                                                long intervalMillis, long seed, Map<String, Long> defaultPrices,
-                                                Map<String, Long> sessionStarts, Map<String, java.util.Set<java.time.LocalDate>> marketHolidays) throws Exception {
+    private SimulationSnapshotBuilder() {
+    }
+
+    public static Optional<QuoteSnapshot> build(
+        QuoteSnapshot fetched,
+        QuoteSnapshotStore store,
+        long nodeTime,
+        long intervalMillis,
+        long seed,
+        Map<String, Long> defaultPrices,
+        SimulationModelConfig configuredModels,
+        Map<String, Long> sessionStarts,
+        Map<String, java.util.Set<java.time.LocalDate>> marketHolidays
+    ) throws Exception {
         Set<String> failedMarkets = failedMarkets(fetched);
-        if (fetched == null) failedMarkets.addAll(Instrument.markets());
+        if (fetched == null)
+            failedMarkets.addAll(Instrument.markets());
         long effectiveNodeTime = fetched == null ? nodeTime : fetched.nodeTimeEpochMillis();
         if (fetched != null) {
             long recoveredAt = System.currentTimeMillis();
@@ -35,75 +46,165 @@ public final class SimulationSnapshotBuilder {
                 }
             }
         }
-        if (failedMarkets.isEmpty()) return Optional.of(withNodeTime(fetched, effectiveNodeTime));
+        if (failedMarkets.isEmpty())
+            return Optional.of(withNodeTime(fetched, effectiveNodeTime));
 
         Map<Instrument, MarketQuote> quotes = new HashMap<>();
         if (fetched != null)
             for (MarketQuote quote : fetched.quotes())
-                if (!failedMarkets.contains(quote.instrument().market())) quotes.put(quote.instrument(), quote);
+                if (!failedMarkets.contains(quote.instrument().market()))
+                    quotes.put(quote.instrument(), quote);
 
         long startedAt = System.currentTimeMillis();
         for (String market : failedMarkets) {
             Long existingSession = sessionStarts.get(market);
-            long sessionId = existingSession == null ? simulationSessionId(startedAt, market) : existingSession;
-            Map<String, String> sessionFunction;
+            long sessionId = existingSession == null
+                ? simulationSessionId(startedAt, market) : existingSession;
+            String modelId;
+            SimulationModelConfig sessionModels;
             if (existingSession == null) {
-                Map<String, String> activeFunction = store.activeSimulationLayerFormulas();
-                String sessionFormula = activeFunction.entrySet().stream()
-                    .map(entry -> entry.getKey() + "=" + entry.getValue())
-                    .collect(java.util.stream.Collectors.joining("; "));
+                modelId = store.activeSimulationModel(configuredModels.defaultModelId());
+                configuredModels.model(modelId);
+                String frozenConfiguration = configuredModels.snapshot(modelId);
                 sessionStarts.put(market, sessionId);
-                store.beginSimulation(sessionId, market, startedAt, "three_layer", sessionFormula, seed, intervalMillis, SimulatedQuoteGenerator.intervalToleranceMillis(intervalMillis), 0);
-                store.freezeSimulationLayers(sessionId);
+                store.beginSimulation(sessionId, market, startedAt, modelId,
+                    frozenConfiguration, seed, intervalMillis,
+                    SimulatedQuoteGenerator.intervalToleranceMillis(intervalMillis), 0);
+                store.freezeSimulationLayers(sessionId, modelId,
+                    SimulationModelConfig.LAYER_DESCRIPTIONS);
+                sessionModels = SimulationModelConfig.fromSnapshot(frozenConfiguration);
+            } else {
+                var session = store.findSimulationSession(sessionId)
+                    .orElseThrow(() -> new IllegalStateException(
+                        "missing simulation session: " + sessionId));
+                modelId = session.functionId();
+                sessionModels = SimulationModelConfig.fromSnapshot(session.formula());
+                sessionModels.model(modelId);
             }
-            sessionFunction = store.simulationLayers(sessionId);
-            if (sessionFunction.size() != 3)
-                throw new IllegalStateException("simulation session layers are incomplete");
+            if (store.simulationLayers(sessionId).size() != 3)
+                throw new IllegalStateException(
+                    "simulation session layers are incomplete: " + sessionId);
+
             for (Instrument instrument : Instrument.values()) {
-                if (!instrument.market().equals(market)) continue;
+                if (!instrument.market().equals(market))
+                    continue;
                 Optional<StoredQuote> storedPrevious = store.findLatest(instrument);
-                MarketQuote previous = storedPrevious.map(StoredQuote::quote).orElseGet(() -> defaultQuote(instrument, defaultPrices, nodeTime, marketHolidays));
-                if (previous == null) continue;
-                previous = new MarketQuote(instrument, previous.name(), previous.priceScaled(), previous.changeBps(),
-                    MarketHours.status(instrument.sourceMarket(), java.time.Instant.ofEpochMilli(nodeTime), marketHolidays.getOrDefault(instrument.sourceMarket(), java.util.Set.of())), previous.origin());
-                String source = storedPrevious.map(StoredQuote::source).orElse("config-default");
+                MarketQuote previous = storedPrevious.map(StoredQuote::quote)
+                    .orElseGet(() -> defaultQuote(instrument, defaultPrices, nodeTime,
+                        marketHolidays));
+                if (previous == null)
+                    continue;
+                previous = new MarketQuote(instrument, previous.name(),
+                    previous.priceScaled(), previous.changeBps(),
+                    MarketHours.status(instrument.sourceMarket(),
+                        java.time.Instant.ofEpochMilli(nodeTime),
+                        marketHolidays.getOrDefault(instrument.sourceMarket(),
+                            java.util.Set.of())),
+                    previous.origin());
+                String source = storedPrevious.map(StoredQuote::source)
+                    .orElse("config-default");
                 String inputSource = source + " [" + previous.origin().name() + "]";
                 int configuredFactor = store.simulationFactor(instrument.symbol());
-                int factor = store.simulationFactorForSession(sessionId, instrument.symbol(), configuredFactor);
-                var state = store.findSimulationState(sessionId, instrument.symbol()).orElse(null);
-                int iteration = state == null ? 1 : state.iteration() + 1;
-                double trendState = state == null ? 0.0 : state.trendState();
+                int factor = store.simulationFactorForSession(sessionId,
+                    instrument.symbol(), configuredFactor);
+                var storedState = store.findSimulationState(sessionId,
+                    instrument.symbol()).orElse(null);
+                int iteration = storedState == null ? 0 : storedState.iteration();
+                SimulatedQuoteGenerator.State modelState = storedState == null
+                    ? SimulatedQuoteGenerator.State.initial()
+                    : SimulatedQuoteGenerator.State.parse(storedState.modelState());
                 MarketQuote next;
                 SimulatedQuoteGenerator.Step step = null;
-                double nextTrendState;
-                long randomBps;
                 if (previous.status() != MarketStatus.OPEN) {
-                    next = new MarketQuote(instrument, previous.name(), previous.priceScaled(), 0, previous.status(), QuoteOrigin.SIMULATED);
-                    nextTrendState = trendState; randomBps = 0;
+                    next = new MarketQuote(instrument, previous.name(),
+                        previous.priceScaled(), 0, previous.status(),
+                        QuoteOrigin.SIMULATED);
                 } else {
-                    step = SimulatedQuoteGenerator.nextStep(instrument, previous, seed, iteration, factor, trendState, sessionFunction);
-                    next = step.quote(); nextTrendState = step.trendState(); randomBps = step.randomBps();
+                    iteration++;
+                    step = SimulatedQuoteGenerator.nextStep(instrument, previous,
+                        seed, iteration, factor, modelState, sessionModels, modelId,
+                        intervalMillis);
+                    next = step.quote();
+                    modelState = step.state();
                 }
                 quotes.put(instrument, next);
-                store.recordSimulationNode(sessionId, effectiveNodeTime, instrument.symbol(), inputSource, previous.priceScaled(), next.changeBps(), next.priceScaled(), factor);
-                String layerParameters = "factor=" + factor + ",trend=" + (step == null ? 0 : step.trendBps()) + ",random=" + (step == null ? 0 : step.randomBps());
-                store.recordSimulationNodeLayer(sessionId, effectiveNodeTime, instrument.symbol(), "LONG", layerParameters, step == null ? 0 : step.longBps());
-                store.recordSimulationNodeLayer(sessionId, effectiveNodeTime, instrument.symbol(), "MEDIUM", layerParameters, step == null ? 0 : step.mediumBps());
-                store.recordSimulationNodeLayer(sessionId, effectiveNodeTime, instrument.symbol(), "SHORT", layerParameters, step == null ? 0 : step.shortBps());
-                LOGGER.info("Simulation node: session={} market={} symbol={} parameters={} longBps={} mediumBps={} shortBps={} totalBps={} appliedBps={} previousPrice={} newPrice={}", sessionId, market, instrument.symbol(), layerParameters, step == null ? 0 : step.longBps(), step == null ? 0 : step.mediumBps(), step == null ? 0 : step.shortBps(), step == null ? 0 : step.unclampedBps(), next.changeBps(), previous.priceScaled(), next.priceScaled());
-                store.recordSimulationNodeInput(sessionId, effectiveNodeTime, instrument.symbol(), 0, inputSource, storedPrevious.map(StoredQuote::nodeTimeEpochMillis).orElse(effectiveNodeTime), previous.priceScaled());
-                store.saveSimulationState(sessionId, instrument.symbol(), nextTrendState, iteration);
+                store.recordSimulationNode(sessionId, effectiveNodeTime,
+                    instrument.symbol(), inputSource, previous.priceScaled(),
+                    next.changeBps(), next.priceScaled(), factor);
+                String parameters = step == null
+                    ? "factor=" + factor + ",market=closed,state=frozen"
+                    : "factor=" + factor
+                        + ",correlationScale=" + format(step.correlationScale())
+                        + ",variance=" + format(step.varianceMultiplier())
+                        + ",switches=" + String.join(",", step.switches());
+                store.recordSimulationNodeLayer(sessionId, effectiveNodeTime,
+                    instrument.symbol(), "LONG", parameters,
+                    step == null ? 0.0 : step.longBps());
+                store.recordSimulationNodeLayer(sessionId, effectiveNodeTime,
+                    instrument.symbol(), "MEDIUM", parameters,
+                    step == null ? 0.0 : step.mediumBps());
+                store.recordSimulationNodeLayer(sessionId, effectiveNodeTime,
+                    instrument.symbol(), "SHORT", parameters,
+                    step == null ? 0.0 : step.shortBps());
+                store.recordSimulationNodeLayer(sessionId, effectiveNodeTime,
+                    instrument.symbol(), "STOCHASTIC", parameters,
+                    step == null ? 0.0 : step.stochasticBps());
+                store.recordSimulationNodeLayer(sessionId, effectiveNodeTime,
+                    instrument.symbol(), "JUMP", parameters,
+                    step == null ? 0.0 : step.jumpBps());
+                LOGGER.info(
+                    "Simulation node: session={} model={} market={} symbol={} parameters={} longBps={} mediumBps={} shortBps={} stochasticBps={} jumpBps={} totalBps={} appliedBps={} previousPrice={} newPrice={}",
+                    sessionId, modelId, market, instrument.symbol(), parameters,
+                    step == null ? 0.0 : step.longBps(),
+                    step == null ? 0.0 : step.mediumBps(),
+                    step == null ? 0.0 : step.shortBps(),
+                    step == null ? 0.0 : step.stochasticBps(),
+                    step == null ? 0.0 : step.jumpBps(),
+                    step == null ? 0.0 : step.unclampedBps(),
+                    step == null ? 0.0 : step.appliedBps(),
+                    previous.priceScaled(), next.priceScaled());
+                store.recordSimulationNodeInput(sessionId, effectiveNodeTime,
+                    instrument.symbol(), 0, inputSource,
+                    storedPrevious.map(StoredQuote::nodeTimeEpochMillis)
+                        .orElse(effectiveNodeTime),
+                    previous.priceScaled());
+                store.saveSimulationState(sessionId, instrument.symbol(),
+                    modelState.varianceMultiplier(), iteration,
+                    modelState.serialize());
             }
         }
-        if (quotes.isEmpty()) return Optional.empty();
-        return Optional.of(new QuoteSnapshot("simulated-" + effectiveNodeTime, fetched == null ? "simulated" : quotes.values().stream().anyMatch(quote -> quote.origin() == QuoteOrigin.SIMULATED) ? "mixed" : fetched.source(),
-            System.currentTimeMillis(), effectiveNodeTime, new ArrayList<>(quotes.values()), fetched == null ? java.util.List.of() : fetched.alerts(), effectiveNodeTime));
+        if (quotes.isEmpty())
+            return Optional.empty();
+        return Optional.of(new QuoteSnapshot(
+            "simulated-" + effectiveNodeTime,
+            fetched == null ? "simulated"
+                : quotes.values().stream().anyMatch(
+                    quote -> quote.origin() == QuoteOrigin.SIMULATED)
+                    ? "mixed" : fetched.source(),
+            System.currentTimeMillis(), effectiveNodeTime,
+            new ArrayList<>(quotes.values()),
+            fetched == null ? java.util.List.of() : fetched.alerts(),
+            effectiveNodeTime));
     }
 
-    private static MarketQuote defaultQuote(Instrument instrument, Map<String, Long> defaultPrices, long nodeTime, Map<String, java.util.Set<java.time.LocalDate>> marketHolidays) {
+    private static String format(double value) {
+        return String.format(java.util.Locale.ROOT, "%.4f", value);
+    }
+
+    private static MarketQuote defaultQuote(
+        Instrument instrument,
+        Map<String, Long> defaultPrices,
+        long nodeTime,
+        Map<String, java.util.Set<java.time.LocalDate>> marketHolidays
+    ) {
         Long price = defaultPrices.get(instrument.symbol());
-        MarketStatus status = MarketHours.status(instrument.sourceMarket(), java.time.Instant.ofEpochMilli(nodeTime), marketHolidays.getOrDefault(instrument.sourceMarket(), java.util.Set.of()));
-        return price == null || price <= 0 ? null : new MarketQuote(instrument, instrument.symbol(), price, 0, status, QuoteOrigin.SIMULATED);
+        MarketStatus status = MarketHours.status(instrument.sourceMarket(),
+            java.time.Instant.ofEpochMilli(nodeTime),
+            marketHolidays.getOrDefault(instrument.sourceMarket(),
+                java.util.Set.of()));
+        return price == null || price <= 0 ? null
+            : new MarketQuote(instrument, instrument.symbol(), price, 0, status,
+                QuoteOrigin.SIMULATED);
     }
 
     private static long simulationSessionId(long startedAt, String market) {
@@ -119,12 +220,18 @@ public final class SimulationSnapshotBuilder {
 
     private static Set<String> failedMarkets(QuoteSnapshot snapshot) {
         Set<String> result = new HashSet<>();
-        if (snapshot != null) for (String alert : snapshot.alerts()) if (alert.startsWith("failed:market:")) result.add(alert.substring("failed:market:".length()));
+        if (snapshot != null)
+            for (String alert : snapshot.alerts())
+                if (alert.startsWith("failed:market:"))
+                    result.add(alert.substring("failed:market:".length()));
         return result;
     }
 
     private static QuoteSnapshot withNodeTime(QuoteSnapshot snapshot, long nodeTime) {
-        if (snapshot.nodeTimeEpochMillis() == nodeTime) return snapshot;
-        return new QuoteSnapshot(snapshot.snapshotId(), snapshot.source(), snapshot.fetchedAtEpochMillis(), snapshot.marketTimeEpochMillis(), snapshot.quotes(), snapshot.alerts(), nodeTime);
+        if (snapshot.nodeTimeEpochMillis() == nodeTime)
+            return snapshot;
+        return new QuoteSnapshot(snapshot.snapshotId(), snapshot.source(),
+            snapshot.fetchedAtEpochMillis(), snapshot.marketTimeEpochMillis(),
+            snapshot.quotes(), snapshot.alerts(), nodeTime);
     }
 }

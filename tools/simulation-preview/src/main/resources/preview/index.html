@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ImyvmFinance 模拟行情预览</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101318;
+      --panel: #181d24;
+      --panel-2: #202731;
+      --line: #303947;
+      --text: #edf2f7;
+      --muted: #98a6b8;
+      --accent: #60a5fa;
+      --green: #34d399;
+      --amber: #fbbf24;
+      --pink: #f472b6;
+      --red: #fb7185;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at 20% 0%, #172033 0, var(--bg) 38%);
+      color: var(--text);
+      font: 14px/1.45 system-ui, sans-serif;
+    }
+    main { width: min(1500px, 96vw); margin: 24px auto 48px; }
+    h1 { margin: 0 0 4px; font-size: 24px; }
+    h2 { margin: 0 0 12px; font-size: 16px; }
+    .muted { color: var(--muted); }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(300px, 370px) minmax(0, 1fr);
+      gap: 16px;
+      margin-top: 18px;
+      align-items: start;
+    }
+    .panel {
+      background: color-mix(in srgb, var(--panel) 94%, transparent);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 12px 35px #0005;
+    }
+    .controls { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; }
+    input, select, button {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--panel-2);
+      color: var(--text);
+      padding: 8px 9px;
+      font: inherit;
+    }
+    button { cursor: pointer; font-weight: 650; }
+    button:hover { border-color: var(--accent); }
+    button.primary { background: #2563eb; border-color: #3b82f6; }
+    button.save { background: #166534; border-color: #22c55e; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 12px; }
+    .notice {
+      margin: 12px 0 0;
+      padding: 9px 10px;
+      background: #111827;
+      border-left: 3px solid var(--amber);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    details { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 12px; }
+    summary { cursor: pointer; font-weight: 650; margin-bottom: 10px; }
+    .parameter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .parameter-grid label { min-width: 0; }
+    .parameter-grid span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chart-panel { min-height: 650px; }
+    .chart-header { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+    .switch-toggle { display: flex; grid-template-columns: auto 1fr; align-items: center; gap: 7px; }
+    .switch-toggle input { width: auto; }
+    canvas {
+      width: 100%;
+      height: 520px;
+      display: block;
+      margin-top: 12px;
+      background: #0d1117;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; color: var(--muted); }
+    .legend i { display: inline-block; width: 18px; height: 3px; margin-right: 5px; vertical-align: middle; }
+    .summary { display: grid; grid-template-columns: repeat(6, minmax(95px, 1fr)); gap: 8px; margin-top: 14px; }
+    .metric { background: var(--panel-2); border-radius: 8px; padding: 10px; }
+    .metric strong { display: block; margin-top: 3px; font-size: 16px; }
+    #status { min-height: 22px; margin-top: 10px; color: var(--muted); white-space: pre-wrap; }
+    #status.error { color: var(--red); }
+    #status.ok { color: var(--green); }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      .controls { position: static; max-height: none; }
+      .summary { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>ImyvmFinance 模拟行情预览</h1>
+  <div class="muted">同一套游戏生成器、三分钟点位、相对有效交易时间。页面模块不会进入 mod jar。</div>
+  <div class="layout">
+    <section class="panel controls">
+      <h2>预览条件</h2>
+      <div class="grid">
+        <label>模型<select id="model"></select></label>
+        <label>标的<select id="instrument"></select></label>
+        <label>预览趋势因子
+          <select id="factor">
+            <option value="0">0 随机偏置</option>
+            <option value="1">1 强看跌</option>
+            <option value="2">2 弱看跌</option>
+            <option value="3" selected>3 中性双向</option>
+            <option value="4">4 弱看涨</option>
+            <option value="5">5 强看涨</option>
+          </select>
+        </label>
+        <label>随机种子<input id="seed" type="number" value="307" step="1"></label>
+        <label>起点价格<input id="start" type="number" min="0.0001" step="0.0001"></label>
+        <label>有效交易日<input id="days" type="number" min="0.01" max="730" value="365" step="1"></label>
+      </div>
+      <div class="notice">趋势因子只影响本次预览的长期方向概率，不会保存到 mod。游戏内仍由 OP 对每个标的手动设置，且各层会按随机周期与幅度继续自动换向。</div>
+      <div id="parameters"></div>
+      <details>
+        <summary>保存到 mod</summary>
+        <label>参数调整摘要
+          <input id="commitSummary" value="adjust simulation parameters" maxlength="72">
+        </label>
+        <div class="muted" style="margin-top:7px">只保存已改动的模型、标的和相关性参数，并创建一次 <code>chore: &lt;摘要&gt;</code> 提交；不推送、不热重载。</div>
+      </details>
+      <div class="actions">
+        <button id="simulate" class="primary">生成预览</button>
+        <button id="reset">重置</button>
+        <button id="save" class="save">保存并提交</button>
+      </div>
+      <div id="status"></div>
+    </section>
+    <section class="panel chart-panel">
+      <div class="chart-header">
+        <div>
+          <h2>累计效应</h2>
+          <div class="muted">横轴为相对有效交易日，纵轴为相对起点百分比。</div>
+        </div>
+        <label class="switch-toggle"><input id="showSwitches" type="checkbox" checked>显示随机换向</label>
+      </div>
+      <canvas id="chart"></canvas>
+      <div class="legend">
+        <span><i style="background:#60a5fa"></i>总行情</span>
+        <span><i style="background:#34d399"></i>长期</span>
+        <span><i style="background:#fbbf24"></i>中期</span>
+        <span><i style="background:#f472b6"></i>短期</span>
+        <span><i style="background:#64748b"></i>换向时点</span>
+      </div>
+      <div id="summary" class="summary"></div>
+    </section>
+  </div>
+</main>
+<script>
+const modelFields = [
+  ["volatility-multiplier", "波动倍率"],
+  ["trend-multiplier", "趋势倍率"],
+  ["jump-multiplier", "跳跃倍率"],
+  ["common-factor-multiplier", "共同因子倍率"],
+  ["duration-multiplier", "周期倍率"],
+  ["downside-multiplier", "下行波动倍率"],
+  ["student-t-df-adjustment", "t 分布自由度调整"]
+];
+const correlationFields = [
+  ["simulation.correlation.minimum-scale", "相关性最低倍率"],
+  ["simulation.correlation.maximum-scale", "相关性最高倍率"],
+  ["simulation.correlation.cycle-effective-days", "相关性周期（有效日）"]
+];
+const groups = [
+  ["波动与厚尾", [
+    ["annual-volatility", "年化波动率"], ["downside-volatility-multiplier", "下行波动倍率"],
+    ["student-t-df", "t 分布自由度"], ["garch-alpha", "GARCH α"],
+    ["garch-beta", "GARCH β"], ["max-step-percent", "单步最大幅度"],
+    ["idiosyncratic-variance-floor", "个体方差下限"]
+  ]],
+  ["跳跃", [
+    ["jump-rate-per-year", "年跳跃率"], ["jump-up-min", "上跳最小"],
+    ["jump-up-max", "上跳最大"], ["jump-down-min", "下跳最小"],
+    ["jump-down-max", "下跳最大"], ["jump-down-probability", "下跳概率"]
+  ]],
+  ["长期", regimeFields("long", "长期")],
+  ["中期", regimeFields("medium", "中期")],
+  ["短期", regimeFields("short", "短期")],
+  ["交易时间与共同因子", [
+    ["trading-days-per-year", "年交易日"], ["trading-hours-per-day", "日交易小时"],
+    ["loading-cn-market", "A股市场载荷"], ["loading-cn-style", "A股风格载荷"],
+    ["loading-crypto-market", "加密市场载荷"], ["loading-risk-appetite", "风险偏好载荷"],
+    ["loading-inflation-rate", "通胀利率载荷"]
+  ]]
+];
+function regimeFields(prefix, label) {
+  return [
+    [prefix + "-duration-min-days", label + "周期最小日"],
+    [prefix + "-duration-max-days", label + "周期最大日"],
+    [prefix + "-up-min", label + "上涨幅度最小"],
+    [prefix + "-up-max", label + "上涨幅度最大"],
+    [prefix + "-down-min", label + "下跌幅度最小"],
+    [prefix + "-down-max", label + "下跌幅度最大"]
+  ];
+}
+
+let config;
+let chartData;
+let baseline = new Map();
+const byId = id => document.getElementById(id);
+
+async function fetchJson(url, options) {
+  const response = await fetch(url, options);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || response.statusText);
+  return data;
+}
+
+async function loadConfig(preserveSelection = false) {
+  const oldModel = byId("model").value;
+  const oldInstrument = byId("instrument").value;
+  config = await fetchJson("/api/config");
+  byId("model").innerHTML = config.models.map(id =>
+    `<option value="${escapeHtml(id)}">${escapeHtml(id)}</option>`).join("");
+  byId("instrument").innerHTML = config.instruments.map(item =>
+    `<option value="${item.id}">${escapeHtml(item.symbol)} · ${escapeHtml(item.market)}</option>`).join("");
+  byId("model").value = preserveSelection && config.models.includes(oldModel)
+    ? oldModel : config.defaultModel;
+  byId("instrument").value = preserveSelection
+    && config.instruments.some(item => item.id === oldInstrument)
+    ? oldInstrument : config.instruments[0].id;
+  selectInstrument(true);
+  setStatus("已从硬配置重新载入参数。", "ok");
+}
+
+function selectedInstrument() {
+  return config.instruments.find(item => item.id === byId("instrument").value);
+}
+
+function selectInstrument(resetStart) {
+  if (resetStart) byId("start").value = selectedInstrument().defaultPrice;
+  renderParameters();
+}
+
+function valueFor(field) {
+  const item = selectedInstrument();
+  const direct = `simulation.instruments.${item.id}.${field}`;
+  const profile = `simulation.profiles.${item.profile}.${field}`;
+  return config.properties[direct] ?? config.properties[profile] ?? "";
+}
+
+function input(key, label, value) {
+  const step = key.endsWith("student-t-df") || key.endsWith("days-per-year")
+    || key.endsWith("df-adjustment") ? "1" : "any";
+  baseline.set(key, String(value));
+  return `<label title="${escapeHtml(key)}"><span>${escapeHtml(label)}</span>
+    <input class="parameter" data-key="${escapeHtml(key)}" type="number"
+      step="${step}" value="${escapeHtml(String(value))}"></label>`;
+}
+
+function renderParameters() {
+  baseline = new Map();
+  const model = byId("model").value;
+  const instrument = selectedInstrument();
+  let html = "<details open><summary>模型与相关性</summary><div class=\"parameter-grid\">";
+  for (const [field, label] of modelFields) {
+    const key = `simulation.models.${model}.${field}`;
+    html += input(key, label, config.properties[key]);
+  }
+  for (const [key, label] of correlationFields)
+    html += input(key, label, config.properties[key]);
+  html += "</div></details>";
+  for (const [title, fields] of groups) {
+    html += `<details><summary>${title}</summary><div class="parameter-grid">`;
+    for (const [field, label] of fields) {
+      const key = `simulation.instruments.${instrument.id}.${field}`;
+      html += input(key, label, valueFor(field));
+    }
+    html += "</div></details>";
+  }
+  byId("parameters").innerHTML = html;
+}
+
+function baseForm(changedOnly) {
+  const values = new URLSearchParams();
+  values.set("preview.model", byId("model").value);
+  values.set("preview.instrument", byId("instrument").value);
+  values.set("preview.factor", byId("factor").value);
+  values.set("preview.seed", byId("seed").value);
+  values.set("preview.start", byId("start").value);
+  values.set("preview.days", byId("days").value);
+  for (const control of document.querySelectorAll(".parameter")) {
+    const key = control.dataset.key;
+    if (!changedOnly || control.value !== baseline.get(key))
+      values.set(key, control.value);
+  }
+  return values;
+}
+
+async function simulate() {
+  busy(true);
+  setStatus("正在生成三分钟点位…");
+  try {
+    chartData = await fetchJson("/api/simulate", {
+      method: "POST",
+      headers: {"Content-Type": "application/x-www-form-urlencoded"},
+      body: baseForm(false)
+    });
+    draw();
+    renderSummary(chartData.summary);
+    setStatus(`已生成 ${chartData.summary.points.toLocaleString()} 个三分钟点位，记录 ${chartData.summary.switches} 次换向。`, "ok");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    busy(false);
+  }
+}
+
+async function save() {
+  const values = baseForm(true);
+  values.set("preview.summary", byId("commitSummary").value);
+  const changed = [...values.keys()].filter(key => key.startsWith("simulation."));
+  if (!changed.length) {
+    setStatus("没有参数改动。", "error");
+    return;
+  }
+  busy(true);
+  setStatus("正在校验、写入并创建提交…");
+  try {
+    const result = await fetchJson("/api/save", {
+      method: "POST",
+      headers: {"Content-Type": "application/x-www-form-urlencoded"},
+      body: values
+    });
+    await loadConfig(true);
+    setStatus(`${result.message}：${result.commit}`, "ok");
+  } catch (error) {
+    setStatus(error.message, "error");
+  } finally {
+    busy(false);
+  }
+}
+
+function draw() {
+  if (!chartData || !chartData.points.length) return;
+  const canvas = byId("chart");
+  const ratio = devicePixelRatio || 1;
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+  canvas.width = Math.round(width * ratio);
+  canvas.height = Math.round(height * ratio);
+  const context = canvas.getContext("2d");
+  context.scale(ratio, ratio);
+  context.clearRect(0, 0, width, height);
+  const margin = {left: 62, right: 18, top: 18, bottom: 38};
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  let minimum = 0;
+  let maximum = 0;
+  for (const point of chartData.points)
+    for (let column = 1; column <= 4; column++) {
+      minimum = Math.min(minimum, point[column]);
+      maximum = Math.max(maximum, point[column]);
+    }
+  const padding = Math.max(1, (maximum - minimum) * .08);
+  minimum -= padding;
+  maximum += padding;
+  const lastDay = chartData.points.at(-1)[0];
+  const x = value => margin.left + value / lastDay * plotWidth;
+  const y = value => margin.top + (maximum - value) / (maximum - minimum) * plotHeight;
+  context.strokeStyle = "#283241";
+  context.fillStyle = "#98a6b8";
+  context.font = "11px system-ui";
+  context.lineWidth = 1;
+  context.textAlign = "right";
+  for (let tick = 0; tick <= 5; tick++) {
+    const value = minimum + (maximum - minimum) * tick / 5;
+    const position = y(value);
+    context.beginPath();
+    context.moveTo(margin.left, position);
+    context.lineTo(width - margin.right, position);
+    context.stroke();
+    context.fillText(value.toFixed(1) + "%", margin.left - 7, position + 4);
+  }
+  context.textAlign = "center";
+  for (let tick = 0; tick <= 6; tick++) {
+    const day = lastDay * tick / 6;
+    const position = x(day);
+    context.beginPath();
+    context.moveTo(position, margin.top);
+    context.lineTo(position, height - margin.bottom);
+    context.stroke();
+    context.fillText(day.toFixed(lastDay < 10 ? 1 : 0) + "d", position, height - 15);
+  }
+  if (byId("showSwitches").checked) {
+    context.strokeStyle = "#64748b66";
+    context.lineWidth = 1;
+    for (const event of chartData.switches) {
+      const position = x(event[1]);
+      context.beginPath();
+      context.moveTo(position, margin.top);
+      context.lineTo(position, height - margin.bottom);
+      context.stroke();
+    }
+  }
+  const colors = ["#60a5fa", "#34d399", "#fbbf24", "#f472b6"];
+  const stride = Math.max(1, Math.floor(chartData.points.length / Math.max(1, plotWidth * 2)));
+  for (let column = 1; column <= 4; column++) {
+    context.beginPath();
+    context.strokeStyle = colors[column - 1];
+    context.lineWidth = column === 1 ? 2 : 1.35;
+    for (let index = 0; index < chartData.points.length; index += stride) {
+      const point = chartData.points[index];
+      if (index === 0) context.moveTo(x(point[0]), y(point[column]));
+      else context.lineTo(x(point[0]), y(point[column]));
+    }
+    const last = chartData.points.at(-1);
+    context.lineTo(x(last[0]), y(last[column]));
+    context.stroke();
+  }
+}
+
+function renderSummary(summary) {
+  const values = [
+    ["终点", summary.final.toLocaleString()], ["总涨跌", summary.changePercent.toFixed(2) + "%"],
+    ["最低", summary.minimum.toLocaleString()], ["最高", summary.maximum.toLocaleString()],
+    ["上涨点", summary.positive.toLocaleString()], ["下跌点", summary.negative.toLocaleString()]
+  ];
+  byId("summary").innerHTML = values.map(([label, value]) =>
+    `<div class="metric"><span class="muted">${label}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+}
+
+function busy(value) {
+  for (const button of document.querySelectorAll("button")) button.disabled = value;
+}
+function setStatus(message, kind = "") {
+  byId("status").textContent = message;
+  byId("status").className = kind;
+}
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, character =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[character]);
+}
+
+byId("model").addEventListener("change", renderParameters);
+byId("instrument").addEventListener("change", () => selectInstrument(true));
+byId("simulate").addEventListener("click", simulate);
+byId("reset").addEventListener("click", () => loadConfig(true).catch(error => setStatus(error.message, "error")));
+byId("save").addEventListener("click", save);
+byId("showSwitches").addEventListener("change", draw);
+window.addEventListener("resize", draw);
+loadConfig().then(simulate).catch(error => setStatus(error.message, "error"));
+</script>
+</body>
+</html>
