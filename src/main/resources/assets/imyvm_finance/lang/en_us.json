@@ -1,5 +1,5 @@
 {
-  "imyvm_finance.commands.market.disclaimer": "§e§l[Notice]§r §eThe following content is an in-game simulation and is not real investment advice.",
+  "imyvm_finance.commands.market.disclaimer": "§c§l[Notice]§r §cAll in-game trading is simulated and is not real investment advice; game content is for entertainment only.",
   "imyvm_finance.commands.market.help.header": "§6§l=== IMYVM Finance Market ===§r",
   "imyvm_finance.commands.market.help.intro": "§7ImyvmFinance brings real index quotes into the server economy: §fbuy and sell index shares with in-game money at live prices§7 and ride the market swings.",
   "imyvm_finance.commands.market.help.symbol_hint": "§7Enter symbols without the colon, e.g. §fCN000001§7 for CN:000001; suggestions complete them for you.",
@@ -47,7 +47,6 @@
   "imyvm_finance.commands.market.setup.success": "§aMarket data initialized with §f{0}§a instruments.",
   "imyvm_finance.commands.market.setup.failed": "§cMarket initialization failed: {0}",
   "imyvm_finance.commands.market.list.header": "§6§l=== Tradable Instruments ===§r",
-  "imyvm_finance.commands.market.list.notice": "§cAll in-game trading is simulated and is not real investment advice; game content is for entertainment only.",
   "imyvm_finance.commands.market.list.item": "  {0} §e{1}§r §7status §f{6}§r §7change({5}) {2}§r §8({3}) §7MA5 §b{4}",
   "imyvm_finance.commands.market.list.reference.cn": "intraday",
   "imyvm_finance.commands.market.list.reference.crypto": "24h",
@@ -110,7 +109,7 @@
   "imyvm_finance.commands.market.briefing.status.paused": "§ePAUSED",
   "imyvm_finance.commands.market.briefing.status.closed": "§7CLOSED",
   "imyvm_finance.commands.market.briefing.status.unavailable": "§cUNAVAILABLE",
-  "imyvm_finance.commands.market.briefing.buy_hint": "§e§l[Notice]§r §eThis is an in-game simulation. §r\n§7Click to prepare a purchase",
+  "imyvm_finance.commands.market.briefing.buy_hint": "§7Click to prepare a purchase",
   "imyvm_finance.commands.market.briefing.subscription.on": "§aMarket briefing enabled.",
   "imyvm_finance.commands.market.briefing.subscription.off": "§eMarket briefing muted; run §f/imyvm-market briefing §eto resume.",
   "imyvm_finance.commands.market.trade.disabled_global": "§eGlobal stock trading is paused by an administrator.",

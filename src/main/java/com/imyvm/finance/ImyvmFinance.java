@@ -219,7 +219,7 @@ public final class ImyvmFinance implements ModInitializer {
         try {
             int count = TRANSACTION_STORE.pendingSettlementCount(player.getUUID());
             if (count > 0)
-                player.sendSystemMessage(playerMessage(Translator.tr("commands.market.pending.player_notice", count)));
+                player.sendSystemMessage(Translator.tr("commands.market.pending.player_notice", count));
         } catch (Exception exception) {
             LOGGER.error("Failed to read pending finance settlements for {}", player.getUUID(), exception);
         }
@@ -232,7 +232,7 @@ public final class ImyvmFinance implements ModInitializer {
             return;
         try {
             for (StockTradingStore.MarketAlert alert : TRADING_STORE.findUndeliveredMarketAlerts(player.getUUID())) {
-                player.sendSystemMessage(playerMessage(marketAlertMessage(alert.alert())));
+                player.sendSystemMessage(marketAlertMessage(alert.alert()));
                 TRADING_STORE.markMarketAlertDelivered(player.getUUID(), alert.id());
             }
         } catch (Exception exception) {
@@ -542,9 +542,9 @@ public final class ImyvmFinance implements ModInitializer {
             MarketStatus previous = MARKET_STATUSES.put(entry.getKey(), entry.getValue());
             if (entry.getValue() == MarketStatus.OPEN
                 && (previous == null || previous == MarketStatus.CLOSED))
-                sendMarketEvent(server, "commands.market.notice.opened", entry.getKey());
+                sendMarketEvent(server, "commands.market.notice.opened", entry.getKey(), true);
             else if (entry.getValue() == MarketStatus.CLOSED && previous == MarketStatus.OPEN)
-                sendMarketEvent(server, "commands.market.notice.closed", entry.getKey());
+                sendMarketEvent(server, "commands.market.notice.closed", entry.getKey(), false);
         }
     }
 
@@ -553,11 +553,11 @@ public final class ImyvmFinance implements ModInitializer {
     }
 
     private static void sendMarketEvent(net.minecraft.server.MinecraftServer server,
-                                        String key, String market) {
+                                        String key, String market, boolean includeDisclaimer) {
         Component message = Translator.tr(key, marketLabel(market));
         MARKET_EVENT_AT.put(market, System.currentTimeMillis());
         for (var player : server.getPlayerList().getPlayers())
-            player.sendSystemMessage(playerMessage(message));
+            player.sendSystemMessage(includeDisclaimer ? playerMessage(message) : message);
     }
 
     public static CompletableFuture<QuoteSnapshot> checkMarketData() {
@@ -624,7 +624,7 @@ public final class ImyvmFinance implements ModInitializer {
             Component message = marketAlertMessage(alert);
             for (var player : server.getPlayerList().getPlayers()) {
                 if (player.createCommandSourceStack().permissions().hasPermission(Permissions.COMMANDS_ADMIN)) {
-                    player.sendSystemMessage(playerMessage(message));
+                    player.sendSystemMessage(message);
                     if (persistedAlertId >= 0 && TRADING_STORE != null) {
                         try {
                             TRADING_STORE.markMarketAlertDelivered(player.getUUID(), persistedAlertId);

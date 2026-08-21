@@ -113,12 +113,12 @@ public final class FinanceSelfTest {
         check(MarketCommands.instrumentLabel(Instrument.CRYPTO_ETH).getString().contains("煤气罐"),
             "Chinese ETH instrument name was not localized");
         check(Translator.tr("commands.market.disclaimer").getString().contains("[提示]")
-            && Translator.tr("commands.market.list.notice").getString().contains("模拟")
-            && Translator.tr("commands.market.briefing.buy_hint").getString().contains("模拟"),
+            && Translator.tr("commands.market.disclaimer").getString().contains("游戏内容仅供娱乐")
+            && Translator.tr("commands.market.briefing.buy_hint").getString().contains("点击拟定买入"),
             "Chinese player notice translation missing");
         Translator.setLanguage("en_us");
         check(Translator.tr("commands.market.disclaimer").getString().contains("[Notice]")
-            && Translator.tr("commands.market.briefing.buy_hint").getString().contains("[Notice]"),
+            && Translator.tr("commands.market.briefing.buy_hint").getString().contains("Click to prepare a purchase"),
             "English player notice translation missing");
         Translator.setLanguage("zh_cn");
         String briefingHeader = Translator.tr("commands.market.briefing.header", "2026-08-19 20:00:00 +08:00 Asia/Taipei").getString();

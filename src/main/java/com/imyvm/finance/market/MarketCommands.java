@@ -391,7 +391,6 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
     private static int briefing(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         if (!requireInitialized(context.getSource()))
             return 0;
-        sendPlayerDisclaimer(context.getSource());
         if (ImyvmFinance.TRADING_STORE == null) {
             context.getSource().sendFailure(Translator.tr("commands.market.trading.storage_unavailable"));
             return 0;
@@ -1400,7 +1399,6 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         if (!requireInitialized(context.getSource()))
             return 0;
         sendPlayerDisclaimer(context.getSource());
-        context.getSource().sendSuccess(() -> Translator.tr("commands.market.list.notice"), false);
         MutableComponent message = Component.empty()
             .append(Translator.tr("commands.market.list.header"));
         String currentMarket = "";
