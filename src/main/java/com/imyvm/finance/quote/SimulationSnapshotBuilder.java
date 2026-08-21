@@ -16,6 +16,7 @@ import java.util.Optional;
 import java.util.Set;
 
 public final class SimulationSnapshotBuilder {
+    private static final org.slf4j.Logger LOGGER = org.slf4j.LoggerFactory.getLogger("imyvm_finance/simulation");
     private SimulationSnapshotBuilder() { }
 
     public static Optional<QuoteSnapshot> build(QuoteSnapshot fetched, QuoteSnapshotStore store, long nodeTime,
@@ -37,7 +38,7 @@ public final class SimulationSnapshotBuilder {
         if (failedMarkets.isEmpty()) return Optional.of(withNodeTime(fetched, effectiveNodeTime));
 
         Map<Instrument, MarketQuote> quotes = new HashMap<>();
-        Map.Entry<String, String> activeFunction = store.activeSimulationFunction();
+        Map<String, String> activeFunction = store.activeSimulationLayerFormulas();
         if (fetched != null)
             for (MarketQuote quote : fetched.quotes())
                 if (!failedMarkets.contains(quote.instrument().market())) quotes.put(quote.instrument(), quote);
@@ -46,10 +47,11 @@ public final class SimulationSnapshotBuilder {
         for (String market : failedMarkets) {
             Long existingSession = sessionStarts.get(market);
             long sessionId = existingSession == null ? simulationSessionId(startedAt, market) : existingSession;
-            Map.Entry<String, String> sessionFunction = existingSession == null ? activeFunction : store.simulationFunctionForSession(sessionId);
+            Map<String, String> sessionFunction = activeFunction;
             if (existingSession == null) {
                 sessionStarts.put(market, sessionId);
-                store.beginSimulation(sessionId, market, startedAt, sessionFunction.getKey(), sessionFunction.getValue(), seed, intervalMillis, SimulatedQuoteGenerator.intervalToleranceMillis(intervalMillis), 0);
+                store.beginSimulation(sessionId, market, startedAt, "three_layer", "LONG + MEDIUM + SHORT", seed, intervalMillis, SimulatedQuoteGenerator.intervalToleranceMillis(intervalMillis), 0);
+                store.freezeSimulationLayers(sessionId);
             }
             for (Instrument instrument : Instrument.values()) {
                 if (!instrument.market().equals(market)) continue;
@@ -63,17 +65,23 @@ public final class SimulationSnapshotBuilder {
                 int iteration = state == null ? 1 : state.iteration() + 1;
                 double trendState = state == null ? 0.0 : state.trendState();
                 MarketQuote next;
+                SimulatedQuoteGenerator.Step step = null;
                 double nextTrendState;
                 long randomBps;
                 if (previous.status() != MarketStatus.OPEN) {
                     next = new MarketQuote(instrument, previous.name(), previous.priceScaled(), 0, previous.status(), QuoteOrigin.SIMULATED);
                     nextTrendState = trendState; randomBps = 0;
                 } else {
-                    SimulatedQuoteGenerator.Step step = SimulatedQuoteGenerator.nextStep(instrument, previous, seed, iteration, factor, trendState, sessionFunction.getValue());
+                    step = SimulatedQuoteGenerator.nextStep(instrument, previous, seed, iteration, factor, trendState, sessionFunction);
                     next = step.quote(); nextTrendState = step.trendState(); randomBps = step.randomBps();
                 }
                 quotes.put(instrument, next);
                 store.recordSimulationNode(sessionId, effectiveNodeTime, instrument.symbol(), source, previous.priceScaled(), next.changeBps(), next.priceScaled(), factor);
+                String layerParameters = "factor=" + factor + ",trend=" + (step == null ? 0 : step.trendBps()) + ",random=" + (step == null ? 0 : step.randomBps());
+                store.recordSimulationNodeLayer(sessionId, effectiveNodeTime, instrument.symbol(), "LONG", layerParameters, step == null ? 0 : step.longBps());
+                store.recordSimulationNodeLayer(sessionId, effectiveNodeTime, instrument.symbol(), "MEDIUM", layerParameters, step == null ? 0 : step.mediumBps());
+                store.recordSimulationNodeLayer(sessionId, effectiveNodeTime, instrument.symbol(), "SHORT", layerParameters, step == null ? 0 : step.shortBps());
+                LOGGER.info("Simulation node: session={} market={} symbol={} parameters={} longBps={} mediumBps={} shortBps={} totalBps={} appliedBps={} previousPrice={} newPrice={}", sessionId, market, instrument.symbol(), layerParameters, step == null ? 0 : step.longBps(), step == null ? 0 : step.mediumBps(), step == null ? 0 : step.shortBps(), step == null ? 0 : step.unclampedBps(), next.changeBps(), previous.priceScaled(), next.priceScaled());
                 store.recordSimulationNodeInput(sessionId, effectiveNodeTime, instrument.symbol(), 0, source, storedPrevious.map(StoredQuote::nodeTimeEpochMillis).orElse(effectiveNodeTime), previous.priceScaled());
                 store.saveSimulationState(sessionId, instrument.symbol(), nextTrendState, iteration);
             }

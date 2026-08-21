@@ -1051,6 +1051,10 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
             source.sendSuccess(() -> Translator.tr("commands.market.source.status.since", value(root, "statsSince", "-")), false);
             String outages = schedulerStatus != null && schedulerStatus.has("simulationMarkets") ? schedulerStatus.get("simulationMarkets").toString().replace("\"", "").replace("[", "").replace("]", "") : "";
             source.sendSuccess(() -> Translator.tr("commands.market.source.status.outage", outages.isEmpty() ? "-" : outages), false);
+            if (ImyvmFinance.QUOTE_STORE != null) {
+                Map<String, String> layers = ImyvmFinance.QUOTE_STORE.activeSimulationLayerFormulas();
+                source.sendSuccess(() -> Translator.tr("commands.market.source.status.simulation_layers", layers.get("LONG"), layers.get("MEDIUM"), layers.get("SHORT")), false);
+            }
             String enabled = Translator.tr("commands.market.source.status.enabled").getString();
             String paused = Translator.tr("commands.market.source.status.paused").getString();
             String activeState = Translator.tr("commands.market.source.status.active").getString();
@@ -2137,7 +2141,8 @@ private static String formatMovingAverage(List<Long> prices) {
             long nodeCount = ImyvmFinance.QUOTE_STORE.simulationNodeTotal(sessionId);
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.header", sessionId), false);
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.summary", row.market(), row.status(), Instant.ofEpochMilli(row.startedAt()), ((end - row.startedAt()) / 1000) + "s", row.functionId(), row.seed(), row.intervalMillis(), row.intervalToleranceMillis(), row.sessionUuid(), nodeCount), false);
-            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.formula", row.formula()), false);
+            for (var layer : ImyvmFinance.QUOTE_STORE.simulationLayers(sessionId).entrySet())
+                context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.layer", layer.getKey(), layer.getValue()), false);
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.nodes_link").copy()
                 .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation nodes " + sessionId + " 1"))), false);
             return Command.SINGLE_SUCCESS;

@@ -65,6 +65,12 @@ public final class QuoteSnapshotStore implements AutoCloseable {
             statement.execute("INSERT OR IGNORE INTO simulation_functions(function_id, function_type, updated_at) VALUES ('volatile_trend', 'CLAMP(TREND_BPS * 1.25 + VOLATILITY_BPS * RANDOM, -MAX_MOVE_BPS, MAX_MOVE_BPS)', strftime('%s', 'now'))");
             statement.execute("UPDATE simulation_functions SET active = 0 WHERE function_id NOT IN ('trend_walk', 'stable_walk', 'volatile_trend')");
             statement.execute("UPDATE simulation_functions SET active = 1 WHERE function_id = 'trend_walk' AND NOT EXISTS (SELECT 1 FROM simulation_functions WHERE active = 1)");
+            statement.execute("CREATE TABLE IF NOT EXISTS simulation_layer_functions (layer TEXT NOT NULL CHECK (layer IN ('LONG', 'MEDIUM', 'SHORT')), function_id TEXT NOT NULL, formula TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (layer, function_id))");
+            statement.execute("INSERT OR IGNORE INTO simulation_layer_functions(layer, function_id, formula, active) VALUES ('LONG', 'trend', 'TREND_BPS', 1)");
+            statement.execute("INSERT OR IGNORE INTO simulation_layer_functions(layer, function_id, formula, active) VALUES ('MEDIUM', 'neutral', '0', 1)");
+            statement.execute("INSERT OR IGNORE INTO simulation_layer_functions(layer, function_id, formula, active) VALUES ('SHORT', 'noise', 'VOLATILITY_BPS * RANDOM', 1)");
+            statement.execute("CREATE TABLE IF NOT EXISTS simulation_session_layers (session_id INTEGER NOT NULL, layer TEXT NOT NULL, function_id TEXT NOT NULL, formula TEXT NOT NULL, PRIMARY KEY (session_id, layer))");
+            statement.execute("CREATE TABLE IF NOT EXISTS simulation_node_layers (session_id INTEGER NOT NULL, node_time INTEGER NOT NULL, symbol TEXT NOT NULL, layer TEXT NOT NULL, parameters TEXT NOT NULL, result_bps REAL NOT NULL, PRIMARY KEY (session_id, node_time, symbol, layer))");
             statement.execute("""
                 CREATE TABLE IF NOT EXISTS simulation_sessions (
                     session_id INTEGER PRIMARY KEY, session_uuid TEXT NOT NULL UNIQUE, market TEXT NOT NULL, started_at INTEGER NOT NULL,
@@ -230,6 +236,31 @@ public final class QuoteSnapshotStore implements AutoCloseable {
 
     public synchronized boolean simulationFunctionExists(String id) throws SQLException {
         return findSimulationFunction(id).isPresent();
+    }
+
+    public synchronized Map<String, String> activeSimulationLayerFormulas() throws SQLException {
+        Map<String, String> result = new java.util.LinkedHashMap<>();
+        try (Statement statement = connection.createStatement(); ResultSet rows = statement.executeQuery("SELECT layer, formula FROM simulation_layer_functions WHERE active = 1 ORDER BY layer")) {
+            while (rows.next()) result.put(rows.getString(1), rows.getString(2));
+        }
+        if (result.size() != 3) throw new IllegalStateException("simulation layers are incomplete");
+        return result;
+    }
+
+    public synchronized Map<String, String> simulationLayers(long sessionId) throws SQLException {
+        Map<String, String> result = new java.util.LinkedHashMap<>();
+        try (PreparedStatement statement = connection.prepareStatement("SELECT layer, formula FROM simulation_session_layers WHERE session_id = ? ORDER BY layer")) { statement.setLong(1, sessionId); try (ResultSet rows = statement.executeQuery()) { while (rows.next()) result.put(rows.getString(1), rows.getString(2)); } }
+        return result;
+    }
+
+    public synchronized void freezeSimulationLayers(long sessionId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("INSERT INTO simulation_session_layers(session_id, layer, function_id, formula) SELECT ?, layer, function_id, formula FROM simulation_layer_functions WHERE active = 1")) { statement.setLong(1, sessionId); statement.executeUpdate(); }
+    }
+
+    public synchronized void recordSimulationNodeLayer(long sessionId, long nodeTime, String symbol, String layer, String parameters, double resultBps) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("INSERT OR REPLACE INTO simulation_node_layers(session_id, node_time, symbol, layer, parameters, result_bps) VALUES (?, ?, ?, ?, ?, ?)")) {
+            statement.setLong(1, sessionId); statement.setLong(2, nodeTime); statement.setString(3, symbol); statement.setString(4, layer); statement.setString(5, parameters); statement.setDouble(6, resultBps); statement.executeUpdate();
+        }
     }
 
     public synchronized Map.Entry<String, String> activeSimulationFunction() throws SQLException {
