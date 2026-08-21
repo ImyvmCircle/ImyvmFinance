@@ -1208,6 +1208,8 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
     }
 
     private static String quoteControlStatus(JsonObject root, String market, String active, String closed, String outage) {
+        if (root.has("marketEnabled") && root.getAsJsonObject("marketEnabled").has(market) && !root.getAsJsonObject("marketEnabled").get(market).getAsBoolean())
+            return closed;
         if (hasArrayValue(root, "closedMarkets", market))
             return closed;
         JsonObject scheduler = root.getAsJsonObject("scheduler");
@@ -1258,6 +1260,10 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         CommandSourceStack source = context.getSource();
         String market = StringArgumentType.getString(context, "market").toUpperCase();
         String provider = StringArgumentType.getString(context, "provider").toLowerCase();
+        if (!knownMarket(market) || !ImyvmFinance.CONFIG.providerOrder().getOrDefault(market, List.of()).contains(provider)) {
+            source.sendFailure(Translator.tr("commands.market.source.invalid", market, provider));
+            return 0;
+        }
         String path = "/control/provider?market=" + market + "&provider=" + provider + "&enabled=" + enabled;
         ImyvmFinance.controlMarketData(path).thenAccept(ignored -> source.getServer().execute(() ->
             source.sendSuccess(() -> Translator.tr("commands.market.source." + (enabled ? "enabled" : "disabled"), market, provider), true)))

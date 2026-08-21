@@ -81,7 +81,7 @@ public final class DirectMarketQuoteClient {
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays, Map<String, Boolean> marketEnabled, Set<String> disabledProviders, Map<String, List<String>> providerOrder, long providerBackoffMinutes) {
         this.marketHolidays = Map.copyOf(marketHolidays);
         this.providerBackoffMillis = providerBackoffMinutes * 60_000L;
-        this.marketEnabled = Map.copyOf(marketEnabled);
+        this.marketEnabled = new ConcurrentHashMap<>(marketEnabled);
         this.providerOrder = Map.copyOf(providerOrder);
         this.disabledProviders.addAll(disabledProviders);
         this.httpClient = HttpClient.newBuilder().connectTimeout(connectTimeout).build();
@@ -246,7 +246,7 @@ public final class DirectMarketQuoteClient {
     }
 
     public synchronized String controlStatus() {
-        return "{\"closedMarkets\":" + jsonArray(closedMarkets) + ",\"probingMarkets\":" + jsonArray(probingMarkets)
+        return "{\"marketEnabled\":" + jsonMapBoolean(marketEnabled) + ",\"closedMarkets\":" + jsonArray(closedMarkets) + ",\"probingMarkets\":" + jsonArray(probingMarkets)
             + ",\"disabledProviders\":" + jsonArray(disabledProviders)
             + ",\"lastSuccessfulProviders\":" + jsonMap(activeProviders) + ",\"providerOrder\":" + jsonMapList(providerOrder)
             + ",\"statsSince\":" + jsonString(Instant.ofEpochMilli(statsStartedAt).toString())
@@ -335,6 +335,10 @@ public final class DirectMarketQuoteClient {
         return values.stream().sorted().map(value -> "\"" + value + "\"").collect(java.util.stream.Collectors.joining(",", "[", "]"));
     }
 
+    private static String jsonMapBoolean(Map<String, Boolean> values) {
+        return values.entrySet().stream().sorted(Map.Entry.comparingByKey()).map(entry -> "\"" + entry.getKey() + "\":" + entry.getValue()).collect(java.util.stream.Collectors.joining(",", "{", "}"));
+    }
+
     private static String jsonMap(Map<String, String> values) {
         return values.entrySet().stream().sorted(Map.Entry.comparingByKey()).map(entry -> "\"" + entry.getKey() + "\":\"" + entry.getValue() + "\"").collect(java.util.stream.Collectors.joining(",", "{", "}"));
     }
@@ -350,6 +354,7 @@ public final class DirectMarketQuoteClient {
     }
 
     public synchronized void setMarketEnabled(String market, boolean enabled) {
+        marketEnabled.put(market, enabled);
         if (enabled)
             closedMarkets.remove(market);
         else

@@ -38,6 +38,7 @@
   "imyvm_finance.commands.market.control.failed": "§cQuote market data control failed.",
   "imyvm_finance.commands.market.source.enabled": "§aEnabled provider {1} for {0} market.",
   "imyvm_finance.commands.market.source.disabled": "§eDisabled provider {1} for {0} market.",
+  "imyvm_finance.commands.market.source.invalid": "§cUnknown market/provider combination: {0}/{1}.",
   "imyvm_finance.commands.market.help.command.pending": "§e/imyvm-market pending [confirm|release <transactionId>] §7- Review or resolve manual orders.",
   "imyvm_finance.commands.market.help.command.setup": "§e/imyvm-market setup §7- Check providers and complete initialization.",
   "imyvm_finance.commands.market.setup.required": "§eMarket data is not initialized; run §f/imyvm-market setup§e.",

@@ -341,7 +341,7 @@ public final class ImyvmFinance implements ModInitializer {
         boolean idle = isQuoteIdleEligible(noPlayers, inactiveForHour, cnCloseWindow);
         String reason = cnCloseWindow ? "CN close window"
             : noPlayers ? "no players online"
-            : inactiveForHour ? "no market command for one hour" : "market active";
+            : inactiveForHour ? "no market command for half hour" : "market active";
         QUOTE_REFRESHER.setIdleMode(idle, reason);
     }
 
@@ -380,7 +380,7 @@ public final class ImyvmFinance implements ModInitializer {
             + ",\"onlinePlayers\":" + (SERVER == null ? 0 : SERVER.getPlayerList().getPlayerCount())
             + ",\"uptimeSeconds\":" + uptimeSeconds
             + ",\"inactiveSeconds\":" + inactiveSeconds
-            + ",\"idleThresholdSeconds\":3600"
+            + ",\"idleThresholdSeconds\":" + IDLE_INACTIVITY_THRESHOLD_SECONDS + ""
             + ",\"noPlayers\":" + noPlayers
             + ",\"inactiveForHour\":" + inactiveForHour
             + ",\"secondsUntilIdle\":" + secondsUntilIdle
