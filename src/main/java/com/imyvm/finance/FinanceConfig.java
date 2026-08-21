@@ -57,7 +57,7 @@ public record FinanceConfig(
             Map.of(),
             Map.of("CN", true, "CRYPTO", true),
             Set.of(),
-            Map.of("CN", java.util.List.of("eastmoney", "sina", "tencent"), "CRYPTO", java.util.List.of("binance", "mexc", "bitget")),
+            Map.of("CN", java.util.List.of("eastmoney", "wscn", "sina", "tencent"), "CRYPTO", java.util.List.of("binance", "gate", "kucoin", "okx")),
             Map.of("CN:000001", 30_000_000L, "CN:399001", 30_000_000L, "CN:399006", 30_000_000L,
                 "CN:000300", 40_000_000L, "CN:000905", 50_000_000L, "CRYPTO:BTCUSDT", 600_000_000L, "CRYPTO:ETHUSDT", 30_000_000L),
             "zh_cn",
@@ -194,8 +194,8 @@ public record FinanceConfig(
 
     private static Map<String, java.util.List<String>> parseProviderOrder(Properties properties) {
         Map<String, java.util.List<String>> defaults = Map.of(
-            "CN", java.util.List.of("eastmoney", "sina", "tencent"),
-            "CRYPTO", java.util.List.of("binance", "mexc", "bitget"));
+            "CN", java.util.List.of("eastmoney", "wscn", "sina", "tencent"),
+            "CRYPTO", java.util.List.of("binance", "gate", "kucoin", "okx"));
         Map<String, java.util.List<String>> result = new HashMap<>();
         for (Map.Entry<String, java.util.List<String>> entry : defaults.entrySet()) {
             java.util.List<String> providers = new ArrayList<>();

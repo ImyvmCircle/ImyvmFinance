@@ -27,6 +27,12 @@ public final class CryptoQuoteClient {
     private static final URI MEXC_ETH_ENDPOINT = URI.create("https://api.mexc.com/api/v3/ticker/24hr?symbol=ETHUSDT");
     private static final URI BITGET_BTC_ENDPOINT = URI.create("https://api.bitget.com/api/v2/spot/market/tickers?symbol=BTCUSDT");
     private static final URI BITGET_ETH_ENDPOINT = URI.create("https://api.bitget.com/api/v2/spot/market/tickers?symbol=ETHUSDT");
+    private static final URI GATE_BTC_ENDPOINT = URI.create("https://api.gateio.ws/api/v4/spot/tickers?currency_pair=BTC_USDT");
+    private static final URI GATE_ETH_ENDPOINT = URI.create("https://api.gateio.ws/api/v4/spot/tickers?currency_pair=ETH_USDT");
+    private static final URI KUCOIN_BTC_ENDPOINT = URI.create("https://api.kucoin.com/api/ua/v1/market/ticker?tradeType=SPOT&symbol=BTC-USDT");
+    private static final URI KUCOIN_ETH_ENDPOINT = URI.create("https://api.kucoin.com/api/ua/v1/market/ticker?tradeType=SPOT&symbol=ETH-USDT");
+    private static final URI OKX_BTC_ENDPOINT = URI.create("https://app.okx.com/api/v5/market/ticker?instId=BTC-USDT");
+    private static final URI OKX_ETH_ENDPOINT = URI.create("https://app.okx.com/api/v5/market/ticker?instId=ETH-USDT");
     private final HttpClient httpClient;
     private final Duration requestTimeout;
 
@@ -37,7 +43,26 @@ public final class CryptoQuoteClient {
 
     public CompletableFuture<QuoteSnapshot> fetch() {
         return fetchBinance().exceptionallyCompose(error ->
-            fetchMexc().exceptionallyCompose(mexcError -> fetchBitget()));
+            fetchGate().exceptionallyCompose(gateError ->
+                fetchKucoin().exceptionallyCompose(kucoinError -> fetchOkx())));
+    }
+
+    public CompletableFuture<QuoteSnapshot> fetchGate() {
+        CompletableFuture<String> btc = request(GATE_BTC_ENDPOINT);
+        CompletableFuture<String> eth = request(GATE_ETH_ENDPOINT);
+        return btc.thenCombine(eth, (btcBody, ethBody) -> parseGate(btcBody, ethBody, Instant.now()));
+    }
+
+    public CompletableFuture<QuoteSnapshot> fetchKucoin() {
+        CompletableFuture<String> btc = request(KUCOIN_BTC_ENDPOINT);
+        CompletableFuture<String> eth = request(KUCOIN_ETH_ENDPOINT);
+        return btc.thenCombine(eth, (btcBody, ethBody) -> parseKucoin(btcBody, ethBody, Instant.now()));
+    }
+
+    public CompletableFuture<QuoteSnapshot> fetchOkx() {
+        CompletableFuture<String> btc = request(OKX_BTC_ENDPOINT);
+        CompletableFuture<String> eth = request(OKX_ETH_ENDPOINT);
+        return btc.thenCombine(eth, (btcBody, ethBody) -> parseOkx(btcBody, ethBody, Instant.now()));
     }
 
     public CompletableFuture<QuoteSnapshot> fetchMexc() {
@@ -107,6 +132,51 @@ public final class CryptoQuoteClient {
             exchangeQuote("bitget", Instrument.CRYPTO_BTC, btcBody, "lastPr", "open"),
             exchangeQuote("bitget", Instrument.CRYPTO_ETH, ethBody, "lastPr", "open"));
         return snapshot("bitget", quotes, fetchedAt);
+    }
+
+    public static QuoteSnapshot parseGate(String btcBody, String ethBody, Instant fetchedAt) {
+        return snapshot("gate", List.of(
+            gateQuote(Instrument.CRYPTO_BTC, btcBody),
+            gateQuote(Instrument.CRYPTO_ETH, ethBody)), fetchedAt);
+    }
+
+    public static QuoteSnapshot parseKucoin(String btcBody, String ethBody, Instant fetchedAt) {
+        return snapshot("kucoin", List.of(
+            kucoinQuote(Instrument.CRYPTO_BTC, btcBody),
+            kucoinQuote(Instrument.CRYPTO_ETH, ethBody)), fetchedAt);
+    }
+
+    public static QuoteSnapshot parseOkx(String btcBody, String ethBody, Instant fetchedAt) {
+        return snapshot("okx", List.of(
+            exchangeQuote("okx", Instrument.CRYPTO_BTC, btcBody, "last", "open24h"),
+            exchangeQuote("okx", Instrument.CRYPTO_ETH, ethBody, "last", "open24h")), fetchedAt);
+    }
+
+    private static MarketQuote gateQuote(Instrument instrument, String body) {
+        JsonElement root = JsonParser.parseString(body);
+        if (!root.isJsonArray()) {
+            JsonObject response = root.getAsJsonObject();
+            throw warning("gate", response.has("label") ? response.get("label").getAsString() : "unknown",
+                response.has("message") ? response.get("message").getAsString() : "provider returned a warning response");
+        }
+        JsonArray rows = root.getAsJsonArray();
+        if (rows.isEmpty())
+            throw new IllegalArgumentException("gate returned no ticker");
+        JsonObject data = rows.get(0).getAsJsonObject();
+        return quote(instrument, instrument.name(), data.get("last").getAsString(), data.get("change_percentage").getAsString());
+    }
+
+    private static MarketQuote kucoinQuote(Instrument instrument, String body) {
+        JsonObject root = JsonParser.parseString(body).getAsJsonObject();
+        String code = root.has("code") ? root.get("code").getAsString() : "unknown";
+        if (!"200000".equals(code))
+            throw warning("kucoin", code, root.has("msg") ? root.get("msg").getAsString() : "provider returned a warning code");
+        JsonArray rows = root.getAsJsonObject("data").getAsJsonArray("list");
+        if (rows == null || rows.isEmpty())
+            throw new IllegalArgumentException("kucoin returned no ticker");
+        JsonObject data = rows.get(0).getAsJsonObject();
+        return quote(instrument, instrument.name(), data.get("lastPrice").getAsString(), percent(
+            new BigDecimal(data.get("lastPrice").getAsString()), new BigDecimal(data.get("open").getAsString())));
     }
 
     private static MarketQuote exchangeQuote(String source, Instrument instrument, String body, String priceField, String openingField) {

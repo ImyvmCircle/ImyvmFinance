@@ -61,6 +61,8 @@ public final class FinanceSelfTest {
             checkEquals(15L, defaults.briefingIntervalMinutes(), "default briefing interval");
             checkEquals(20L, defaults.briefingDelaySeconds(), "default briefing delay");
             checkEquals(15L, defaults.quoteProviderBackoffMinutes(), "default provider backoff");
+            checkEquals(java.util.List.of("eastmoney", "wscn", "sina", "tencent"), defaults.providerOrder().get("CN"), "default CN providers");
+            checkEquals(java.util.List.of("binance", "gate", "kucoin", "okx"), defaults.providerOrder().get("CRYPTO"), "default crypto providers");
             check(!defaults.setupInitialized(), "setup defaults incomplete");
             checkEquals("zh_cn", defaults.language(), "default language");
             checkEquals("Asia/Shanghai", defaults.timeZone(), "default time zone");
@@ -157,8 +159,27 @@ public final class FinanceSelfTest {
             "{\"data\":[{\"symbol\":\"ETHUSDT\",\"lastPr\":\"3000\",\"open\":\"2900\"}]}",
             java.time.Instant.ofEpochMilli(1000));
         checkEquals(2, bitget.quotes().size(), "Bitget quote count");
+        var gate = com.imyvm.finance.quote.CryptoQuoteClient.parseGate(
+            "[{\"last\":\"60000\",\"change_percentage\":\"1.5\"}]",
+            "[{\"last\":\"3000\",\"change_percentage\":\"-0.5\"}]",
+            java.time.Instant.ofEpochMilli(1000));
+        checkEquals(2, gate.quotes().size(), "Gate quote count");
+        checkEquals(150L, gate.quotes().getFirst().changeBps(), "Gate BTC change");
+        var kucoin = com.imyvm.finance.quote.CryptoQuoteClient.parseKucoin(
+            "{\"code\":\"200000\",\"data\":{\"list\":[{\"lastPrice\":\"60000\",\"open\":\"59000\"}]}}",
+            "{\"code\":\"200000\",\"data\":{\"list\":[{\"lastPrice\":\"3000\",\"open\":\"2900\"}]}}",
+            java.time.Instant.ofEpochMilli(1000));
+        checkEquals(2, kucoin.quotes().size(), "KuCoin quote count");
+        var okx = com.imyvm.finance.quote.CryptoQuoteClient.parseOkx(
+            "{\"code\":\"0\",\"data\":[{\"last\":\"60000\",\"open24h\":\"59000\"}]}",
+            "{\"code\":\"0\",\"data\":[{\"last\":\"3000\",\"open24h\":\"2900\"}]}",
+            java.time.Instant.ofEpochMilli(1000));
+        checkEquals(2, okx.quotes().size(), "OKX quote count");
         checkWarning(() -> com.imyvm.finance.quote.CryptoQuoteClient.parseBinance("{\"code\":-1003}", java.time.Instant.ofEpochMilli(1000)), "Binance warning code");
         checkWarning(() -> com.imyvm.finance.quote.CryptoQuoteClient.parseBitget("{\"code\":\"40001\",\"msg\":\"invalid request\"}", "{\"code\":\"00000\",\"data\":[{\"lastPr\":\"3000\",\"open\":\"2900\"}]}", java.time.Instant.ofEpochMilli(1000)), "Bitget warning code");
+        checkWarning(() -> com.imyvm.finance.quote.CryptoQuoteClient.parseGate("{\"label\":\"INVALID_PARAM_VALUE\",\"message\":\"bad request\"}", "[]", java.time.Instant.ofEpochMilli(1000)), "Gate warning code");
+        checkWarning(() -> com.imyvm.finance.quote.CryptoQuoteClient.parseKucoin("{\"code\":\"400100\",\"msg\":\"bad request\"}", "{}", java.time.Instant.ofEpochMilli(1000)), "KuCoin warning code");
+        checkWarning(() -> com.imyvm.finance.quote.CryptoQuoteClient.parseOkx("{\"code\":\"50011\",\"msg\":\"rate limit\"}", "{}", java.time.Instant.ofEpochMilli(1000)), "OKX warning code");
     }
 
     private static void checkWarning(Runnable action, String label) {
@@ -201,6 +222,13 @@ public final class FinanceSelfTest {
             java.time.Instant.EPOCH);
         checkEquals(30_000_000L, sina.get(Instrument.CN_000001).priceScaled(), "Sina current price");
         checkEquals(40L, sina.get(Instrument.CN_000001).changeBps(), "Sina change percent");
+        var wscn = com.imyvm.finance.quote.DirectMarketQuoteClient.parseWscn(
+            "{\"code\":20000,\"message\":\"OK\",\"data\":{\"snapshot\":{\"000001.SS\":[\"SSE\",\"000001.SS\",3000,0.4,2990],\"399001.SZ\":[\"SZ\",\"399001.SZ\",14000,0.14,13980],\"399006.SZ\":[\"CY\",\"399006.SZ\",3500,-0.29,3510],\"000300.SS\":[\"CSI\",\"000300.SS\",4600,0.33,4585],\"000905.SS\":[\"CSI500\",\"000905.SS\",7800,0,7800]}}}");
+        checkEquals(5, wscn.size(), "WSCN quote count");
+        checkEquals(30_000_000L, wscn.get(Instrument.CN_000001).priceScaled(), "WSCN current price");
+        checkEquals(40L, wscn.get(Instrument.CN_000001).changeBps(), "WSCN change percent");
+        checkWarning(() -> com.imyvm.finance.quote.DirectMarketQuoteClient.parseWscn(
+            "{\"code\":40000,\"message\":\"bad request\"}"), "WSCN warning code");
         var status = new com.imyvm.finance.quote.DirectMarketQuoteClient(
             java.time.Duration.ofSeconds(1), java.time.Duration.ofSeconds(1)).controlStatus();
         check(status.contains("lastSuccessfulProviders") && status.contains("providerStats") && status.contains("statsSince"),

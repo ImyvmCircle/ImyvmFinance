@@ -39,6 +39,9 @@ public final class DirectMarketQuoteClient {
     private static final URI CHINA_TENCENT = URI.create("https://qt.gtimg.cn/q=s_sh000001,s_sz399001,s_sz399006,s_sh000300,s_sh000905");
     private static final URI CHINA_SINA = URI.create(
         "https://hq.sinajs.cn/list=s_sh000001,s_sz399001,s_sz399006,s_sh000300,s_sh000905");
+    private static final URI CHINA_WSCN = URI.create(
+        "https://api-ddc-wscn.awtmt.com/market/real?fields=prod_name%2Cprod_code%2Clast_px%2Cpx_change_rate%2Cpreclose_px"
+            + "&prod_code=000001.SS%2C399001.SZ%2C399006.SZ%2C000300.SS%2C000905.SS");
     private static final Map<String, Instrument> CHINA_CODES = Map.of(
         "000001", Instrument.CN_000001,
         "399001", Instrument.CN_399001,
@@ -73,7 +76,7 @@ public final class DirectMarketQuoteClient {
     }
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays) {
-        this(connectTimeout, requestTimeout, marketHolidays, Map.of("CN", true, "CRYPTO", true), Set.of(), Map.of("CN", List.of("eastmoney", "sina", "tencent"), "CRYPTO", List.of("binance", "mexc", "bitget")), 15);
+        this(connectTimeout, requestTimeout, marketHolidays, Map.of("CN", true, "CRYPTO", true), Set.of(), Map.of("CN", List.of("eastmoney", "wscn", "sina", "tencent"), "CRYPTO", List.of("binance", "gate", "kucoin", "okx")), 15);
     }
 
     public DirectMarketQuoteClient(Duration connectTimeout, Duration requestTimeout, Map<String, Set<java.time.LocalDate>> marketHolidays, Map<String, Boolean> marketEnabled, Set<String> disabledProviders, Map<String, List<String>> providerOrder) {
@@ -154,6 +157,7 @@ public final class DirectMarketQuoteClient {
             try {
                 Map<Instrument, MarketQuote> result = switch (provider) {
                     case "eastmoney" -> parseEastmoney(requestBytes(CHINA_EASTMONEY), Instant.now());
+                    case "wscn" -> parseWscn(requestText(CHINA_WSCN));
                     case "sina" -> parseSina(requestBytes(CHINA_SINA), Instant.now());
                     case "tencent" -> parseTencent(requestBytes(CHINA_TENCENT));
                     default -> throw new IllegalArgumentException("unknown CN provider: " + provider);
@@ -192,6 +196,9 @@ public final class DirectMarketQuoteClient {
             try {
                 var result = switch (provider) {
                     case "binance" -> cryptoClient.fetchBinance().join();
+                    case "gate" -> cryptoClient.fetchGate().join();
+                    case "kucoin" -> cryptoClient.fetchKucoin().join();
+                    case "okx" -> cryptoClient.fetchOkx().join();
                     case "mexc" -> cryptoClient.fetchMexc().join();
                     case "bitget" -> cryptoClient.fetchBitget().join();
                     default -> throw new IllegalArgumentException("unknown crypto provider: " + provider);
@@ -425,6 +432,25 @@ public final class DirectMarketQuoteClient {
         }
         if (result.size() != CHINA_CODES.size())
             throw new IllegalArgumentException("Sina returned incomplete China quotes");
+        return result;
+    }
+
+    public static Map<Instrument, MarketQuote> parseWscn(String body) {
+        JsonObject root = JsonParser.parseString(body).getAsJsonObject();
+        String code = root.has("code") ? root.get("code").getAsString() : "unknown";
+        if (!"20000".equals(code))
+            throw new IllegalStateException("provider warning: wscn code=" + code + " "
+                + (root.has("message") ? root.get("message").getAsString() : "provider returned a warning code"));
+        JsonObject rows = root.getAsJsonObject("data").getAsJsonObject("snapshot");
+        EnumMap<Instrument, MarketQuote> result = new EnumMap<>(Instrument.class);
+        for (Map.Entry<String, com.google.gson.JsonElement> entry : rows.entrySet()) {
+            Instrument instrument = CHINA_CODES.get(entry.getKey().substring(0, 6));
+            JsonArray row = entry.getValue().getAsJsonArray();
+            if (instrument != null && row.size() > 3)
+                result.put(instrument, quote(instrument, row.get(2).getAsString(), row.get(3).getAsString()));
+        }
+        if (result.size() != CHINA_CODES.size())
+            throw new IllegalArgumentException("WSCN returned incomplete China quotes");
         return result;
     }
 
