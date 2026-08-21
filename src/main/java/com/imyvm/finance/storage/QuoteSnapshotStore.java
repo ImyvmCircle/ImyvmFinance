@@ -353,6 +353,12 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         }
     }
 
+    public synchronized void abortSimulation(long sessionId, long endedAt) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("UPDATE simulation_sessions SET ended_at = ?, status = 'ABORTED' WHERE session_id = ? AND status = 'ACTIVE'")) {
+            statement.setLong(1, endedAt); statement.setLong(2, sessionId); statement.executeUpdate();
+        }
+    }
+
     public synchronized long simulationNodeCount(long sessionId, String symbol) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("SELECT COUNT(*) FROM simulation_nodes WHERE session_id = ? AND symbol = ?")) {
             statement.setLong(1, sessionId); statement.setString(2, symbol);

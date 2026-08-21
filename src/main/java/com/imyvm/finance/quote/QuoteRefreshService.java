@@ -285,11 +285,6 @@ public final class QuoteRefreshService implements AutoCloseable {
                 snapshot = SimulationSnapshotBuilder.build(snapshot, store,
                     lastScheduledPollAtEpochMillis == 0 ? System.currentTimeMillis() : lastScheduledPollAtEpochMillis,
                     pollIntervalMillis, simulationSeed, simulationDefaultPrices, simulationStartedAt).orElse(snapshot);
-                if (snapshot.alerts().stream().noneMatch(alert -> alert.startsWith("failed:market:"))) {
-                    long recoveredAt = System.currentTimeMillis();
-                    for (long sessionId : simulationStartedAt.values()) store.finishSimulation(sessionId, recoveredAt);
-                    simulationStartedAt.clear();
-                }
                 store.save(snapshot);
                 lastRefreshStatus = "success";
                 if (!snapshot.snapshotId().equals(lastSnapshotId)
@@ -360,7 +355,17 @@ public final class QuoteRefreshService implements AutoCloseable {
 
     @Override
     public void close() {
-        if (closed.compareAndSet(false, true))
+        if (closed.compareAndSet(false, true)) {
+            long endedAt = System.currentTimeMillis();
+            for (long sessionId : simulationStartedAt.values()) {
+                try {
+                    store.abortSimulation(sessionId, endedAt);
+                } catch (Exception exception) {
+                    LOGGER.error("Failed to abort simulation session {}", sessionId, exception);
+                }
+            }
+            simulationStartedAt.clear();
             executor.shutdownNow();
+        }
     }
 }

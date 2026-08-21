@@ -373,12 +373,25 @@ public final class FinanceSelfTest {
             checkEquals(7, quotes.findSimulationState(123L, "CN:000001").orElseThrow().iteration(), "simulation trend state was not persisted");
             var node = quotes.findSimulationNodes(123L, 10, 0).getFirst();
             check(Math.abs(node.logReturn() - Math.log(10_100.0 / 10_000.0)) < 1.0e-12, "simulation log return was not persisted from actual prices");
+            var simulationSessions = new java.util.HashMap<String, Long>();
             var coldStart = com.imyvm.finance.quote.SimulationSnapshotBuilder.build(null, quotes, 1_000L, 180_000L, 7L,
-                FinanceConfig.defaults().simulationDefaultPrices(), new java.util.HashMap<>()).orElseThrow();
+                FinanceConfig.defaults().simulationDefaultPrices(), simulationSessions).orElseThrow();
             check(coldStart.quotes().stream().anyMatch(quote -> quote.instrument() == Instrument.CRYPTO_BTC && quote.priceScaled() > 0),
                 "simulation did not use configured default point for a missing last quote");
             check(coldStart.quotes().stream().allMatch(quote -> quote.origin() == com.imyvm.finance.market.QuoteOrigin.SIMULATED),
                 "cold-start simulation leaked a real quote origin");
+            long cnSimulation = simulationSessions.get("CN");
+            long cryptoSimulation = simulationSessions.get("CRYPTO");
+            com.imyvm.finance.quote.SimulationSnapshotBuilder.build(new QuoteSnapshot("partial", "test", 2_000L, 2_000L,
+                List.of(new MarketQuote(Instrument.CRYPTO_BTC, "BTC", 600_000_000L, 0L, MarketStatus.OPEN)),
+                List.of("failed:market:CN")), quotes, 2_000L, 180_000L, 7L,
+                FinanceConfig.defaults().simulationDefaultPrices(), simulationSessions).orElseThrow();
+            checkEquals("RECOVERED", quotes.findSimulationSession(cryptoSimulation).orElseThrow().status(),
+                "recovered market simulation session was not finished");
+            quotes.abortSimulation(cnSimulation, 3_000L);
+            var abortedSimulation = quotes.findSimulationSession(cnSimulation).orElseThrow();
+            checkEquals("ABORTED", abortedSimulation.status(), "stopped simulation session was not aborted");
+            checkEquals(3_000L, abortedSimulation.endedAt(), "stopped simulation end time was not persisted");
 
             check(trading.isGlobalTradingEnabled(), "global trading defaults enabled");
             check(trading.isTradingEnabled(Instrument.CN_000001), "instrument trading defaults enabled");

@@ -24,6 +24,16 @@ public final class SimulationSnapshotBuilder {
         Set<String> failedMarkets = failedMarkets(fetched);
         if (fetched == null) failedMarkets.addAll(Set.of("CN", "CRYPTO"));
         long effectiveNodeTime = fetched == null ? nodeTime : fetched.nodeTimeEpochMillis();
+        if (fetched != null) {
+            long recoveredAt = System.currentTimeMillis();
+            for (String market : new HashSet<>(sessionStarts.keySet())) {
+                if (!failedMarkets.contains(market)) {
+                    Long sessionId = sessionStarts.remove(market);
+                    if (sessionId != null)
+                        store.finishSimulation(sessionId, recoveredAt);
+                }
+            }
+        }
         if (failedMarkets.isEmpty()) return Optional.of(withNodeTime(fetched, effectiveNodeTime));
 
         Map<Instrument, MarketQuote> quotes = new HashMap<>();
