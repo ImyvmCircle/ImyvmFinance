@@ -107,6 +107,7 @@ public final class MarketCommands {
         var confirm = Commands.literal("confirm")
             .requires(CommandSourceStack::isPlayer)
             .then(Commands.argument("confirmationId", StringArgumentType.word())
+                .suggests(MarketCommands::suggestConfirmations)
                 .executes(MarketCommands::confirm));
 
         var tradingSymbol = Commands.argument("symbol", StringArgumentType.word())
@@ -144,11 +145,12 @@ public final class MarketCommands {
             .then(Commands.literal("disable")
                 .then(marketName.executes(context -> setMarket(context, false))));
 
-        var adminPlayer = Commands.argument("player", StringArgumentType.word());
+        var adminPlayer = Commands.argument("player", StringArgumentType.word())
+            .suggests(MarketCommands::suggestOnlinePlayers);
         var adminSymbol = Commands.argument("symbol", StringArgumentType.word())
             .suggests(MarketCommands::suggestInstruments);
         var adminSnapshot = Commands.argument("snapshotId", StringArgumentType.word()).suggests(MarketCommands::suggestSnapshots);
-        var adminUnits = Commands.argument("units", LongArgumentType.longArg(1));
+        var adminUnits = Commands.argument("units", LongArgumentType.longArg(1)).suggests(MarketCommands::suggestUnits);
         var admin = Commands.literal("admin")
             .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
             .then(Commands.literal("position")
@@ -207,10 +209,12 @@ public final class MarketCommands {
                 .then(Commands.argument("interval", LongArgumentType.longArg(1))
                     .then(Commands.argument("delay", LongArgumentType.longArg(0))
                         .then(Commands.argument("enabled", StringArgumentType.word())
+                            .suggests(MarketCommands::suggestBooleans)
                             .executes(MarketCommands::configureBriefing)))))
             .then(Commands.literal("providers")
                 .then(Commands.argument("market", StringArgumentType.word()).suggests(MarketCommands::suggestSourceMarkets)
                     .then(Commands.argument("order", StringArgumentType.greedyString())
+                        .suggests(MarketCommands::suggestProviderOrder)
                         .executes(MarketCommands::configureProviders))))
             .then(Commands.literal("holiday")
                 .then(Commands.argument("market", StringArgumentType.word()).suggests(MarketCommands::suggestHolidayMarkets)
@@ -259,16 +263,24 @@ public final class MarketCommands {
             .then(Commands.literal("sessions").executes(context -> simulationSessions(context, 1L))
                 .then(Commands.argument("page", LongArgumentType.longArg(1)).executes(context -> simulationSessions(context, LongArgumentType.getLong(context, "page"))))
                 .then(Commands.literal("show").then(Commands.argument("session", LongArgumentType.longArg(1))
+                    .suggests(MarketCommands::suggestSimulationSessions)
                     .executes(MarketCommands::simulationSessionShow)))
                 .then(Commands.literal("nodes").then(Commands.argument("session", LongArgumentType.longArg(1))
+                    .suggests(MarketCommands::suggestSimulationSessions)
                     .executes(context -> simulationNodes(context, LongArgumentType.getLong(context, "session"), 1L))
                     .then(Commands.argument("page", LongArgumentType.longArg(1)).executes(context -> simulationNodes(context, LongArgumentType.getLong(context, "session"), LongArgumentType.getLong(context, "page"))))))
                 .then(Commands.literal("node-layers").then(Commands.argument("session", LongArgumentType.longArg(1))
+                    .suggests(MarketCommands::suggestSimulationSessions)
                     .then(Commands.argument("symbol", StringArgumentType.word()).suggests(MarketCommands::suggestInstruments)
-                        .then(Commands.argument("nodeTime", LongArgumentType.longArg(1)).executes(MarketCommands::simulationNodeLayers)))))
+                        .then(Commands.argument("nodeTime", LongArgumentType.longArg(1))
+                            .suggests(MarketCommands::suggestSimulationNodeTimes)
+                            .executes(MarketCommands::simulationNodeLayers)))))
                 .then(Commands.literal("node-inputs").then(Commands.argument("session", LongArgumentType.longArg(1))
+                    .suggests(MarketCommands::suggestSimulationSessions)
                     .then(Commands.argument("symbol", StringArgumentType.word()).suggests(MarketCommands::suggestInstruments)
-                        .then(Commands.argument("nodeTime", LongArgumentType.longArg(1)).executes(MarketCommands::simulationInputs))))));
+                        .then(Commands.argument("nodeTime", LongArgumentType.longArg(1))
+                            .suggests(MarketCommands::suggestSimulationNodeTimes)
+                            .executes(MarketCommands::simulationInputs))))));
 
         var leaderboard = Commands.literal("leaderboard").executes(MarketCommands::leaderboard);
 
@@ -357,7 +369,7 @@ public final class MarketCommands {
     private static int configurePoll(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         try {
             ImyvmFinance.configureQuoteSettings(LongArgumentType.getLong(context, "interval"), ImyvmFinance.CONFIG.quoteIdlePollIntervalMinutes(), LongArgumentType.getLong(context, "delay"), LongArgumentType.getLong(context, "jitter"), LongArgumentType.getLong(context, "seed"), ImyvmFinance.CONFIG.briefingIntervalMinutes(), ImyvmFinance.CONFIG.briefingDelaySeconds(), ImyvmFinance.CONFIG.briefingEnabled());
-            context.getSource().sendSuccess(() -> Component.literal("quote settings saved; restart required"), true);
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.setup.poll_saved"), true);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "quote configuration", exception); }
     }
@@ -365,7 +377,7 @@ public final class MarketCommands {
     private static int configureIdlePoll(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         try {
             ImyvmFinance.configureQuoteSettings(ImyvmFinance.CONFIG.quotePollIntervalMinutes(), LongArgumentType.getLong(context, "interval"), ImyvmFinance.CONFIG.quotePollDelaySeconds(), ImyvmFinance.CONFIG.quoteJitterSeconds(), ImyvmFinance.CONFIG.quoteRandomSeed(), ImyvmFinance.CONFIG.briefingIntervalMinutes(), ImyvmFinance.CONFIG.briefingDelaySeconds(), ImyvmFinance.CONFIG.briefingEnabled());
-            context.getSource().sendSuccess(() -> Component.literal("idle quote settings saved; restart required"), true);
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.setup.idle_saved"), true);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "idle quote configuration", exception); }
     }
@@ -373,7 +385,7 @@ public final class MarketCommands {
 private static int configureBriefing(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         try {
             ImyvmFinance.configureQuoteSettings(ImyvmFinance.CONFIG.quotePollIntervalMinutes(), ImyvmFinance.CONFIG.quoteIdlePollIntervalMinutes(), ImyvmFinance.CONFIG.quotePollDelaySeconds(), ImyvmFinance.CONFIG.quoteJitterSeconds(), ImyvmFinance.CONFIG.quoteRandomSeed(), LongArgumentType.getLong(context, "interval"), LongArgumentType.getLong(context, "delay"), Boolean.parseBoolean(StringArgumentType.getString(context, "enabled")));
-            context.getSource().sendSuccess(() -> Component.literal("briefing settings saved; restart required"), true);
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.setup.briefing_saved"), true);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "briefing configuration", exception); }
     }
@@ -381,14 +393,14 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
     private static int configureProviders(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         String market = StringArgumentType.getString(context, "market").toUpperCase();
         if (!Instrument.sourceMarkets().contains(market)) return 0;
-        try { ImyvmFinance.configureProviderOrder(market, StringArgumentType.getString(context, "order")); context.getSource().sendSuccess(() -> Component.literal("provider order saved; restart required"), true); return Command.SINGLE_SUCCESS; }
+        try { ImyvmFinance.configureProviderOrder(market, StringArgumentType.getString(context, "order")); context.getSource().sendSuccess(() -> Translator.tr("commands.market.setup.providers_saved"), true); return Command.SINGLE_SUCCESS; }
         catch (Exception exception) { return failUnexpected(context.getSource(), "provider configuration", exception); }
     }
 
     private static int configureHoliday(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         String market = StringArgumentType.getString(context, "market").toUpperCase();
         if (!"CN".equals(market)) return 0;
-        try { ImyvmFinance.configureHolidays(market, StringArgumentType.getString(context, "dates")); context.getSource().sendSuccess(() -> Component.literal("holiday settings saved; restart required"), true); return Command.SINGLE_SUCCESS; }
+        try { ImyvmFinance.configureHolidays(market, StringArgumentType.getString(context, "dates")); context.getSource().sendSuccess(() -> Translator.tr("commands.market.setup.holiday_saved"), true); return Command.SINGLE_SUCCESS; }
         catch (Exception exception) { return failUnexpected(context.getSource(), "holiday configuration", exception); }
     }
 
@@ -443,12 +455,12 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         MutableComponent footer = Component.empty();
         if (page > 1)
             footer.append(Translator.tr("commands.market.page.prev").copy()
-                .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(command + " " + (page - 1)))));
+                .withStyle(style -> style.withClickEvent(new ClickEvent.SuggestCommand(command + " " + (page - 1)))));
         if (page > 1 && page < pageCount)
             footer.append(" ");
         if (page < pageCount)
             footer.append(Translator.tr("commands.market.page.next").copy()
-                .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(command + " " + (page + 1)))));
+                .withStyle(style -> style.withClickEvent(new ClickEvent.SuggestCommand(command + " " + (page + 1)))));
         context.getSource().sendSuccess(() -> footer, false);
     }
 
@@ -618,7 +630,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                             .withHoverEvent(new net.minecraft.network.chat.HoverEvent.ShowText(
                                 Translator.tr("commands.market.positions.sell_hint")))));
                     item.append(" ").append(Translator.tr("commands.market.positions.sell_all").copy()
-                        .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(
+                        .withStyle(style -> style.withClickEvent(new ClickEvent.SuggestCommand(
                             "/imyvm-market sell " + position.positionId() + " " + availableUnits))));
                 }
                 context.getSource().sendSuccess(() -> item, false);
@@ -767,11 +779,58 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         return builder.buildFuture();
     }
 
+    private static CompletableFuture<Suggestions> suggestProviderOrder(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        SuggestionsBuilder builder
+    ) {
+        try {
+            String market = StringArgumentType.getString(context, "market")
+                .toUpperCase(java.util.Locale.ROOT);
+            List<String> providers = ImyvmFinance.CONFIG.providerOrder()
+                .getOrDefault(market, List.of());
+            String remaining = builder.getRemaining().toLowerCase(java.util.Locale.ROOT);
+            String fullOrder = String.join(",", providers);
+            if (fullOrder.startsWith(remaining))
+                builder.suggest(fullOrder);
+            for (String provider : providers)
+                if (provider.startsWith(remaining))
+                    builder.suggest(provider);
+        } catch (Exception ignored) {
+        }
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestBooleans(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        SuggestionsBuilder builder
+    ) {
+        String remaining = builder.getRemaining().toLowerCase(java.util.Locale.ROOT);
+        for (String value : List.of("true", "false"))
+            if (value.startsWith(remaining))
+                builder.suggest(value);
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestOnlinePlayers(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        SuggestionsBuilder builder
+    ) {
+        String remaining = builder.getRemaining().toLowerCase(java.util.Locale.ROOT);
+        for (ServerPlayer player : context.getSource().getServer().getPlayerList().getPlayers()) {
+            String name = player.getGameProfile().name();
+            if (name.toLowerCase(java.util.Locale.ROOT).startsWith(remaining))
+                builder.suggest(name);
+        }
+        return builder.buildFuture();
+    }
+
     private static CompletableFuture<Suggestions> suggestSnapshots(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
         try {
             Instrument instrument = Instrument.fromSymbol(StringArgumentType.getString(context, "symbol"));
             if (instrument != null && ImyvmFinance.QUOTE_STORE != null) {
                 String remaining = builder.getRemaining().toLowerCase(java.util.Locale.ROOT);
+                if ("latest".startsWith(remaining))
+                    builder.suggest("latest", Translator.tr("commands.market.suggest.snapshot_latest"));
                 for (StoredQuote quote : ImyvmFinance.QUOTE_STORE.findQuoteHistory(instrument, 10, 0))
                     if (quote.snapshotId().toLowerCase(java.util.Locale.ROOT).startsWith(remaining)) builder.suggest(quote.snapshotId());
             }
@@ -793,6 +852,80 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
     ) {
         for (int factor = 0; factor <= 5; factor++)
             builder.suggest(factor);
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestConfirmations(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        SuggestionsBuilder builder
+    ) {
+        if (!context.getSource().isPlayer())
+            return builder.buildFuture();
+        long now = System.currentTimeMillis();
+        UUID playerId = context.getSource().getPlayer().getUUID();
+        String remaining = builder.getRemaining().toLowerCase(java.util.Locale.ROOT);
+        for (var entry : CONFIRMATIONS.entrySet()) {
+            PendingConfirmation confirmation = entry.getValue();
+            String id = entry.getKey().toString();
+            if (confirmation.playerId().equals(playerId)
+                && now - confirmation.createdAt() <= CONFIRMATION_TTL_MILLIS
+                && id.startsWith(remaining))
+                builder.suggest(id, Translator.tr(
+                    "commands.market.suggest.confirmation",
+                    instrumentLabel(confirmation.instrument()), confirmation.units()));
+        }
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestSimulationSessions(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        SuggestionsBuilder builder
+    ) {
+        if (ImyvmFinance.QUOTE_STORE == null)
+            return builder.buildFuture();
+        try {
+            String remaining = builder.getRemaining();
+            for (SimulationSessionView session
+                : ImyvmFinance.QUOTE_STORE.findSimulationSessions(50, 0)) {
+                String id = Long.toString(session.sessionId());
+                if (id.startsWith(remaining))
+                    builder.suggest(id, Translator.tr(
+                        "commands.market.suggest.simulation_session",
+                        marketLabel(session.market()), session.status(),
+                        session.functionId()));
+            }
+        } catch (Exception ignored) {
+        }
+        return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestSimulationNodeTimes(
+        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+        SuggestionsBuilder builder
+    ) {
+        if (ImyvmFinance.QUOTE_STORE == null)
+            return builder.buildFuture();
+        try {
+            long sessionId = LongArgumentType.getLong(context, "session");
+            Instrument instrument = Instrument.fromSymbol(
+                StringArgumentType.getString(context, "symbol"));
+            if (instrument == null)
+                return builder.buildFuture();
+            String remaining = builder.getRemaining();
+            LinkedHashSet<Long> nodeTimes = new LinkedHashSet<>();
+            for (SimulationNodeView node
+                : ImyvmFinance.QUOTE_STORE.findSimulationNodes(sessionId, 500, 0))
+                if (node.symbol().equals(instrument.symbol()))
+                    nodeTimes.add(node.nodeTime());
+            for (long nodeTime : nodeTimes) {
+                String value = Long.toString(nodeTime);
+                if (value.startsWith(remaining))
+                    builder.suggest(value, Translator.tr(
+                        "commands.market.suggest.simulation_node",
+                        Instant.ofEpochMilli(nodeTime)));
+            }
+        } catch (Exception ignored) {
+        }
         return builder.buildFuture();
     }
 
@@ -888,10 +1021,11 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         try {
             GameProfile profile = resolveAdminProfile(context).orElseThrow();
             Instrument instrument = Instrument.fromSymbol(StringArgumentType.getString(context, "symbol"));
-            String snapshotId = StringArgumentType.getString(context, "snapshotId");
+            String snapshotReference = StringArgumentType.getString(context, "snapshotId");
             if (instrument == null || ImyvmFinance.QUOTE_STORE == null || ImyvmFinance.TRADING_STORE == null)
                 throw new IllegalArgumentException();
-            StoredQuote quote = ImyvmFinance.QUOTE_STORE.find(instrument, snapshotId).orElseThrow();
+            StoredQuote quote = resolveAdminSnapshot(instrument, snapshotReference);
+            String snapshotId = quote.snapshotId();
             var positions = ImyvmFinance.TRADING_STORE.findPositions(profile.id()).stream()
                 .filter(position -> position.instrument() == instrument)
                 .toList();
@@ -918,12 +1052,13 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
             GameProfile profile = resolveAdminProfile(context).orElseThrow();
             Instrument instrument = Instrument.fromSymbol(StringArgumentType.getString(context, "symbol"));
             long units = LongArgumentType.getLong(context, "units");
-            String snapshotId = StringArgumentType.getString(context, "snapshotId");
+            String snapshotReference = StringArgumentType.getString(context, "snapshotId");
             if (instrument == null || ImyvmFinance.QUOTE_STORE == null
                 || ImyvmFinance.TRANSACTION_STORE == null || ImyvmFinance.TRADING_STORE == null
                 || ImyvmFinance.ECONOMY_SETTLEMENT == null)
                 throw new IllegalArgumentException();
-            StoredQuote quote = ImyvmFinance.QUOTE_STORE.find(instrument, snapshotId).orElseThrow();
+            StoredQuote quote = resolveAdminSnapshot(instrument, snapshotReference);
+            String snapshotId = quote.snapshotId();
             var positions = ImyvmFinance.TRADING_STORE.findPositions(profile.id()).stream()
                 .filter(position -> position.instrument() == instrument
                     && position.remainingUnits() - position.frozenUnits() > 0)
@@ -1002,6 +1137,15 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         }
     }
 
+    private static StoredQuote resolveAdminSnapshot(
+        Instrument instrument,
+        String reference
+    ) throws Exception {
+        return (reference.equalsIgnoreCase("latest")
+            ? ImyvmFinance.QUOTE_STORE.findLatest(instrument)
+            : ImyvmFinance.QUOTE_STORE.find(instrument, reference)).orElseThrow();
+    }
+
     private static Optional<GameProfile> resolveAdminProfile(
         com.mojang.brigadier.context.CommandContext<CommandSourceStack> context
     ) {
@@ -1010,11 +1154,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         ServerPlayer online = server.getPlayerList().getPlayerByName(name);
         if (online != null)
             return Optional.of(online.getGameProfile());
-        try {
-            return Optional.of(new GameProfile(UUID.fromString(name), name));
-        } catch (IllegalArgumentException ignored) {
-            return Optional.empty();
-        }
+        return server.services().profileResolver().fetchByName(name);
     }
 
     private static TradeEstimate forceEstimate(StoredQuote quote, long units) {
@@ -1718,7 +1858,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                 player.getUUID(), TradeSide.BUY, estimate.instrument(), null,
                 estimate.units(), estimate.snapshotId());
             MutableComponent confirmation = Translator.tr("commands.market.estimate.confirm").copy()
-                .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(command)));
+                .withStyle(style -> style.withClickEvent(new ClickEvent.SuggestCommand(command)));
             context.getSource().sendSuccess(() -> confirmation, false);
             return Command.SINGLE_SUCCESS;
         } catch (TradeValidationException exception) {
@@ -1850,7 +1990,7 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                     player.getUUID(), TradeSide.SELL, estimate.instrument(), positionId,
                     estimate.units(), estimate.snapshotId());
                 MutableComponent confirmation = Translator.tr("commands.market.sell.estimate.confirm").copy()
-                    .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand(command)));
+                    .withStyle(style -> style.withClickEvent(new ClickEvent.SuggestCommand(command)));
                 context.getSource().sendSuccess(() -> Translator.tr(
                     "commands.market.sell.estimate.result",
                     instrumentLabel(estimate.instrument()), estimate.units(), estimate.settlementAmount(),
@@ -2499,8 +2639,8 @@ private static String formatMovingAverage(List<Long> prices) {
                 Instrument nodeInstrument = Instrument.fromSymbol(row.symbol());
                 Component nodeLabel = nodeInstrument == null ? Component.literal(row.symbol()) : instrumentLabel(nodeInstrument);
                 MutableComponent item = Translator.tr("commands.market.simulation.nodes.item", nodeLabel, Instant.ofEpochMilli(row.nodeTime()), row.inputSource(), formatPrice(row.previousPrice()), formatPrice(row.newPrice()), row.fluctuationBps(), String.format(java.util.Locale.ROOT, "%.9f", row.logReturn()), row.factor(), layers).copy();
-                item.append(" ").append(Translator.tr("commands.market.simulation.nodes.layers_link").copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation sessions node-layers " + sessionId + " " + row.symbol().replace(":", "") + " " + row.nodeTime()))));
-                item.append(" ").append(Translator.tr("commands.market.simulation.nodes.inputs_link").copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation sessions node-inputs " + sessionId + " " + row.symbol().replace(":", "") + " " + row.nodeTime()))));
+                item.append(" ").append(Translator.tr("commands.market.simulation.nodes.layers_link").copy().withStyle(style -> style.withClickEvent(new ClickEvent.SuggestCommand("/imyvm-market simulation sessions node-layers " + sessionId + " " + row.symbol().replace(":", "") + " " + row.nodeTime()))));
+                item.append(" ").append(Translator.tr("commands.market.simulation.nodes.inputs_link").copy().withStyle(style -> style.withClickEvent(new ClickEvent.SuggestCommand("/imyvm-market simulation sessions node-inputs " + sessionId + " " + row.symbol().replace(":", "") + " " + row.nodeTime()))));
                 context.getSource().sendSuccess(() -> item, false);
             }
             sendPageFooter(context, "/imyvm-market simulation sessions nodes " + sessionId, page, pageCount);
