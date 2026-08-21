@@ -46,7 +46,7 @@ public final class SimulatedQuoteGenerator {
         long trendBps = Math.round(targetBps + nextTrendState);
         Map<String, Double> inputs = Map.of(
             "PREV_PRICE", (double) previous.priceScaled(), "PREV_LOG_RETURN", previous.changeBps() / 10_000.0,
-            "DRIFT_BPS", (double) trendBps, "TREND_BPS", (double) trendBps,
+            "TREND_BPS", (double) trendBps,
             "VOLATILITY_BPS", (double) volatilityBps, "MAX_MOVE_BPS", (double) maxMoveBps,
             "RANDOM", triangular, "ITERATION", (double) iteration, "HISTORY_COUNT", 0.0);
         double longBps = SimulationFormula.compile(formulaText).eval(inputs);

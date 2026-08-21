@@ -225,12 +225,8 @@ public final class MarketCommands {
 
         var simulation = Commands.literal("simulation")
             .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_ADMIN))
-            .then(Commands.literal("help").executes(MarketCommands::simulationFunctionSyntax))
-            .then(Commands.literal("function")
-                .then(Commands.literal("list").executes(MarketCommands::simulationFunctionList))
-                .then(Commands.literal("show").then(Commands.argument("id", StringArgumentType.word()).suggests(MarketCommands::suggestSimulationFunctions).executes(MarketCommands::simulationFunctionShow)))
-                .then(Commands.literal("use").then(Commands.argument("id", StringArgumentType.word()).suggests(MarketCommands::suggestSimulationFunctions).executes(MarketCommands::simulationFunctionUse))))
-            .then(Commands.literal("layer")
+            .then(Commands.literal("help").executes(MarketCommands::simulationLayersSyntax))
+            .then(Commands.literal("layers").executes(MarketCommands::simulationLayersOverview)
                 .then(Commands.argument("layer", StringArgumentType.word()).suggests(MarketCommands::suggestSimulationLayers)
                     .then(Commands.literal("list").executes(MarketCommands::simulationLayerList))
                     .then(Commands.literal("use").then(Commands.argument("id", StringArgumentType.word()).suggests(MarketCommands::suggestSimulationLayerFunctions).executes(MarketCommands::simulationLayerUse)))))
@@ -244,21 +240,16 @@ public final class MarketCommands {
                     .then(Commands.argument("nodes", LongArgumentType.longArg(1, 20))
                         .executes(MarketCommands::simulationPreview))))
             .then(Commands.literal("sessions").executes(context -> simulationSessions(context, 1L))
-                .then(Commands.argument("page", LongArgumentType.longArg(1)).executes(context -> simulationSessions(context, LongArgumentType.getLong(context, "page")))))
-            .then(Commands.literal("session").then(Commands.argument("session", LongArgumentType.longArg(1)).executes(MarketCommands::simulationSession)))
-            .then(Commands.literal("nodes").then(Commands.argument("session", LongArgumentType.longArg(1))
-                .executes(context -> simulationNodes(context, LongArgumentType.getLong(context, "session"), 1L))
-                .then(Commands.argument("page", LongArgumentType.longArg(1)).executes(context -> simulationNodes(context, LongArgumentType.getLong(context, "session"), LongArgumentType.getLong(context, "page")))))
-            )
-            .then(Commands.literal("layers")
-                .then(Commands.argument("session", LongArgumentType.longArg(1))
+                .then(Commands.argument("page", LongArgumentType.longArg(1)).executes(context -> simulationSessions(context, LongArgumentType.getLong(context, "page"))))
+                .then(Commands.literal("nodes").then(Commands.argument("session", LongArgumentType.longArg(1))
+                    .executes(context -> simulationNodes(context, LongArgumentType.getLong(context, "session"), 1L))
+                    .then(Commands.argument("page", LongArgumentType.longArg(1)).executes(context -> simulationNodes(context, LongArgumentType.getLong(context, "session"), LongArgumentType.getLong(context, "page"))))))
+                .then(Commands.literal("node-layers").then(Commands.argument("session", LongArgumentType.longArg(1))
                     .then(Commands.argument("symbol", StringArgumentType.word()).suggests(MarketCommands::suggestInstruments)
-                        .then(Commands.argument("nodeTime", LongArgumentType.longArg(1)).executes(MarketCommands::simulationLayers)))))
-            .then(Commands.literal("inputs")
-                .then(Commands.argument("session", LongArgumentType.longArg(1))
+                        .then(Commands.argument("nodeTime", LongArgumentType.longArg(1)).executes(MarketCommands::simulationNodeLayers)))))
+                .then(Commands.literal("node-inputs").then(Commands.argument("session", LongArgumentType.longArg(1))
                     .then(Commands.argument("symbol", StringArgumentType.word()).suggests(MarketCommands::suggestInstruments)
-                        .then(Commands.argument("nodeTime", LongArgumentType.longArg(1))
-                            .executes(MarketCommands::simulationInputs)))));
+                        .then(Commands.argument("nodeTime", LongArgumentType.longArg(1)).executes(MarketCommands::simulationInputs))))));
 
         var leaderboard = Commands.literal("leaderboard").executes(MarketCommands::leaderboard);
 
@@ -716,16 +707,6 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                         Translator.tr("instrument." + instrument.name().toLowerCase(java.util.Locale.ROOT)),
                         instrument.symbol()));
         }
-        return builder.buildFuture();
-    }
-
-    private static CompletableFuture<Suggestions> suggestSimulationFunctions(
-        com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
-        try {
-            String remaining = builder.getRemaining().toLowerCase(java.util.Locale.ROOT);
-            for (String id : ImyvmFinance.QUOTE_STORE.findSimulationFunctions().keySet())
-                if (id.startsWith(remaining)) builder.suggest(id);
-        } catch (Exception ignored) { }
         return builder.buildFuture();
     }
 
@@ -2099,33 +2080,13 @@ private static String formatMovingAverage(List<Long> prices) {
         return total.divide(BigDecimal.valueOf(prices.size()), 4, RoundingMode.HALF_UP)
             .stripTrailingZeros().toPlainString();
     }
-    private static int simulationFunctionList(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
-        if (ImyvmFinance.QUOTE_STORE == null) return 0;
+    private static int simulationLayersOverview(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         try {
-            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.function.list.header"), false);
-            for (var entry : ImyvmFinance.QUOTE_STORE.findSimulationFunctions().entrySet()) {
-                var function = ImyvmFinance.QUOTE_STORE.findSimulationFunction(entry.getKey()).orElse(null);
-                String status = function != null && function.active() ? "active" : "stored";
-                context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.function.list.item", status, entry.getKey(), entry.getValue()), false);
-            }
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.layers.header"), false);
+            for (var entry : ImyvmFinance.QUOTE_STORE.activeSimulationLayerFormulas().entrySet())
+                context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.layer", entry.getKey(), entry.getValue()), false);
             return Command.SINGLE_SUCCESS;
-        } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation function list", exception); }
-    }
-
-    private static int simulationFunctionShow(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
-        try {
-            String id = StringArgumentType.getString(context, "id");
-            var function = ImyvmFinance.QUOTE_STORE.findSimulationFunction(id).orElseThrow(() -> new IllegalArgumentException("unknown function"));
-            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.function.show.header", function.id()), false);
-            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.function.show.status", function.active() ? "active" : "stored", Instant.ofEpochMilli(function.updatedAt())), false);
-            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.function.show.formula", function.formula()), false);
-            return Command.SINGLE_SUCCESS;
-        } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation function show", exception); }
-    }
-
-    private static int simulationFunctionUse(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
-        try { String id = StringArgumentType.getString(context, "id"); ImyvmFinance.QUOTE_STORE.activateSimulationFunction(id); context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.function.activated", id), true); return Command.SINGLE_SUCCESS; }
-        catch (Exception exception) { return failUnexpected(context.getSource(), "simulation function activate", exception); }
+        } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation layers", exception); }
     }
 
     private static int simulationLayerList(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
@@ -2135,7 +2096,7 @@ private static String formatMovingAverage(List<Long> prices) {
     }
 
     private static int simulationLayerUse(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
-        try { String layer = StringArgumentType.getString(context, "layer").toUpperCase(java.util.Locale.ROOT); String id = StringArgumentType.getString(context, "id"); ImyvmFinance.QUOTE_STORE.activateSimulationLayer(layer, id); context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.function.activated", layer + ":" + id), true); return Command.SINGLE_SUCCESS;
+        try { String layer = StringArgumentType.getString(context, "layer").toUpperCase(java.util.Locale.ROOT); String id = StringArgumentType.getString(context, "id"); ImyvmFinance.QUOTE_STORE.activateSimulationLayer(layer, id); context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.layers.changed", layer + ":" + id), true); return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation layer use", exception); }
     }
 
@@ -2181,43 +2142,29 @@ private static String formatMovingAverage(List<Long> prices) {
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.header"), false);
             long previewBaseTime = timestamp;
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.config", instrument.symbol(), nodes, previewSeed, Instant.ofEpochMilli(previewBaseTime)), false);
-            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.input", stored == null ? "config-default" : stored.source(), functions.toString()), false);
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.input", stored == null ? "config-default" : stored.source()), false);
+            for (var entry : functions.entrySet())
+                context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.layer", entry.getKey(), entry.getValue()), false);
             double trendState = 0.0;
             for (int iteration = 1; iteration <= nodes; iteration++) {
                 timestamp += interval;
-                var step = com.imyvm.finance.quote.SimulatedQuoteGenerator.nextStep(instrument, current, previewSeed, iteration, factor, trendState, functions.toString());
+                var step = com.imyvm.finance.quote.SimulatedQuoteGenerator.nextStep(instrument, current, previewSeed, iteration, factor, trendState, functions);
                 current = step.quote(); trendState = step.trendState();
                 long previewTime = timestamp; MarketQuote preview = current; int previewIteration = iteration;
-                context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.item", previewIteration, Instant.ofEpochMilli(previewTime), formatPrice(preview.priceScaled()), formatPercent(preview.changeBps()), factor), false);
+                context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.item", previewIteration, Instant.ofEpochMilli(previewTime), formatPrice(preview.priceScaled()), String.format(java.util.Locale.ROOT, "%.2f", step.longBps()), String.format(java.util.Locale.ROOT, "%.2f", step.mediumBps()), String.format(java.util.Locale.ROOT, "%.2f", step.shortBps()), String.format(java.util.Locale.ROOT, "%.2f", step.unclampedBps()), formatPercent(preview.changeBps()), factor), false);
             }
             return Command.SINGLE_SUCCESS;
         } catch (IllegalArgumentException exception) { context.getSource().sendFailure(Translator.tr("commands.market.simulation.preview.rejected", exception.getMessage())); return 0;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation preview", exception); }
     }
 
-    private static int simulationFunctionSyntax(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
-        context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.function.syntax.header"), false);
-        context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.function.syntax.operators"), false);
-        context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.function.syntax.functions"), false);
-        context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.function.syntax.variables"), false);
-        context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.function.syntax.example"), false);
+    private static int simulationLayersSyntax(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.layers.syntax.header"), false);
+        context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.layers.syntax.operators"), false);
+        context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.layers.syntax.functions"), false);
+        context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.layers.syntax.variables"), false);
+        context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.layers.syntax.example"), false);
         return Command.SINGLE_SUCCESS;
-    }
-
-    private static int simulationSession(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
-        try {
-            long sessionId = LongArgumentType.getLong(context, "session");
-            var row = ImyvmFinance.QUOTE_STORE.findSimulationSession(sessionId).orElseThrow(() -> new IllegalArgumentException("unknown session"));
-            long end = row.endedAt() == null ? System.currentTimeMillis() : row.endedAt();
-            long nodeCount = ImyvmFinance.QUOTE_STORE.simulationNodeTotal(sessionId);
-            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.header", sessionId), false);
-            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.summary", row.market(), row.status(), Instant.ofEpochMilli(row.startedAt()), ((end - row.startedAt()) / 1000) + "s", row.functionId(), row.seed(), row.intervalMillis(), row.intervalToleranceMillis(), row.sessionUuid(), nodeCount), false);
-            for (var layer : ImyvmFinance.QUOTE_STORE.simulationLayers(sessionId).entrySet())
-                context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.layer", layer.getKey(), layer.getValue()), false);
-            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.nodes_link").copy()
-                .withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation nodes " + sessionId + " 1"))), false);
-            return Command.SINGLE_SUCCESS;
-        } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation session", exception); }
     }
 
     private static int simulationSessions(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context, long page) {
@@ -2231,8 +2178,9 @@ private static String formatMovingAverage(List<Long> prices) {
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.sessions.header", page, pageCount), false);
             for (SimulationSessionView row : rows) {
                 long end = row.endedAt() == null ? System.currentTimeMillis() : row.endedAt();
-                Component item = Translator.tr("commands.market.simulation.sessions.item", row.sessionId(), row.market(), row.status(), Instant.ofEpochMilli(row.startedAt()), ((end - row.startedAt()) / 1000) + "s", row.functionId(), row.seed(), row.intervalMillis(), row.sessionUuid())
-                    .copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation nodes " + row.sessionId() + " 1")));
+                Map<String, String> layers = ImyvmFinance.QUOTE_STORE.simulationSessionLayerFunctionIds(row.sessionId());
+                Component item = Translator.tr("commands.market.simulation.sessions.item", row.sessionId(), row.market(), row.status(), Instant.ofEpochMilli(row.startedAt()), ((end - row.startedAt()) / 1000) + "s", layers.getOrDefault("LONG", "-"), layers.getOrDefault("MEDIUM", "-"), layers.getOrDefault("SHORT", "-"), row.seed(), row.intervalMillis(), row.sessionUuid())
+                    .copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation sessions nodes " + row.sessionId() + " 1")));
                 context.getSource().sendSuccess(() -> item, false);
             }
             sendPageFooter(context, "/imyvm-market simulation sessions", page, pageCount);
@@ -2250,16 +2198,16 @@ private static String formatMovingAverage(List<Long> prices) {
             for (SimulationNodeView row : ImyvmFinance.QUOTE_STORE.findSimulationNodes(sessionId, 10, (int) ((page - 1) * 10))) {
                 String layers = String.join(" ", ImyvmFinance.QUOTE_STORE.simulationNodeLayers(sessionId, row.symbol(), row.nodeTime()).stream().map(value -> value.substring(0, value.lastIndexOf("|")).replace("|", "=")).toList());
                 MutableComponent item = Translator.tr("commands.market.simulation.nodes.item", row.symbol(), Instant.ofEpochMilli(row.nodeTime()), row.inputSource(), formatPrice(row.previousPrice()), formatPrice(row.newPrice()), row.fluctuationBps(), String.format(java.util.Locale.ROOT, "%.9f", row.logReturn()), row.factor(), layers).copy();
-                item.append(" ").append(Translator.tr("commands.market.simulation.nodes.layers_link").copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation layers " + sessionId + " " + row.symbol() + " " + row.nodeTime()))));
-                item.append(" ").append(Translator.tr("commands.market.simulation.nodes.inputs_link").copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation inputs " + sessionId + " " + row.symbol() + " " + row.nodeTime()))));
+                item.append(" ").append(Translator.tr("commands.market.simulation.nodes.layers_link").copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation sessions node-layers " + sessionId + " " + row.symbol() + " " + row.nodeTime()))));
+                item.append(" ").append(Translator.tr("commands.market.simulation.nodes.inputs_link").copy().withStyle(style -> style.withClickEvent(new ClickEvent.RunCommand("/imyvm-market simulation sessions node-inputs " + sessionId + " " + row.symbol() + " " + row.nodeTime()))));
                 context.getSource().sendSuccess(() -> item, false);
             }
-            sendPageFooter(context, "/imyvm-market simulation nodes " + sessionId, page, pageCount);
+            sendPageFooter(context, "/imyvm-market simulation sessions nodes " + sessionId, page, pageCount);
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation nodes", exception); }
     }
 
-    private static int simulationLayers(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+    private static int simulationNodeLayers(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         try { long sessionId = LongArgumentType.getLong(context, "session"); String symbol = StringArgumentType.getString(context, "symbol"); long nodeTime = LongArgumentType.getLong(context, "nodeTime");
             for (String row : ImyvmFinance.QUOTE_STORE.simulationNodeLayers(sessionId, symbol, nodeTime)) { String[] values = row.split("\\|", 3); context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.node.layer", values[0], values[1], values[2]), false); } return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation layers", exception); }

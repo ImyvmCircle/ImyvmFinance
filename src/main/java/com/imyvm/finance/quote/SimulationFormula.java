@@ -15,9 +15,9 @@ public final class SimulationFormula {
         if (source == null || source.isBlank() || source.length() > 512) throw new IllegalArgumentException("formula is empty or too long");
         Parser p = new Parser(source); Node root = p.expression(); p.skip(); if (!p.end()) throw p.error("unexpected token");
         List<Map<String, Double>> samples = List.of(
-            Map.of("PREV_PRICE",10000d,"PREV_LOG_RETURN",0d,"DRIFT_BPS",10d,"TREND_BPS",10d,"VOLATILITY_BPS",20d,"MAX_MOVE_BPS",100d,"RANDOM",.25d,"ITERATION",1d,"HISTORY_COUNT",5d),
-            Map.of("PREV_PRICE",1d,"PREV_LOG_RETURN",-20d,"DRIFT_BPS",-10d,"TREND_BPS",-10d,"VOLATILITY_BPS",0d,"MAX_MOVE_BPS",1d,"RANDOM",-.9d,"ITERATION",20d,"HISTORY_COUNT",5d),
-            Map.of("PREV_PRICE",1000000d,"PREV_LOG_RETURN",80d,"DRIFT_BPS",100d,"TREND_BPS",100d,"VOLATILITY_BPS",250d,"MAX_MOVE_BPS",500d,"RANDOM",.9d,"ITERATION",3d,"HISTORY_COUNT",120d));
+            Map.of("PREV_PRICE",10000d,"PREV_LOG_RETURN",0d,"TREND_BPS",10d,"VOLATILITY_BPS",20d,"MAX_MOVE_BPS",100d,"RANDOM",.25d,"ITERATION",1d,"HISTORY_COUNT",5d),
+            Map.of("PREV_PRICE",1d,"PREV_LOG_RETURN",-20d,"TREND_BPS",-10d,"VOLATILITY_BPS",0d,"MAX_MOVE_BPS",1d,"RANDOM",-.9d,"ITERATION",20d,"HISTORY_COUNT",5d),
+            Map.of("PREV_PRICE",1000000d,"PREV_LOG_RETURN",80d,"TREND_BPS",100d,"VOLATILITY_BPS",250d,"MAX_MOVE_BPS",500d,"RANDOM",.9d,"ITERATION",3d,"HISTORY_COUNT",120d));
         for (Map<String, Double> sample : samples) if (!Double.isFinite(root.eval(sample))) throw new IllegalArgumentException("formula result is not finite");
         return new SimulationFormula(root);
     }
@@ -44,7 +44,7 @@ public final class SimulationFormula {
             case "MAX" -> a.length>0?Arrays.stream(a).max().orElse(Double.NaN):Double.NaN; case "CLAMP" -> a.length==3?Math.max(a[1],Math.min(a[0],a[2])):Double.NaN;
             case "FLOOR" -> a.length==1?Math.floor(a[0]):Double.NaN; case "CEIL" -> a.length==1?Math.ceil(a[0]):Double.NaN; case "ROUND" -> a.length==1?Math.rint(a[0]):Double.NaN; default -> Double.NaN; }; }
     }
-    private static final Set<String> VARIABLES=Set.of("PREV_PRICE","PREV_LOG_RETURN","DRIFT_BPS","TREND_BPS","VOLATILITY_BPS","MAX_MOVE_BPS","RANDOM","ITERATION","HISTORY_COUNT");
+    private static final Set<String> VARIABLES=Set.of("PREV_PRICE","PREV_LOG_RETURN","TREND_BPS","VOLATILITY_BPS","MAX_MOVE_BPS","RANDOM","ITERATION","HISTORY_COUNT");
     private static final Set<String> FUNCTIONS=Set.of("LN","LOG10","LOG2","LOGN","EXP","POW","SQRT","ABS","SIGN","MIN","MAX","CLAMP","FLOOR","CEIL","ROUND");
     private static final class Parser { final String s; int i; int nodes; Parser(String s){this.s=s;} void skip(){while(i<s.length()&&Character.isWhitespace(s.charAt(i)))i++;} boolean end(){return i>=s.length();} boolean take(char c){if(i<s.length()&&s.charAt(i)==c){i++;return true;}return false;} void need(char c){skip();if(!take(c))throw error("expected "+c);} IllegalArgumentException error(String m){return new IllegalArgumentException(m+" at "+i);}
         Node expression(){Node n=term();for(;;){skip();if(take('+'))n=new Binary('+',n,term());else if(take('-'))n=new Binary('-',n,term());else return n;}}

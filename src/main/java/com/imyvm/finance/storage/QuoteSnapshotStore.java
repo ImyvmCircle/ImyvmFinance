@@ -54,17 +54,6 @@ public final class QuoteSnapshotStore implements AutoCloseable {
             try { statement.execute("ALTER TABLE market_snapshots ADD COLUMN node_time INTEGER NOT NULL DEFAULT 0"); } catch (SQLException ignored) { }
             statement.execute("UPDATE market_snapshots SET node_time = market_time WHERE node_time = 0");
             try { statement.execute("ALTER TABLE market_quotes ADD COLUMN quote_origin TEXT NOT NULL DEFAULT 'REAL'"); } catch (SQLException ignored) { }
-            statement.execute("""
-                CREATE TABLE IF NOT EXISTS simulation_functions (
-                    function_id TEXT PRIMARY KEY, function_type TEXT NOT NULL, updated_at INTEGER NOT NULL
-                )
-                """);
-            try { statement.execute("ALTER TABLE simulation_functions ADD COLUMN active INTEGER NOT NULL DEFAULT 0"); } catch (SQLException ignored) { }
-            statement.execute("INSERT OR IGNORE INTO simulation_functions(function_id, function_type, updated_at) VALUES ('trend_walk', 'CLAMP(TREND_BPS + VOLATILITY_BPS * RANDOM, -MAX_MOVE_BPS, MAX_MOVE_BPS)', strftime('%s', 'now'))");
-            statement.execute("INSERT OR IGNORE INTO simulation_functions(function_id, function_type, updated_at) VALUES ('stable_walk', 'CLAMP(TREND_BPS * 0.5 + VOLATILITY_BPS * RANDOM, -MAX_MOVE_BPS, MAX_MOVE_BPS)', strftime('%s', 'now'))");
-            statement.execute("INSERT OR IGNORE INTO simulation_functions(function_id, function_type, updated_at) VALUES ('volatile_trend', 'CLAMP(TREND_BPS * 1.25 + VOLATILITY_BPS * RANDOM, -MAX_MOVE_BPS, MAX_MOVE_BPS)', strftime('%s', 'now'))");
-            statement.execute("UPDATE simulation_functions SET active = 0 WHERE function_id NOT IN ('trend_walk', 'stable_walk', 'volatile_trend')");
-            statement.execute("UPDATE simulation_functions SET active = 1 WHERE function_id = 'trend_walk' AND NOT EXISTS (SELECT 1 FROM simulation_functions WHERE active = 1)");
             statement.execute("CREATE TABLE IF NOT EXISTS simulation_layer_functions (layer TEXT NOT NULL CHECK (layer IN ('LONG', 'MEDIUM', 'SHORT')), function_id TEXT NOT NULL, formula TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (layer, function_id))");
             statement.execute("INSERT OR IGNORE INTO simulation_layer_functions(layer, function_id, formula, active) VALUES ('LONG', 'trend', 'TREND_BPS', 1)");
             statement.execute("INSERT OR IGNORE INTO simulation_layer_functions(layer, function_id, formula, active) VALUES ('MEDIUM', 'neutral', '0', 1)");
@@ -218,26 +207,6 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         }
     }
 
-    public synchronized Map<String, String> findSimulationFunctions() throws SQLException {
-        Map<String, String> result = new java.util.LinkedHashMap<>();
-        try (Statement statement = connection.createStatement(); ResultSet rows = statement.executeQuery("SELECT function_id, function_type FROM simulation_functions WHERE function_id IN ('trend_walk', 'stable_walk', 'volatile_trend') ORDER BY function_id")) {
-            while (rows.next()) result.put(rows.getString(1), rows.getString(2));
-        }
-        return result;
-    }
-
-    public synchronized Optional<SimulationFunctionView> findSimulationFunction(String id) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("SELECT function_id, function_type, active, updated_at FROM simulation_functions WHERE function_id IN ('trend_walk', 'stable_walk', 'volatile_trend') AND function_id = ?")) {
-            statement.setString(1, id);
-            try (ResultSet row = statement.executeQuery()) { if (row.next()) return Optional.of(new SimulationFunctionView(row.getString(1), row.getString(2), row.getInt(3) != 0, row.getLong(4))); }
-        }
-        return Optional.empty();
-    }
-
-    public synchronized boolean simulationFunctionExists(String id) throws SQLException {
-        return findSimulationFunction(id).isPresent();
-    }
-
     public synchronized Map<String, String> simulationLayerFunctions(String layer) throws SQLException {
         Map<String, String> result = new java.util.LinkedHashMap<>();
         try (PreparedStatement statement = connection.prepareStatement("SELECT function_id, formula FROM simulation_layer_functions WHERE layer = ? ORDER BY function_id")) { statement.setString(1, layer); try (ResultSet rows = statement.executeQuery()) { while (rows.next()) result.put(rows.getString(1), rows.getString(2)); } }
@@ -264,6 +233,12 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         return result;
     }
 
+    public synchronized Map<String, String> simulationSessionLayerFunctionIds(long sessionId) throws SQLException {
+        Map<String, String> result = new java.util.LinkedHashMap<>();
+        try (PreparedStatement statement = connection.prepareStatement("SELECT layer, function_id FROM simulation_session_layers WHERE session_id = ? ORDER BY layer")) { statement.setLong(1, sessionId); try (ResultSet rows = statement.executeQuery()) { while (rows.next()) result.put(rows.getString(1), rows.getString(2)); } }
+        return result;
+    }
+
     public synchronized void freezeSimulationLayers(long sessionId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("INSERT INTO simulation_session_layers(session_id, layer, function_id, formula) SELECT ?, layer, function_id, formula FROM simulation_layer_functions WHERE active = 1")) { statement.setLong(1, sessionId); statement.executeUpdate(); }
     }
@@ -278,40 +253,6 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         List<String> result = new ArrayList<>();
         try (PreparedStatement statement = connection.prepareStatement("SELECT layer, parameters, result_bps FROM simulation_node_layers WHERE session_id = ? AND symbol = ? AND node_time = ? ORDER BY layer")) { statement.setLong(1, sessionId); statement.setString(2, symbol); statement.setLong(3, nodeTime); try (ResultSet rows = statement.executeQuery()) { while (rows.next()) result.add(rows.getString(1) + "|" + rows.getString(2) + "|" + rows.getDouble(3)); } }
         return result;
-    }
-
-    public synchronized Map.Entry<String, String> activeSimulationFunction() throws SQLException {
-        try (Statement statement = connection.createStatement(); ResultSet rows = statement.executeQuery("SELECT function_id, function_type FROM simulation_functions WHERE active = 1 AND function_id IN ('trend_walk', 'stable_walk', 'volatile_trend') LIMIT 1")) {
-            if (rows.next()) return Map.entry(rows.getString(1), rows.getString(2));
-        }
-        return Map.entry("trend_walk", SimulationFormula.DEFAULT);
-    }
-
-    public synchronized void activateSimulationFunction(String id) throws SQLException {
-        boolean oldAutoCommit = connection.getAutoCommit();
-        try {
-            connection.setAutoCommit(false);
-            try (PreparedStatement check = connection.prepareStatement("SELECT 1 FROM simulation_functions WHERE function_id IN ('trend_walk', 'stable_walk', 'volatile_trend') AND function_id = ?")) {
-                check.setString(1, id);
-                try (ResultSet row = check.executeQuery()) { if (!row.next()) throw new IllegalArgumentException("unknown function"); }
-            }
-            try (Statement statement = connection.createStatement()) { statement.executeUpdate("UPDATE simulation_functions SET active = 0"); }
-            try (PreparedStatement statement = connection.prepareStatement("UPDATE simulation_functions SET active = 1 WHERE function_id = ?")) { statement.setString(1, id); statement.executeUpdate(); }
-            connection.commit();
-        } catch (SQLException | RuntimeException exception) {
-            connection.rollback();
-            throw exception;
-        } finally { connection.setAutoCommit(oldAutoCommit); }
-    }
-
-    public synchronized void upsertSimulationFunction(String id, String type) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("INSERT INTO simulation_functions(function_id, function_type, updated_at) VALUES (?, ?, ?) ON CONFLICT(function_id) DO UPDATE SET function_type = excluded.function_type, updated_at = excluded.updated_at")) {
-            statement.setString(1, id); statement.setString(2, type); statement.setLong(3, System.currentTimeMillis()); statement.executeUpdate();
-        }
-    }
-
-    public synchronized void deleteSimulationFunction(String id) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("DELETE FROM simulation_functions WHERE function_id = ? AND function_id <> 'robust_seeded_walk' AND active = 0")) { statement.setString(1, id); if (statement.executeUpdate() == 0) throw new IllegalArgumentException("function is missing, default, or active"); }
     }
 
     public synchronized void beginSimulation(long sessionId, String market, long startedAt, String functionId, String formula, long seed,
@@ -418,14 +359,6 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         try (PreparedStatement statement = connection.prepareStatement("SELECT COUNT(*) FROM simulation_nodes WHERE session_id = ?")) {
             statement.setLong(1, sessionId); try (ResultSet result = statement.executeQuery()) { result.next(); return result.getLong(1); }
         }
-    }
-
-    public synchronized Map.Entry<String, String> simulationFunctionForSession(long sessionId) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement("SELECT function_id, function_formula FROM simulation_sessions WHERE session_id = ?")) {
-            statement.setLong(1, sessionId);
-            try (ResultSet row = statement.executeQuery()) { if (row.next()) return Map.entry(row.getString(1), row.getString(2)); }
-        }
-        return Map.entry("trend_walk", SimulationFormula.DEFAULT);
     }
 
     public synchronized Optional<SimulationSessionView> findSimulationSession(long sessionId) throws SQLException {
