@@ -213,6 +213,18 @@ public final class QuoteSnapshotStore implements AutoCloseable {
         return result;
     }
 
+    public synchronized String setActiveSimulationLayerFormula(String layer, String formula) throws SQLException {
+        String normalizedLayer = layer.toUpperCase(java.util.Locale.ROOT);
+        if (!java.util.Set.of("LONG", "MEDIUM", "SHORT").contains(normalizedLayer)) throw new IllegalArgumentException("unknown simulation layer");
+        SimulationFormula.compile(formula);
+        String id = "custom_" + System.currentTimeMillis();
+        try (PreparedStatement clear = connection.prepareStatement("UPDATE simulation_layer_functions SET active = 0 WHERE layer = ?"); PreparedStatement upsert = connection.prepareStatement("INSERT INTO simulation_layer_functions(layer, function_id, formula, active) VALUES (?, ?, ?, 1) ON CONFLICT(layer, function_id) DO UPDATE SET formula = excluded.formula, active = 1")) {
+            clear.setString(1, normalizedLayer); clear.executeUpdate();
+            upsert.setString(1, normalizedLayer); upsert.setString(2, id); upsert.setString(3, formula.trim()); upsert.executeUpdate();
+        }
+        return id;
+    }
+
     public synchronized void activateSimulationLayer(String layer, String id) throws SQLException {
         try (PreparedStatement check = connection.prepareStatement("SELECT 1 FROM simulation_layer_functions WHERE layer = ? AND function_id = ?")) { check.setString(1, layer); check.setString(2, id); try (ResultSet rows = check.executeQuery()) { if (!rows.next()) throw new IllegalArgumentException("unknown layer function"); } }
         try (PreparedStatement clear = connection.prepareStatement("UPDATE simulation_layer_functions SET active = 0 WHERE layer = ?"); PreparedStatement activate = connection.prepareStatement("UPDATE simulation_layer_functions SET active = 1 WHERE layer = ? AND function_id = ?")) { clear.setString(1, layer); clear.executeUpdate(); activate.setString(1, layer); activate.setString(2, id); activate.executeUpdate(); }

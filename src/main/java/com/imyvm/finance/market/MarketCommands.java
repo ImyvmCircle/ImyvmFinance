@@ -229,6 +229,7 @@ public final class MarketCommands {
             .then(Commands.literal("layers").executes(MarketCommands::simulationLayersOverview)
                 .then(Commands.argument("layer", StringArgumentType.word()).suggests(MarketCommands::suggestSimulationLayers)
                     .then(Commands.literal("list").executes(MarketCommands::simulationLayerList))
+                    .then(Commands.literal("set").then(Commands.argument("formula", StringArgumentType.greedyString()).executes(MarketCommands::simulationLayerSet)))
                     .then(Commands.literal("use").then(Commands.argument("id", StringArgumentType.word()).suggests(MarketCommands::suggestSimulationLayerFunctions).executes(MarketCommands::simulationLayerUse)))))
             .then(Commands.literal("factor")
                 .then(Commands.literal("set")
@@ -2096,8 +2097,11 @@ private static String formatMovingAverage(List<Long> prices) {
     private static int simulationLayersOverview(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
         try {
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.layers.header"), false);
-            for (var entry : ImyvmFinance.QUOTE_STORE.activeSimulationLayerFormulas().entrySet())
-                context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.layer", entry.getKey(), entry.getValue()), false);
+            for (String layer : List.of("LONG", "MEDIUM", "SHORT")) {
+                String active = ImyvmFinance.QUOTE_STORE.activeSimulationLayerFormulas().get(layer);
+                for (var entry : ImyvmFinance.QUOTE_STORE.simulationLayerFunctions(layer).entrySet())
+                    context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.layer.detail", layer, entry.getKey(), entry.getValue(), entry.getValue().equals(active) ? "ACTIVE" : ""), false);
+            }
             return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation layers", exception); }
     }
@@ -2106,6 +2110,16 @@ private static String formatMovingAverage(List<Long> prices) {
         try { String layer = StringArgumentType.getString(context, "layer").toUpperCase(java.util.Locale.ROOT);
             for (var entry : ImyvmFinance.QUOTE_STORE.simulationLayerFunctions(layer).entrySet()) context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.session.layer", layer + ":" + entry.getKey(), entry.getValue()), false); return Command.SINGLE_SUCCESS;
         } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation layer list", exception); }
+    }
+
+    private static int simulationLayerSet(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
+        String layer = StringArgumentType.getString(context, "layer").toUpperCase(java.util.Locale.ROOT);
+        String formula = StringArgumentType.getString(context, "formula");
+        try {
+            String id = ImyvmFinance.QUOTE_STORE.setActiveSimulationLayerFormula(layer, formula);
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.layers.set", layer, id, formula), true);
+            return Command.SINGLE_SUCCESS;
+        } catch (Exception exception) { return failUnexpected(context.getSource(), "simulation layer set", exception); }
     }
 
     private static int simulationLayerUse(com.mojang.brigadier.context.CommandContext<CommandSourceStack> context) {
@@ -2153,6 +2167,7 @@ private static String formatMovingAverage(List<Long> prices) {
             long previewSeed = ImyvmFinance.CONFIG.quoteRandomSeed();
             int factor = ImyvmFinance.QUOTE_STORE.simulationFactor(instrument.symbol());
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.header"), false);
+            context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.explanation"), false);
             long previewBaseTime = timestamp;
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.config", instrument.symbol(), nodes, previewSeed, Instant.ofEpochMilli(previewBaseTime)), false);
             context.getSource().sendSuccess(() -> Translator.tr("commands.market.simulation.preview.input", stored == null ? "config-default" : stored.source()), false);

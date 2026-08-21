@@ -414,6 +414,9 @@ public final class FinanceSelfTest {
             checkEquals(5, quotes.simulationFactor("CN:000001"), "simulation factor was not persisted");
             checkEquals(5, quotes.simulationFactorForSession(123L, "CN:000001", 5), "session factor was not frozen");
             checkEquals(5, quotes.simulationFactorForSession(123L, "CN:000001", 1), "session factor changed after freeze");
+            boolean rejectedFormula = false;
+            try { quotes.setActiveSimulationLayerFormula("LONG", "UNKNOWN_VARIABLE"); } catch (IllegalArgumentException expected) { rejectedFormula = true; }
+            check(rejectedFormula, "invalid simulation formula was accepted");
             quotes.saveSimulationState(123L, "CN:000001", 2.5, 7);
             checkEquals(7, quotes.findSimulationState(123L, "CN:000001").orElseThrow().iteration(), "simulation trend state was not persisted");
             var node = quotes.findSimulationNodes(123L, 10, 0).getFirst();
