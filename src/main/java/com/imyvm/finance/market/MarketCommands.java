@@ -47,6 +47,7 @@ import java.math.RoundingMode;
 import java.util.List;
 import java.util.Optional;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.time.Instant;
@@ -1129,14 +1130,17 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
                 }
             }
             JsonObject stats = root.getAsJsonObject("providerStats");
-            if (stats != null) {
-                for (String key : stats.keySet()) {
-                    JsonObject item = stats.getAsJsonObject(key);
+            JsonObject providerOrders = root.getAsJsonObject("providerOrder");
+            if (stats != null || providerOrders != null) {
+                var providers = new LinkedHashSet<String>();
+                if (providerOrders != null) for (String market : providerOrders.keySet())
+                    for (var provider : providerOrders.getAsJsonArray(market)) providers.add(market + ":" + provider.getAsString());
+                if (stats != null) providers.addAll(stats.keySet());
+                for (String key : providers) {
+                    JsonObject item = stats == null ? null : stats.getAsJsonObject(key);
                     long requests = number(item, "requests");
                     long failures = number(item, "failures");
-                    Component state = number(item, "backoffSecondsRemaining") > 0
-                        ? Translator.tr("commands.market.source.status.backoff", number(item, "backoffSecondsRemaining"))
-                        : Translator.tr("commands.market.source.status.ready");
+                    Component state = providerStatus(root, key, item);
                     source.sendSuccess(() -> Translator.tr("commands.market.source.status.provider",
                         key, requests, failures, value(item, "failureRatePercent", "0.00"), state,
                         value(item, "lastAttemptAt", "-"), value(item, "lastSuccessAt", "-"),
@@ -1166,6 +1170,23 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
             return closed;
         JsonObject scheduler = root.getAsJsonObject("scheduler");
         return scheduler != null && hasArrayValue(scheduler, "simulationMarkets", market) ? outage : active;
+    }
+
+    private static Component providerStatus(JsonObject root, String key, JsonObject item) {
+        if (hasArrayValue(root, "disabledProviders", key))
+            return Translator.tr("commands.market.source.status.disabled");
+        if (number(item, "requests") == 0)
+            return Translator.tr("commands.market.source.status.unused");
+        if (timestamp(item, "lastSuccessAt") > timestamp(item, "lastFailureAt"))
+            return Translator.tr("commands.market.source.status.ready");
+        long backoff = number(item, "backoffSecondsRemaining");
+        return backoff > 0 ? Translator.tr("commands.market.source.status.backoff", backoff)
+            : Translator.tr("commands.market.source.status.unavailable");
+    }
+
+    private static long timestamp(JsonObject object, String key) {
+        try { return object == null || !object.has(key) || object.get(key).isJsonNull() ? 0 : Instant.parse(object.get(key).getAsString()).toEpochMilli(); }
+        catch (Exception ignored) { return 0; }
     }
 
     private static boolean hasArrayValue(JsonObject object, String key, String value) {

@@ -232,6 +232,34 @@ public final class FinanceSelfTest {
             "provider warning did not enter backoff immediately");
         check(((String) singleProvider.controlStatus()).contains("\"backoffSecondsRemaining\":"),
             "provider did not enter backoff after two failures");
+
+        Translator.setLanguage("zh_cn");
+        var providerStatus = MarketCommands.class.getDeclaredMethod("providerStatus", com.google.gson.JsonObject.class, String.class, com.google.gson.JsonObject.class);
+        providerStatus.setAccessible(true);
+        var root = new com.google.gson.JsonObject();
+        var unused = new com.google.gson.JsonObject();
+        unused.addProperty("requests", 0);
+        check(((net.minecraft.network.chat.Component) providerStatus.invoke(null, root, "CN:only", unused)).getString().contains("尚未使用"),
+            "unused provider state was not rendered");
+        var successful = new com.google.gson.JsonObject();
+        successful.addProperty("requests", 1);
+        successful.addProperty("lastSuccessAt", "2026-08-21T00:00:01Z");
+        check(((net.minecraft.network.chat.Component) providerStatus.invoke(null, root, "CN:only", successful)).getString().contains("当前可用"),
+            "last successful provider was not rendered as available");
+        var failed = new com.google.gson.JsonObject();
+        failed.addProperty("requests", 1);
+        failed.addProperty("lastFailureAt", "2026-08-21T00:00:01Z");
+        failed.addProperty("backoffSecondsRemaining", 60);
+        check(((net.minecraft.network.chat.Component) providerStatus.invoke(null, root, "CN:only", failed)).getString().contains("退避中"),
+            "backed off provider state was not rendered");
+        failed.addProperty("backoffSecondsRemaining", 0);
+        check(((net.minecraft.network.chat.Component) providerStatus.invoke(null, root, "CN:only", failed)).getString().contains("等待下次重试"),
+            "failed provider outside backoff was not rendered");
+        var disabled = new com.google.gson.JsonArray();
+        disabled.add("CN:only");
+        root.add("disabledProviders", disabled);
+        check(((net.minecraft.network.chat.Component) providerStatus.invoke(null, root, "CN:only", successful)).getString().contains("已停用"),
+            "disabled provider state did not take priority");
     }
 
     private static void marketHoursChecks() {
