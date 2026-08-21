@@ -22,6 +22,10 @@ public final class TradeCalculator {
         if (units < rules.minUnits())
             throw new TradeValidationException(
                 "commands.market.trade.invalid_units", rules.minUnits());
+        if (nowEpochMillis - storedQuote.fetchedAtEpochMillis() > rules.maxQuoteAgeMillis())
+            throw new TradeValidationException(
+                "commands.market.trade.quote_stale",
+                storedQuote.quote().instrument().label());
         if (storedQuote.quote().status() != com.imyvm.finance.market.MarketStatus.OPEN)
             throw new TradeValidationException(
                 "commands.market.trade.market_not_open",

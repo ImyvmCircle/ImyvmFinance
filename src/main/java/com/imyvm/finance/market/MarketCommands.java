@@ -385,6 +385,8 @@ private static int configureBriefing(com.mojang.brigadier.context.CommandContext
         context.getSource().sendSuccess(
             () -> Translator.tr("commands.market.rules.timing",
                 rules.sellCooldownMillis() / 60000), false);
+        context.getSource().sendSuccess(
+            () -> Translator.tr("commands.market.rules.quote_age", rules.maxQuoteAgeMillis() / 60000), false);
         return Command.SINGLE_SUCCESS;
     }
 

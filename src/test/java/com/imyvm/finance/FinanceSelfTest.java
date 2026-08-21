@@ -330,8 +330,13 @@ public final class FinanceSelfTest {
             "same-price", "test", 2_000L, 1_000L,
             new com.imyvm.finance.market.MarketQuote(
                 Instrument.CN_000001, "SSE", 10_000L, 0L, MarketStatus.OPEN));
-        TradeCalculator.estimate(TradeSide.BUY, quote, 1L, 1_000L + TradingRules.DEFAULT.maxQuoteAgeMillis(), TradingRules.DEFAULT);
-        TradeCalculator.estimate(TradeSide.BUY, quote, 1L, 1_001L + TradingRules.DEFAULT.maxQuoteAgeMillis(), TradingRules.DEFAULT);
+        TradeCalculator.estimate(TradeSide.BUY, quote, 1L, 2_000L + TradingRules.DEFAULT.maxQuoteAgeMillis(), TradingRules.DEFAULT);
+        try {
+            TradeCalculator.estimate(TradeSide.BUY, quote, 1L, 2_001L + TradingRules.DEFAULT.maxQuoteAgeMillis(), TradingRules.DEFAULT);
+            throw new AssertionError("stale quote was accepted");
+        } catch (TradeValidationException expected) {
+            checkEquals("commands.market.trade.quote_stale", expected.messageKey(), "stale quote check");
+        }
     }
 
     private static void quoteScheduleChecks() {

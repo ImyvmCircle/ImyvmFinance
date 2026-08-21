@@ -165,6 +165,7 @@
   "imyvm_finance.commands.market.rules.fees": "§7手续费 §e{0} §7基点，基础滑点 §e{1} §7基点，大额订单滑点递增。",
   "imyvm_finance.commands.market.rules.limits": "§7每日买入限额 §e{0}$§7，每日卖出限额 §e{1}$§7，持仓市值上限 §e{2}$§7。",
   "imyvm_finance.commands.market.rules.timing": "§7卖出冷却：§e{0}§7 分钟",
+  "imyvm_finance.commands.market.rules.quote_age": "§7行情最长有效期：§e{0}§7 分钟",
   "imyvm_finance.commands.market.state.position.pending_finance": "§e结算中",
   "imyvm_finance.commands.market.state.position.active": "§a持仓中",
   "imyvm_finance.commands.market.state.position.pending_manual": "§e待人工核对",
